@@ -21,7 +21,7 @@ export async function geminiChat(apiKey, userText) {
       contents: [{ role: 'user', parts: [{ text: userText }] }],
       systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
       tools: [{ google_search: {} }],
-      generationConfig: { temperature: 0.6, maxOutputTokens: 1024 },
+      generationConfig: { temperature: 0.95, topP: 0.95, maxOutputTokens: 1024 },
     }),
   });
   if (!r.ok) {
