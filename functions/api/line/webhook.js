@@ -11,6 +11,7 @@ import {
   verifyLineSignature, lineReply, isAdmin, isWakeword, stripWakeword,
   getGroupMemberProfile, getUserProfile,
 } from './_lib.js';
+import { geminiChat } from './_gemini.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -81,9 +82,16 @@ async function handleEvent(ev, env) {
     return;
   }
 
-  // M1：其他指令暫時 echo，之後由 M2 Gemini 接手
+  // 其他全部交給 Gemini 日常對話（已啟用 Google Search grounding）
+  if (!cmd) {
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+      { type: 'text', text: '在的，有什麼事嗎？' },
+    ]);
+    return;
+  }
+  const reply = await geminiChat(env.GEMINI_API_KEY, cmd);
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-    { type: 'text', text: `[M1 echo]\n收到指令：${cmd}\n(Gemini 意圖解析將於 M2 啟用)` },
+    { type: 'text', text: reply },
   ]);
 }
 
