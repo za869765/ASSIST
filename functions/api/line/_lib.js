@@ -60,16 +60,18 @@ export function isAdmin(userId, env) {
   return list.includes(userId);
 }
 
-// 寬鬆匹配「TAQ 小秘書」喚醒詞（容忍全形、空白、大小寫）
+// 喚醒詞：開頭出現「小秘書」或「秘書」即可
+// 容忍前綴 @ / / / TAQ（LINE 官方帳號無法被真正 @mention，使用者手打 @ 或 TAQ 當文字）
+// 範例：「小秘書 ping」「@小秘書 ping」「TAQ 小秘書 ping」「/秘書 ping」
 export function isWakeword(text) {
   if (!text) return false;
   const t = String(text).trim().toUpperCase().replace(/\s+/g, '');
-  return /^TAQ小秘書/.test(t) || /^TAQ秘書/.test(t);
+  return /^(@|\/|TAQ)?小?秘書/.test(t);
 }
 
 // 取出喚醒詞後的指令內容
 export function stripWakeword(text) {
   return String(text).trim()
-    .replace(/^TAQ\s*小?秘書\s*/i, '')
+    .replace(/^(?:@|\/|TAQ)?\s*小?秘書\s*[:：,，]?\s*/i, '')
     .trim();
 }
