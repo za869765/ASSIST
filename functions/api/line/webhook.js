@@ -55,7 +55,8 @@ async function handleEvent(ev, env) {
     if (tasks.length > 1) {
       const names = tasks.map(t => t.task_name);
       const { task_name, confidence } = await geminiClassifyTask(env.GEMINI_API_KEY, names, text);
-      if (!task_name || confidence === 'low') return; // 不屬於任何一個就靜默
+      console.log('[classify]', { text, names, task_name, confidence });
+      if (!task_name) return;
       const picked = matchTaskByHint(tasks, task_name);
       if (!picked) return;
       target = picked;
