@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>ASSIST 小秘書 LINE Bot</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  *{box-sizing:border-box}
+  body{font-family:system-ui,"Microsoft JhengHei",sans-serif;margin:0;padding:24px;background:#f5f6fa;color:#222;max-width:760px;margin:0 auto;padding:32px 20px}
+  h1{font-size:22px;margin:0 0 6px}
+  .sub{color:#78909c;font-size:13px;margin-bottom:20px}
+  .card{background:#fff;border-radius:10px;padding:18px 22px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:14px}
+  .badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;margin-right:6px}
+  .b-ok{background:#e8f5e9;color:#1b5e20}
+  .b-wait{background:#fff3e0;color:#e65100}
+  .b-now{background:#e3f2fd;color:#1565c0}
+  h2{font-size:15px;margin:0 0 10px;color:#37474f}
+  code{background:#eceff1;padding:1px 6px;border-radius:3px;font-size:12px}
+  a{color:#1565c0}
+  ul{margin:6px 0;padding-left:22px;line-height:1.8}
+  .foot{color:#90a4ae;font-size:11px;margin-top:24px;text-align:center}
+</style>
+</head>
+<body>
+
+<h1>🤖 小秘書 LINE Bot</h1>
+<div class="sub">ASSIST — 群組統計自動化助理（M1 階段）</div>
+
+<div class="card">
+  <h2>🩺 服務狀態</h2>
+  <div id="status">載入中⋯</div>
+</div>
+
+<div class="card">
+  <h2>📌 里程碑</h2>
+  <div>
+    <span class="badge b-now">M1 現正進行</span> 基本通：webhook + 白名單 + echo<br>
+  </div>
+  <ul style="font-size:13px;color:#546e7a;">
+    <li>M2 Gemini 意圖（開始/進度/結單）</li>
+    <li>M3 智慧收集（欄位抽取 + 補問 + 歸一）</li>
+    <li>M4 例外 + OCR（菜單校驗）</li>
+    <li>M5 催促 + 結案（Excel + 問候）</li>
+    <li>M6 後台 UI（名冊 / 歷史）</li>
+    <li>M7 泛用驗證</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2>🧪 M1 測試指令</h2>
+  <ul style="font-size:13px;">
+    <li><code>TAQ 小秘書 我的ID</code> — 任何人可用，回自己的 userId（用來建白名單）</li>
+    <li><code>TAQ 小秘書 ping</code> — 管理員用，回 pong + 環境摘要</li>
+    <li>非管理員下其他指令 — 會回「權限不足」</li>
+  </ul>
+</div>
+
+<div class="foot">
+  ASSIST · Cloudflare Pages + D1 · Gemini 2.5 Flash
+</div>
+
+<script>
+(async () => {
+  const el = document.getElementById('status');
+  try {
+    const r = await fetch('/api/health');
+    const j = await r.json();
+    const yn = b => b ? '<span class="badge b-ok">✅</span>' : '<span class="badge b-wait">⚠ 未設定</span>';
+    el.innerHTML = `
+      <div style="font-size:13px;line-height:1.9;">
+        D1 資料庫：${j.d1 === 'ok' ? '<span class="badge b-ok">✅ 連線正常</span>' : '<span class="badge b-wait">⚠ 未綁定</span>'}<br>
+        LINE Channel Secret：${yn(j.line_secret)}<br>
+        LINE Access Token：${yn(j.line_token)}<br>
+        Gemini API Key：${yn(j.gemini_key)}<br>
+        管理員白名單：<b>${j.admin_count}</b> 人<br>
+        <span style="color:#90a4ae;font-size:11px;">server time: ${j.time}</span>
+      </div>`;
+  } catch (e) {
+    el.innerHTML = '<span class="badge b-wait">⚠ 無法取得狀態</span> ' + e.message;
+  }
+})();
+</script>
+</body>
+</html>

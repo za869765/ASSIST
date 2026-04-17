@@ -1,0 +1,10 @@
+name = "assist"
+compatibility_date = "2025-01-01"
+pages_build_output_dir = "."
+
+# D1 binding — 部署前先在 Cloudflare dashboard 建立 database `assist_db`
+# 然後把 database_id 填入下面
+[[d1_databases]]
+binding = "DB"
+database_name = "assist_db"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
