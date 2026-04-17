@@ -79,7 +79,9 @@ async function handleEvent(ev, env) {
 
   // ─── M3 任務指令 ───
   // 開始統計 XX
-  const mStart = cmd.match(/統計\s*(.+)$/);
+  const mStart =
+    cmd.match(/^(?:開始|開)?\s*(?:統計|算)\s*(?:一下)?\s*(.+)$/) ||
+    cmd.match(/^(?:開始|開)\s+(.+)$/);
   if (mStart) {
     const taskName = mStart[1].trim();
     if (!groupId) {
