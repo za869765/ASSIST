@@ -1,17 +1,16 @@
 // LINE Messaging API webhook 入口
-// M1：收訊 + 簽章驗證 + 管理員白名單 + echo + userId 探詢
-//
-// 測試用途：
-// - 任何人私訊或在群組 @ 小秘書 並說「TAQ 小秘書 我的ID」→ 小秘書回該人 userId（這是 M1 自助取得 userId 的方式）
-// - 管理員說「TAQ 小秘書 ping」→ 回 pong + 當前環境摘要
-// - 其他人說 TAQ 指令 → 一律忽略（M1 暫時用回「🔒 權限不足」提示，M2 之後完全靜默）
-// - 非 TAQ 開頭訊息 → M1 暫不處理（之後 M3 任務模式才會收集）
+// M1：簽章驗證 + 管理員白名單 + ping / whoami
+// M3：群組任務模式（開始/進度/結單 + Gemini 抽欄位 + 非管理員訊息收集）
+// 閒聊：非 M1/M3 指令的「秘書 xxx」→ Gemini 日常回應
 
 import {
   verifyLineSignature, lineReply, isAdmin, isWakeword, stripWakeword,
   getGroupMemberProfile, getUserProfile,
 } from './_lib.js';
-import { geminiChat } from './_gemini.js';
+import { geminiChat, geminiExtract } from './_gemini.js';
+import {
+  findOpenTask, createTask, closeTask, upsertEntry, listEntries, summarizeEntries,
+} from './_tasks.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -19,14 +18,11 @@ export async function onRequestPost(context) {
   const signature = request.headers.get('x-line-signature') || '';
 
   const valid = await verifyLineSignature(env.LINE_CHANNEL_SECRET, body, signature);
-  if (!valid) {
-    return new Response('invalid signature', { status: 401 });
-  }
+  if (!valid) return new Response('invalid signature', { status: 401 });
 
   const payload = JSON.parse(body);
   const events = payload.events || [];
 
-  // LINE 要求 webhook 快速回 200，我們不阻塞
   context.waitUntil(Promise.all(events.map(ev => handleEvent(ev, env).catch(e => {
     console.error('[event error]', e, ev);
   }))));
@@ -42,57 +38,131 @@ async function handleEvent(ev, env) {
   const groupId = ev.source.groupId || null;
   const replyToken = ev.replyToken;
 
-  // 記錄最新一次看到的人（名冊自動登錄 / 更新）
   if (userId) {
     await upsertMemberSighting(env.DB, userId, groupId, env.LINE_CHANNEL_ACCESS_TOKEN);
   }
 
-  // M1：只處理 TAQ 開頭的訊息，其餘留給後續里程碑
-  if (!isWakeword(text)) return;
-
-  const cmd = stripWakeword(text);
   const admin = isAdmin(userId, env);
+  const hasWake = isWakeword(text);
 
-  // 自助查自己 userId（所有人可用，方便建立白名單）
-  if (/^我的ID/i.test(cmd) || /我的\s*id/i.test(cmd) || /whoami/i.test(cmd)) {
+  // ─── 非喚醒訊息：只有群組 + 該群有 open task 時收集 ───
+  if (!hasWake) {
+    if (!groupId) return;
+    const task = await findOpenTask(env.DB, groupId);
+    if (!task) return;
+    await collectEntry(env, task, userId, text, replyToken);
+    return;
+  }
+
+  // ─── 喚醒訊息 ───
+  const cmd = stripWakeword(text);
+
+  // 自助查 userId（所有人可用）
+  if (/^我的\s*ID$/i.test(cmd) || /whoami/i.test(cmd)) {
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
       { type: 'text', text: `您的 userId：\n${userId}\n\n請把這組字串給管理員加入白名單。` },
     ]);
     return;
   }
 
-  // 非管理員下指令 → 完全靜默（不回應任何訊息）
+  // 非管理員 → 完全靜默
   if (!admin) return;
 
-  // 管理員指令：ping（M1 測試用）
+  // ping
   if (/^ping$/i.test(cmd)) {
     const adminCount = String(env.ADMIN_USER_IDS || '').split(',').filter(Boolean).length;
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-      {
-        type: 'text',
-        text: `🟢 pong\n管理員人數：${adminCount}\n您的 userId：${userId}\ngroupId：${groupId || '(私聊)'}\n環境：${env.ENV || 'production'}`,
-      },
+      { type: 'text', text: `🟢 pong\n管理員：${adminCount} 人\nuserId：${userId}\ngroupId：${groupId || '(私聊)'}` },
     ]);
     return;
   }
 
-  // 其他全部交給 Gemini 日常對話（已啟用 Google Search grounding）
+  // ─── M3 任務指令（只在群組有效）───
+  if (groupId) {
+    // 開始統計 XX
+    const mStart = cmd.match(/^(?:開始|開|開啟)\s*(?:統計)?\s*(.+)$/);
+    if (mStart && /統計|^開/.test(cmd)) {
+      const taskName = mStart[1].trim();
+      if (taskName) {
+        const existing = await findOpenTask(env.DB, groupId);
+        if (existing) {
+          await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+            { type: 'text', text: `⚠️ 已有進行中任務：${existing.task_name}\n先「秘書 結單」再開新的` },
+          ]);
+          return;
+        }
+        await createTask(env.DB, { groupId, taskName, startedBy: userId });
+        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+          { type: 'text', text: `📝 開始統計「${taskName}」\n請大家直接在群組回覆內容（品項/備註/價格）\n我會自動收集，「秘書 結單」時彙總` },
+        ]);
+        return;
+      }
+    }
+
+    // 進度 / 目前
+    if (/^(進度|目前|狀態)$/.test(cmd)) {
+      const task = await findOpenTask(env.DB, groupId);
+      if (!task) {
+        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '目前沒有進行中的任務' }]);
+        return;
+      }
+      const entries = await listEntries(env.DB, task.id);
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+        { type: 'text', text: `📊 任務「${task.task_name}」目前 ${entries.length} 筆\n\n${summarizeEntries(entries)}` },
+      ]);
+      return;
+    }
+
+    // 結單 / 結束
+    if (/^(結束|結單|關閉|收單)(統計)?$/.test(cmd)) {
+      const task = await findOpenTask(env.DB, groupId);
+      if (!task) {
+        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '目前沒有進行中的任務' }]);
+        return;
+      }
+      const entries = await listEntries(env.DB, task.id);
+      await closeTask(env.DB, task.id);
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+        { type: 'text', text: `✅ 任務「${task.task_name}」已結單（共 ${entries.length} 筆）\n\n${summarizeEntries(entries)}` },
+      ]);
+      return;
+    }
+  }
+
+  // ─── 閒聊（Gemini 日常回應）───
   if (!cmd) {
-    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-      { type: 'text', text: '在的，有什麼事嗎？' },
-    ]);
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '在的，有什麼事嗎？' }]);
     return;
   }
   const reply = await geminiChat(env.GEMINI_API_KEY, cmd);
+  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
+}
+
+async function collectEntry(env, task, userId, text, replyToken) {
+  const parsed = await geminiExtract(env.GEMINI_API_KEY, task.task_name, text);
+  if (!parsed || !parsed.data || Object.keys(parsed.data).length === 0) {
+    // 抽不到東西就不吵，靜默略過
+    return;
+  }
+  await upsertEntry(env.DB, {
+    taskId: task.id,
+    userId,
+    data: parsed.data,
+    note: parsed.note,
+    price: parsed.price,
+    rawText: text,
+  });
+  const parts = Object.values(parsed.data).filter(Boolean).join(' / ');
+  const price = parsed.price ? ` $${parsed.price}` : '';
+  const note = parsed.note ? `（${parsed.note}）` : '';
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-    { type: 'text', text: reply },
+    { type: 'text', text: `✓ 已記錄：${parts}${price}${note}` },
   ]);
 }
 
 async function upsertMemberSighting(DB, userId, groupId, token) {
   if (!DB) return;
   try {
-    // 取最新暱稱
     let display = null, avatar = null;
     if (groupId) {
       const p = await getGroupMemberProfile(token, groupId, userId);

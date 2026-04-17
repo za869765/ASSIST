@@ -1,0 +1,70 @@
+// 任務 (tasks) + 紀錄 (entries) 助手
+
+export async function findOpenTask(DB, groupId) {
+  if (!DB || !groupId) return null;
+  const r = await DB.prepare(
+    `SELECT id, task_name, mode, started_by, started_at
+       FROM tasks WHERE group_id = ? AND status = 'open'
+       ORDER BY id DESC LIMIT 1`
+  ).bind(groupId).first();
+  return r || null;
+}
+
+export async function createTask(DB, { groupId, taskName, startedBy }) {
+  const r = await DB.prepare(
+    `INSERT INTO tasks (group_id, task_name, started_by) VALUES (?, ?, ?)`
+  ).bind(groupId, taskName, startedBy).run();
+  return r.meta.last_row_id;
+}
+
+export async function closeTask(DB, taskId) {
+  await DB.prepare(
+    `UPDATE tasks SET status = 'closed', closed_at = datetime('now') WHERE id = ?`
+  ).bind(taskId).run();
+}
+
+export async function upsertEntry(DB, { taskId, userId, data, note, price, rawText }) {
+  // 先讀舊的 raw_texts 累積
+  const old = await DB.prepare(
+    `SELECT raw_texts, data_json FROM entries WHERE task_id = ? AND user_id = ?`
+  ).bind(taskId, userId).first();
+  const raws = old ? JSON.parse(old.raw_texts || '[]') : [];
+  raws.push(rawText);
+  const mergedData = old ? { ...JSON.parse(old.data_json || '{}'), ...data } : data;
+
+  await DB.prepare(
+    `INSERT INTO entries (task_id, user_id, data_json, note, price, raw_texts, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(task_id, user_id) DO UPDATE SET
+       data_json = excluded.data_json,
+       note      = COALESCE(excluded.note, note),
+       price     = COALESCE(excluded.price, price),
+       raw_texts = excluded.raw_texts,
+       updated_at= datetime('now')`
+  ).bind(taskId, userId, JSON.stringify(mergedData), note || null, price || null, JSON.stringify(raws)).run();
+}
+
+export async function listEntries(DB, taskId) {
+  const r = await DB.prepare(
+    `SELECT e.user_id, e.data_json, e.note, e.price, m.line_display, m.real_name
+       FROM entries e
+       LEFT JOIN members m ON m.user_id = e.user_id
+      WHERE e.task_id = ?
+      ORDER BY e.updated_at ASC`
+  ).bind(taskId).all();
+  return r.results || [];
+}
+
+export function summarizeEntries(entries) {
+  if (!entries.length) return '（沒有任何紀錄）';
+  const lines = entries.map((e, i) => {
+    const name = e.real_name || e.line_display || e.user_id.slice(0, 6);
+    const data = JSON.parse(e.data_json || '{}');
+    const parts = Object.values(data).filter(Boolean).join(' / ');
+    const price = e.price ? ` $${e.price}` : '';
+    const note = e.note ? `（${e.note}）` : '';
+    return `${i + 1}. ${name}：${parts || '(未辨識)'}${price}${note}`;
+  });
+  const totalPrice = entries.reduce((s, e) => s + (e.price || 0), 0);
+  return lines.join('\n') + (totalPrice ? `\n\n合計：$${totalPrice}` : '');
+}
