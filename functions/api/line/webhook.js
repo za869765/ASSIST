@@ -7,7 +7,7 @@ import {
   verifyLineSignature, lineReply, isAdmin, isWakeword, stripWakeword,
   getGroupMemberProfile, getUserProfile,
 } from './_lib.js';
-import { geminiChat, geminiExtract } from './_gemini.js';
+import { geminiChat, geminiExtract, geminiIntent } from './_gemini.js';
 import {
   findOpenTask, createTask, closeTask, upsertEntry, listEntries, summarizeEntries,
 } from './_tasks.js';
@@ -77,70 +77,67 @@ async function handleEvent(ev, env) {
     return;
   }
 
-  // ─── M3 任務指令 ───
-  // 開始統計 XX
-  const mStart =
-    cmd.match(/^(?:開始|開)?\s*(?:統計|算)\s*(?:一下)?\s*(.+)$/) ||
-    cmd.match(/^(?:開始|開)\s+(.+)$/);
-  if (mStart) {
-    const taskName = mStart[1].trim();
-    if (!groupId) {
-      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-        { type: 'text', text: '統計任務請在群組使用' },
-      ]);
-      return;
-    }
-    const existing = await findOpenTask(env.DB, groupId);
-    if (existing) {
-      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-        { type: 'text', text: `已有進行中任務：${existing.task_name}` },
-      ]);
-      return;
-    }
-    await createTask(env.DB, { groupId, taskName, startedBy: userId });
-    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-      { type: 'text', text: `📝 開始統計「${taskName}」，請大家直接回覆，「秘書 結單」時彙總` },
-    ]);
-    return;
-  }
-
-  if (groupId) {
-
-    // 進度 / 目前
-    if (/^(進度|目前|狀態)$/.test(cmd)) {
-      const task = await findOpenTask(env.DB, groupId);
-      if (!task) {
-        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '目前沒有進行中的任務' }]);
-        return;
-      }
-      const entries = await listEntries(env.DB, task.id);
-      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-        { type: 'text', text: `📊 任務「${task.task_name}」目前 ${entries.length} 筆\n\n${summarizeEntries(entries)}` },
-      ]);
-      return;
-    }
-
-    // 結單 / 結束
-    if (/^(結束|結單|關閉|收單)(統計)?$/.test(cmd)) {
-      const task = await findOpenTask(env.DB, groupId);
-      if (!task) {
-        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '目前沒有進行中的任務' }]);
-        return;
-      }
-      const entries = await listEntries(env.DB, task.id);
-      await closeTask(env.DB, task.id);
-      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-        { type: 'text', text: `✅ 任務「${task.task_name}」已結單（共 ${entries.length} 筆）\n\n${summarizeEntries(entries)}` },
-      ]);
-      return;
-    }
-  }
-
-  // ─── 閒聊（Gemini 日常回應）───
   if (!cmd) {
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '在的，有什麼事嗎？' }]);
     return;
   }
+
+  // ─── Gemini 意圖辨識（start_task / progress / close / chat）───
+  const { intent, task_name: taskNameRaw, confidence } = await geminiIntent(env.GEMINI_API_KEY, cmd);
+  // confidence 不是 high 就當 chat 處理（避免誤判啟動任務）
+  const doIt = confidence === 'high' || confidence === 'mid';
+
+  if (doIt && intent === 'start_task') {
+    const taskName = (taskNameRaw || '').trim();
+    if (!taskName) {
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '要統計什麼主題？' }]);
+      return;
+    }
+    if (!groupId) {
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '統計任務請在群組使用' }]);
+      return;
+    }
+    const existing = await findOpenTask(env.DB, groupId);
+    if (existing) {
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `已有進行中任務：${existing.task_name}` }]);
+      return;
+    }
+    await createTask(env.DB, { groupId, taskName, startedBy: userId });
+    const hint = confidence === 'mid' ? '\n(若不是這個意思，請再講清楚或「秘書 結單」取消)' : '';
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+      { type: 'text', text: `📝 開始統計「${taskName}」，請大家直接回覆${hint}` },
+    ]);
+    return;
+  }
+
+  if (doIt && intent === 'progress' && groupId) {
+    const task = await findOpenTask(env.DB, groupId);
+    if (!task) {
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '目前沒有進行中的任務' }]);
+      return;
+    }
+    const entries = await listEntries(env.DB, task.id);
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+      { type: 'text', text: `📊 任務「${task.task_name}」目前 ${entries.length} 筆\n\n${summarizeEntries(entries)}` },
+    ]);
+    return;
+  }
+
+  if (doIt && intent === 'close' && groupId) {
+    const task = await findOpenTask(env.DB, groupId);
+    if (!task) {
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '目前沒有進行中的任務' }]);
+      return;
+    }
+    const entries = await listEntries(env.DB, task.id);
+    await closeTask(env.DB, task.id);
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+      { type: 'text', text: `✅ 任務「${task.task_name}」已結單（共 ${entries.length} 筆）\n\n${summarizeEntries(entries)}` },
+    ]);
+    return;
+  }
+
+  // ─── 其他一律閒聊 ───
   const reply = await geminiChat(env.GEMINI_API_KEY, cmd);
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
 }
