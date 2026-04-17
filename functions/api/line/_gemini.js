@@ -97,14 +97,13 @@ export async function geminiChat(apiKey, userText) {
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: userText }] }],
       systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-      tools: [{ google_search: {} }],
       generationConfig: { temperature: 0.95, topP: 0.95, maxOutputTokens: 1024 },
     }),
   });
   if (!r.ok) {
     const err = await r.text().catch(() => '');
     console.error('[gemini] http', r.status, err);
-    return `⚠️ Gemini 錯誤（${r.status}）`;
+    return `⚠️ Gemini 錯誤（${r.status}）\n${err.slice(0, 300)}`;
   }
   const j = await r.json();
   const parts = j?.candidates?.[0]?.content?.parts || [];
