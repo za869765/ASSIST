@@ -77,27 +77,32 @@ async function handleEvent(ev, env) {
     return;
   }
 
-  // ─── M3 任務指令（只在群組有效）───
-  if (groupId) {
-    // 開始統計 XX
-    const mStart = cmd.match(/^(?:開始|開|開啟)\s*(?:統計)?\s*(.+)$/);
-    if (mStart && /統計|^開/.test(cmd)) {
-      const taskName = mStart[1].trim();
-      if (taskName) {
-        const existing = await findOpenTask(env.DB, groupId);
-        if (existing) {
-          await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-            { type: 'text', text: `⚠️ 已有進行中任務：${existing.task_name}\n先「秘書 結單」再開新的` },
-          ]);
-          return;
-        }
-        await createTask(env.DB, { groupId, taskName, startedBy: userId });
-        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-          { type: 'text', text: `📝 開始統計「${taskName}」\n請大家直接在群組回覆內容（品項/備註/價格）\n我會自動收集，「秘書 結單」時彙總` },
-        ]);
-        return;
-      }
+  // ─── M3 任務指令 ───
+  // 開始統計 XX
+  const mStart = cmd.match(/統計\s*(.+)$/);
+  if (mStart) {
+    const taskName = mStart[1].trim();
+    if (!groupId) {
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+        { type: 'text', text: '統計任務請在群組使用' },
+      ]);
+      return;
     }
+    const existing = await findOpenTask(env.DB, groupId);
+    if (existing) {
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+        { type: 'text', text: `已有進行中任務：${existing.task_name}` },
+      ]);
+      return;
+    }
+    await createTask(env.DB, { groupId, taskName, startedBy: userId });
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+      { type: 'text', text: `📝 開始統計「${taskName}」，請大家直接回覆，「秘書 結單」時彙總` },
+    ]);
+    return;
+  }
+
+  if (groupId) {
 
     // 進度 / 目前
     if (/^(進度|目前|狀態)$/.test(cmd)) {
