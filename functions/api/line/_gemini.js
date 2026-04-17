@@ -32,6 +32,11 @@ export async function geminiIntent(apiKey, text) {
 - "mid"：語意上接近但有模糊空間
 - "low"：不確定（當 chat 處理）
 
+task_name 規則：
+- start_task：主題（飲料、便當、晚餐…）
+- progress / close：若句中有提到特定主題（例「飲料進度」「便當結單」）也填入 task_name，當作要查/結的對象提示；沒提到就 null
+- chat：null
+
 嚴格回傳 JSON，不要多餘文字：
 {"intent":"start_task"|"progress"|"close"|"chat","task_name":string|null,"confidence":"high"|"mid"|"low"}`;
   const r = await fetch(`${ENDPOINT}?key=${apiKey}`, {
@@ -51,6 +56,39 @@ export async function geminiIntent(apiKey, text) {
   const j = await r.json();
   const txt = j?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
   try { return JSON.parse(txt); } catch { return { intent: 'chat' }; }
+}
+
+// 多個並行任務時：判斷此訊息屬於哪一個任務
+// taskNames: string[]（例：["飲料", "便當"]）
+// 回傳 { task_name: string|null, confidence: 'high'|'mid'|'low' }
+export async function geminiClassifyTask(apiKey, taskNames, text) {
+  if (!apiKey || !taskNames?.length) return { task_name: null, confidence: 'low' };
+  const sys = `目前同一群組有多個進行中的統計任務：${JSON.stringify(taskNames)}。
+判斷這則訊息是屬於「哪一個」任務，或根本不屬於任何一個。
+例如任務有 ["飲料","便當"]：
+- 「紅茶拿鐵微糖少冰」→ 飲料
+- 「排骨便當 葷的」→ 便當
+- 「我要一杯珍奶 + 雞腿便當」→ 可能同時屬兩個（挑最主要的，或 low confidence）
+- 「哈哈」→ null
+
+嚴格 JSON：{"task_name":string|null,"confidence":"high"|"mid"|"low"}`;
+  const r = await fetch(`${ENDPOINT}?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text }] }],
+      systemInstruction: { parts: [{ text: sys }] },
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 64,
+        responseMimeType: 'application/json',
+      },
+    }),
+  });
+  if (!r.ok) { console.error('[classify] http', r.status); return { task_name: null, confidence: 'low' }; }
+  const j = await r.json();
+  const txt = j?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
+  try { return JSON.parse(txt); } catch { return { task_name: null, confidence: 'low' }; }
 }
 
 // 任務模式下，從使用者訊息抽出結構化欄位

@@ -10,6 +10,27 @@ export async function findOpenTask(DB, groupId) {
   return r || null;
 }
 
+export async function findOpenTasks(DB, groupId) {
+  if (!DB || !groupId) return [];
+  const r = await DB.prepare(
+    `SELECT id, task_name, mode, started_by, started_at
+       FROM tasks WHERE group_id = ? AND status = 'open'
+       ORDER BY id DESC`
+  ).bind(groupId).all();
+  return r.results || [];
+}
+
+export function matchTaskByHint(tasks, hint) {
+  if (!hint) return null;
+  const h = hint.trim();
+  // exact
+  const exact = tasks.find(t => t.task_name === h);
+  if (exact) return exact;
+  // contains
+  const partial = tasks.find(t => t.task_name.includes(h) || h.includes(t.task_name));
+  return partial || null;
+}
+
 export async function createTask(DB, { groupId, taskName, startedBy }) {
   const r = await DB.prepare(
     `INSERT INTO tasks (group_id, task_name, started_by) VALUES (?, ?, ?)`

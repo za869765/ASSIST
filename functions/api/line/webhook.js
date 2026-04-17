@@ -7,9 +7,10 @@ import {
   verifyLineSignature, lineReply, isAdmin, isWakeword, stripWakeword,
   getGroupMemberProfile, getUserProfile,
 } from './_lib.js';
-import { geminiChat, geminiExtract, geminiIntent } from './_gemini.js';
+import { geminiChat, geminiExtract, geminiIntent, geminiClassifyTask } from './_gemini.js';
 import {
-  findOpenTask, createTask, closeTask, upsertEntry, listEntries, summarizeEntries,
+  findOpenTask, findOpenTasks, matchTaskByHint,
+  createTask, closeTask, upsertEntry, listEntries, summarizeEntries,
 } from './_tasks.js';
 
 export async function onRequestPost(context) {
@@ -48,9 +49,18 @@ async function handleEvent(ev, env) {
   // ─── 非喚醒訊息：只有群組 + 該群有 open task 時收集 ───
   if (!hasWake) {
     if (!groupId) return;
-    const task = await findOpenTask(env.DB, groupId);
-    if (!task) return;
-    await collectEntry(env, task, userId, text, replyToken);
+    const tasks = await findOpenTasks(env.DB, groupId);
+    if (!tasks.length) return;
+    let target = tasks[0];
+    if (tasks.length > 1) {
+      const names = tasks.map(t => t.task_name);
+      const { task_name, confidence } = await geminiClassifyTask(env.GEMINI_API_KEY, names, text);
+      if (!task_name || confidence === 'low') return; // 不屬於任何一個就靜默
+      const picked = matchTaskByHint(tasks, task_name);
+      if (!picked) return;
+      target = picked;
+    }
+    await collectEntry(env, target, userId, text, replyToken);
     return;
   }
 
@@ -82,8 +92,16 @@ async function handleEvent(ev, env) {
     return;
   }
 
+  // 短關鍵字 fast-path（不用跑 Gemini）
+  const cmdShort = cmd.replace(/[?？!！。.\s]/g, '');
+  let fast = null;
+  if (/^(進度|目前|狀態|現況|收到幾筆|幾筆了)$/.test(cmdShort)) fast = { intent: 'progress' };
+  else if (/^(結單|結束|關閉|收單|結束統計|結單吧|關閉統計)$/.test(cmdShort)) fast = { intent: 'close' };
+
   // ─── Gemini 意圖辨識（start_task / progress / close / chat）───
-  const { intent, task_name: taskNameRaw, confidence } = await geminiIntent(env.GEMINI_API_KEY, cmd);
+  const { intent, task_name: taskNameRaw, confidence } =
+    fast ? { ...fast, confidence: 'high', task_name: null }
+         : await geminiIntent(env.GEMINI_API_KEY, cmd);
   // confidence 不是 high 就當 chat 處理（避免誤判啟動任務）
   const doIt = confidence === 'high' || confidence === 'mid';
 
@@ -97,42 +115,64 @@ async function handleEvent(ev, env) {
       await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '統計任務請在群組使用' }]);
       return;
     }
-    const existing = await findOpenTask(env.DB, groupId);
-    if (existing) {
-      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `已有進行中任務：${existing.task_name}` }]);
+    const openTasks = await findOpenTasks(env.DB, groupId);
+    const dup = openTasks.find(t => t.task_name === taskName);
+    if (dup) {
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `「${taskName}」已經在進行中了` }]);
       return;
     }
     await createTask(env.DB, { groupId, taskName, startedBy: userId });
+    const sibling = openTasks.length
+      ? `\n(同時進行中：${openTasks.map(t => t.task_name).join('、')})` : '';
     const hint = confidence === 'mid' ? '\n(若不是這個意思，請再講清楚或「秘書 結單」取消)' : '';
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-      { type: 'text', text: `📝 開始統計「${taskName}」，請大家直接回覆${hint}` },
+      { type: 'text', text: `📝 開始統計「${taskName}」，請大家直接回覆${sibling}${hint}` },
     ]);
     return;
   }
 
   if (doIt && intent === 'progress' && groupId) {
-    const task = await findOpenTask(env.DB, groupId);
-    if (!task) {
+    const tasks = await findOpenTasks(env.DB, groupId);
+    if (!tasks.length) {
       await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '目前沒有進行中的任務' }]);
       return;
     }
-    const entries = await listEntries(env.DB, task.id);
+    const hinted = taskNameRaw ? matchTaskByHint(tasks, taskNameRaw) : null;
+    const picked = hinted || (tasks.length === 1 ? tasks[0] : null);
+    if (!picked) {
+      // 多任務且沒指名 → 全部摘要
+      const blocks = [];
+      for (const t of tasks) {
+        const entries = await listEntries(env.DB, t.id);
+        blocks.push(`📊「${t.task_name}」(${entries.length} 筆)\n${summarizeEntries(entries)}`);
+      }
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: blocks.join('\n\n———\n\n') }]);
+      return;
+    }
+    const entries = await listEntries(env.DB, picked.id);
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-      { type: 'text', text: `📊 任務「${task.task_name}」目前 ${entries.length} 筆\n\n${summarizeEntries(entries)}` },
+      { type: 'text', text: `📊 任務「${picked.task_name}」目前 ${entries.length} 筆\n\n${summarizeEntries(entries)}` },
     ]);
     return;
   }
 
   if (doIt && intent === 'close' && groupId) {
-    const task = await findOpenTask(env.DB, groupId);
-    if (!task) {
+    const tasks = await findOpenTasks(env.DB, groupId);
+    if (!tasks.length) {
       await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '目前沒有進行中的任務' }]);
       return;
     }
-    const entries = await listEntries(env.DB, task.id);
-    await closeTask(env.DB, task.id);
+    const hinted = taskNameRaw ? matchTaskByHint(tasks, taskNameRaw) : null;
+    const picked = hinted || (tasks.length === 1 ? tasks[0] : null);
+    if (!picked) {
+      const names = tasks.map(t => `「${t.task_name}」`).join('、');
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `目前有多個任務：${names}\n請說「秘書 結單 飲料」之類指定要結哪個` }]);
+      return;
+    }
+    const entries = await listEntries(env.DB, picked.id);
+    await closeTask(env.DB, picked.id);
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-      { type: 'text', text: `✅ 任務「${task.task_name}」已結單（共 ${entries.length} 筆）\n\n${summarizeEntries(entries)}` },
+      { type: 'text', text: `✅ 任務「${picked.task_name}」已結單（共 ${entries.length} 筆）\n\n${summarizeEntries(entries)}` },
     ]);
     return;
   }
