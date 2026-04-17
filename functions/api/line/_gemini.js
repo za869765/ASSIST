@@ -56,17 +56,17 @@ export async function geminiIntent(apiKey, text) {
 // 任務模式下，從使用者訊息抽出結構化欄位
 // taskName 為任務主題（例：「飲料」「便當」「晚餐」）
 // 回傳 { data: { 品項, 甜度, 冰塊, ... }, note, price, confidence }
-export async function geminiExtract(apiKey, taskName, userText) {
+export async function geminiExtract(apiKey, taskName, userText, knownData = {}) {
   if (!apiKey) return null;
   const sys = `你是訂單解析助手。任務主題：「${taskName}」。
-從下列使用者訊息抽出結構化 JSON，鍵名用繁中（如 品項、甜度、冰塊、葷素、大小、備註、價格）。
-規則：
-- 只抽有把握的欄位，沒提到就不要編造
-- 價格抽成整數存 price
-- 特殊需求（不要香菜、過敏）放 note
-- confidence: "high" | "mid" | "low"
-嚴格回傳 JSON，不要多餘文字：
-{"data": {...}, "note": null|string, "price": null|number, "confidence": "high"|"mid"|"low"}`;
+從使用者訊息抽出結構化 JSON。先前已知資料：${JSON.stringify(knownData)}
+動態決定該任務需要的欄位（例：飲料 → 品項、甜度、冰塊、大小；便當 → 品項、葷素、份量）。
+只抽有把握的欄位，沒提到就不要編造。合併先前已知 + 這次新抽到的。
+判斷 missing：對此任務「應該要有」但目前仍缺的欄位名稱陣列。
+follow_up：若 missing 非空，提一句簡短的追問（繁中、口語、一行內），例：「甜度冰塊要什麼？」「葷的還是素的？」；若 missing 為空則 null。
+
+嚴格回傳 JSON：
+{"data":{...合併後...},"note":null|string,"price":null|number,"missing":string[],"follow_up":null|string,"confidence":"high"|"mid"|"low"}`;
   const r = await fetch(`${ENDPOINT}?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

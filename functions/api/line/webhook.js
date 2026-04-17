@@ -143,10 +143,19 @@ async function handleEvent(ev, env) {
 }
 
 async function collectEntry(env, task, userId, text, replyToken) {
-  const parsed = await geminiExtract(env.GEMINI_API_KEY, task.task_name, text);
+  // 讀該使用者目前已累積的資料，一起丟給 Gemini 合併判斷
+  const existing = await env.DB.prepare(
+    `SELECT data_json, note, price FROM entries WHERE task_id = ? AND user_id = ?`
+  ).bind(task.id, userId).first();
+  const known = existing ? {
+    ...JSON.parse(existing.data_json || '{}'),
+    ...(existing.note ? { 備註: existing.note } : {}),
+    ...(existing.price ? { 價格: existing.price } : {}),
+  } : {};
+
+  const parsed = await geminiExtract(env.GEMINI_API_KEY, task.task_name, text, known);
   if (!parsed || !parsed.data || Object.keys(parsed.data).length === 0) {
-    // 抽不到東西就不吵，靜默略過
-    return;
+    return; // 抽不到東西就靜默
   }
   await upsertEntry(env.DB, {
     taskId: task.id,
@@ -156,12 +165,18 @@ async function collectEntry(env, task, userId, text, replyToken) {
     price: parsed.price,
     rawText: text,
   });
+
   const parts = Object.values(parsed.data).filter(Boolean).join(' / ');
   const price = parsed.price ? ` $${parsed.price}` : '';
   const note = parsed.note ? `（${parsed.note}）` : '';
-  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-    { type: 'text', text: `✓ 已記錄：${parts}${price}${note}` },
-  ]);
+  const missing = Array.isArray(parsed.missing) ? parsed.missing : [];
+  const followUp = parsed.follow_up || '';
+
+  let reply = `✓ 已記錄：${parts}${price}${note}`;
+  if (missing.length && followUp) {
+    reply += `\n${followUp}`;
+  }
+  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
 }
 
 async function upsertMemberSighting(DB, userId, groupId, token) {
