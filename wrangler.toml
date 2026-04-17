@@ -7,4 +7,4 @@ pages_build_output_dir = "."
 [[d1_databases]]
 binding = "DB"
 database_name = "assist_db"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "2b3633de-caed-43e7-ba52-9f4acfb26908"
