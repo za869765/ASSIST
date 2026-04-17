@@ -18,7 +18,7 @@ Pages → Create → Connect to Git → 選 `za869765/ASSIST`
 - Environment variables（Production）：
   - `LINE_CHANNEL_SECRET` = （從 LINE Developers Console「小秘書」Channel 取得）
   - `LINE_CHANNEL_ACCESS_TOKEN` = （同上）
-  - `GEMINI_API_KEY` = AIzaSyBVMm-BCzetsL1BSe5bb9sTmssnsRSPhPQ
+  - `GEMINI_API_KEY` = （從 https://aistudio.google.com/app/apikey 建立；絕對不可 commit 到 repo）
   - `ADMIN_USER_IDS` = （您本人的 userId，先留空也可以，之後透過 `TAQ 小秘書 我的ID` 取得後再填）
 - Functions → D1 database bindings：
   - Variable name: `DB`
