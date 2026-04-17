@@ -61,14 +61,8 @@ async function handleEvent(ev, env) {
     return;
   }
 
-  // 非管理員下指令 → M1 先提示，M2 之後改為完全靜默
-  if (!admin) {
-    // 方便您測試權限；正式版會改成 return; 靜默
-    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-      { type: 'text', text: '🔒 此指令僅管理員可用' },
-    ]);
-    return;
-  }
+  // 非管理員下指令 → 完全靜默（不回應任何訊息）
+  if (!admin) return;
 
   // 管理員指令：ping（M1 測試用）
   if (/^ping$/i.test(cmd)) {
