@@ -819,8 +819,9 @@ async function applyDupDecision(env, taskId, userId, pending, additive, replyTok
     const finalKeys = new Set(Object.keys(finalData));
     const stillMissing = (Array.isArray(check?.missing) ? check.missing : [])
       .filter(k => !(finalKeys.has(k) || (syn[k] || []).some(s => finalKeys.has(s))));
-    if (stillMissing.length && check?.follow_up) {
-      followUp = `\n不過還差一點資訊～${check.follow_up}`;
+    if (stillMissing.length) {
+      const fu = check?.follow_up || `請問${stillMissing.join('、')}要什麼呢？`;
+      followUp = `\n不過還差一點資訊～${fu}`;
     }
   }
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `✓ ${who} ${verb} ${parts}${price}${tail}${followUp}` }]);

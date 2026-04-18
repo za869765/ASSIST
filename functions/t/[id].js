@@ -46,7 +46,7 @@ export async function onRequestGet({ params, request, env }) {
   const entries = entriesRow.results || [];
 
   const zonesRow = await env.DB.prepare(
-    `SELECT name, capacity, enabled FROM zones WHERE enabled = 1 ORDER BY sort_order ASC, name ASC`
+    `SELECT name, capacity, enabled, sort_order FROM zones WHERE enabled = 1 ORDER BY sort_order ASC, name ASC`
   ).all();
   const zones = zonesRow.results || [];
 
@@ -87,28 +87,29 @@ export async function onRequestGet({ params, request, env }) {
 <title>${esc(task.task_name)}｜即時點單</title>
 <style>
 :root { color-scheme: light dark; }
-body { font-family: -apple-system, 'PingFang TC', 'Microsoft JhengHei', sans-serif; max-width: 720px; margin: 0 auto; padding: 16px; line-height: 1.5; }
-h1 { margin: 0 0 4px; font-size: 20px; }
-.meta { color: #888; font-size: 13px; margin-bottom: 16px; }
-.pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+body { font-family: -apple-system, 'PingFang TC', 'Microsoft JhengHei', sans-serif; max-width: 440px; margin: 0 auto; padding: 10px 12px; line-height: 1.35; font-size: 13px; }
+.card { border: 1px solid #ddd4; border-radius: 8px; padding: 8px 12px; margin-top: 8px; background: #fff1; }
+.zone-code { color: #aaa; font-variant-numeric: tabular-nums; margin-right: 4px; font-weight: 400; font-size: 11px; }
+h1 { margin: 0 0 2px; font-size: 17px; }
+.meta { color: #888; font-size: 11px; margin-bottom: 8px; }
+.pill { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 11px; }
 .pill.open { background: #2db87a; color: white; }
 .pill.closed { background: #888; color: white; }
-.pill.stat { background: #f0f0f044; color: #888; margin-left: 8px; }
-h2.zone { font-size: 14px; font-weight: 600; margin: 20px 0 6px; padding-bottom: 4px; border-bottom: 1px solid #ddd4; color: #2db87a; display: flex; justify-content: space-between; align-items: baseline; }
+h2.zone { font-size: 12px; font-weight: 600; margin: 8px 0 2px; padding: 2px 0; border-bottom: 1px solid #ddd4; color: #2db87a; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 h2.zone.none { color: #d4543a; }
-h2.zone small { color: #888; font-weight: normal; font-size: 12px; }
-ul { list-style: none; padding: 0; margin: 0; }
-li { display: grid; grid-template-columns: 90px 1fr 110px auto; gap: 8px; padding: 8px 0; border-bottom: 1px solid #eee2; align-items: center; }
-.who { font-weight: 600; }
-.body { word-break: break-all; }
-.price { color: #2db87a; font-variant-numeric: tabular-nums; text-align: right; }
-.empty-row { color: #bbb; font-style: italic; padding: 8px 0 8px 90px; }
-.zone-sel { padding: 3px 5px; font-size: 12px; border-radius: 4px; border: 1px solid #ccc4; background: #fff1; }
-.total { text-align: right; font-weight: 600; margin-top: 16px; font-size: 16px; }
-.tabs { display: flex; gap: 4px; margin: -4px 0 12px; border-bottom: 1px solid #ddd4; overflow-x: auto; }
-.tab { padding: 8px 14px; text-decoration: none; color: #888; border-bottom: 2px solid transparent; white-space: nowrap; font-size: 14px; }
+h2.zone.empty { color: #aaa; font-weight: 500; }
+h2.zone small { color: #888; font-weight: normal; font-size: 11px; }
+ul { list-style: none; padding: 0; margin: 0 0 4px; }
+li { display: grid; grid-template-columns: 70px 1fr auto auto; gap: 6px; padding: 3px 0 3px 6px; border-bottom: 1px solid #eee2; align-items: center; }
+.who { font-weight: 600; font-size: 12px; }
+.body { word-break: break-all; font-size: 12px; }
+.price { color: #2db87a; font-variant-numeric: tabular-nums; text-align: right; font-size: 12px; }
+.zone-sel { padding: 1px 3px; font-size: 10px; border-radius: 3px; border: 1px solid #ccc4; background: #fff1; }
+.total { text-align: right; font-weight: 600; margin-top: 10px; font-size: 14px; }
+.tabs { display: flex; gap: 2px; margin: -2px 0 8px; border-bottom: 1px solid #ddd4; overflow-x: auto; }
+.tab { padding: 5px 10px; text-decoration: none; color: #888; border-bottom: 2px solid transparent; white-space: nowrap; font-size: 12px; }
 .tab.active { color: inherit; border-bottom-color: #2db87a; font-weight: 600; }
-.admin-toggle { float: right; font-size: 12px; color: #888; }
+.admin-toggle { float: right; font-size: 11px; color: #888; }
 </style>
 </head>
 <body>
@@ -159,12 +160,12 @@ function render() {
     const capNote = !isUnassigned && g.zone.capacity > 0
       ? (g.list.length >= g.zone.capacity ? \`<small>✓ \${g.list.length}/\${g.zone.capacity}</small>\` : \`<small>\${g.list.length}/\${g.zone.capacity}</small>\`)
       : (!isUnassigned && g.zone.capacity === 0 ? \`<small>\${g.list.length} 人（不限）</small>\` : '');
-    const headerClass = isUnassigned ? 'zone none' : 'zone';
-    parts.push(\`<h2 class="\${headerClass}"><span>\${esc(g.zone.name)}\${isUnassigned ? ' ⚠️' : ''}</span>\${capNote}</h2>\`);
-    if (g.list.length === 0) {
-      parts.push('<div class="empty-row">(未填)</div>');
-      continue;
-    }
+    const headerClass = isUnassigned ? 'zone none' : (g.list.length === 0 ? 'zone empty' : 'zone');
+    const emptyTag = (!isUnassigned && g.list.length === 0) ? ' <span style="color:#bbb;font-style:italic;font-weight:400;">(未填)</span>' : '';
+    const so = +g.zone.sort_order;
+    const codeHtml = (so >= 100 && so < 1000) ? \`<span class="zone-code">\${String(so).padStart(4, '0')}</span>\` : '';
+    parts.push(\`<h2 class="\${headerClass}"><span>\${codeHtml}\${esc(g.zone.name)}\${isUnassigned ? ' ⚠️' : ''}\${emptyTag}</span>\${capNote}</h2>\`);
+    if (g.list.length === 0) continue;
     parts.push('<ul>' + g.list.map(e => {
       const price = e.price ? \`$\${e.price}\` : '';
       const noteShown = e.note && entryBody(e) !== '(未辨識)' ? \`（\${esc(e.note)}）\` : '';
