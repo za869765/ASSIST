@@ -1255,7 +1255,7 @@ async function tryProxyPerson(env, userId, text) {
     const re = new RegExp('^[\\s\\p{Extended_Pictographic}\\p{Emoji_Presentation}\\uFE0F\\u200D]*' +
       c.name.split('').map(ch => ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
         .join('[\\s\\p{Extended_Pictographic}\\p{Emoji_Presentation}\\uFE0F\\u200D]*') +
-      '[\\s:：,，、\\-+＋]*(.*)$', 'u');
+      '[\\s:：,，、]*(.*)$', 'u');
     const m = trimmed.match(re);
     const after = (m?.[1] || '').trim();
     if (after.length > 30) continue;
