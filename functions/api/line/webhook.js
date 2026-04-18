@@ -601,7 +601,11 @@ async function collectEntry(env, task, userId, text, replyToken) {
   if (existing && additive) {
     reply = `${name} 加點 ${parts}${price}${note}，是這樣嗎？`;
   } else if (existing && !additive && explicitReplace) {
-    reply = `✅ 已幫您換成 ${parts}${price}${note}`;
+    // 品項能代表葷素時，就省略「葷素」欄位避免重複
+    const dataForShow = { ...parsed.data };
+    if (dataForShow['品項'] && /葷食|素食/.test(dataForShow['品項'])) delete dataForShow['葷素'];
+    const showParts = Object.values(dataForShow).filter(Boolean).join('/');
+    reply = `✅ 已幫 ${name} 換成 ${showParts}${price}${note}`;
   } else if (existing && !additive) {
     const tail = oldItemForReport ? `（原「${oldItemForReport}」已取消）` : '';
     reply = `${name} 改為 ${parts}${price}${note}${tail}，是這樣嗎？`;
