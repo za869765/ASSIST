@@ -234,6 +234,16 @@ async function collectEntry(env, task, userId, text, replyToken) {
     ...(existing.price ? { 價格: existing.price } : {}),
   } : {};
 
+  // 純確認詞（對/沒錯/OK/嗯/好）：若已有紀錄 → 直接靜默帶過（原記錄保留）
+  if (existing && /^[\s]*(對|對阿|對啊|沒錯|是|是的|好|好的|OK|ok|嗯|Y|y)[\s!?！？。.~～]*$/.test(text)) {
+    return;
+  }
+  // 純否認詞（不對/錯了）：提示重說
+  if (existing && /^[\s]*(不對|錯了|不是|錯|不對啦)[\s!?！？。.~～]*$/.test(text)) {
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '好的，麻煩再講一次完整的訂單內容～' }]);
+    return;
+  }
+
   const parsed = await geminiExtract(env.GEMINI_API_KEY, task.task_name, text, known);
   if (parsed?._error) {
     console.error('[extract error]', parsed._error);
@@ -264,10 +274,14 @@ async function collectEntry(env, task, userId, text, replyToken) {
   // 已點過再講話：預設視為「改單」覆蓋；只有明確「加點字眼」才累加
   // （已點的狀態通常是修正/改口/刪除，不是加點，不反問）
   let additive = false;
+  let oldItemForReport = '';
   if (existing) {
     const intent = parsed.dup_intent;
     const conf = typeof parsed.dup_confidence === 'number' ? parsed.dup_confidence : 0;
     additive = (intent === 'add' && conf >= 70);
+    if (!additive) {
+      oldItemForReport = Object.values(JSON.parse(existing.data_json || '{}')).filter(Boolean).join('/');
+    }
   }
 
   await upsertEntry(env.DB, {
@@ -291,7 +305,15 @@ async function collectEntry(env, task, userId, text, replyToken) {
   ).bind(userId).first();
   const name = (m?.real_name || m?.line_display || userId.slice(0, 6));
 
-  let reply = `${name} ${parts}${price}${note}`;
+  let reply;
+  if (existing && additive) {
+    reply = `${name} 加點 ${parts}${price}${note}，是這樣嗎？`;
+  } else if (existing && !additive) {
+    const tail = oldItemForReport ? `（原「${oldItemForReport}」已取消）` : '';
+    reply = `${name} 改為 ${parts}${price}${note}${tail}，是這樣嗎？`;
+  } else {
+    reply = `${name} ${parts}${price}${note}`;
+  }
   if (missing.length && followUp) {
     reply += `\n${followUp}`;
   }
