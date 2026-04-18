@@ -35,16 +35,15 @@ small.capnote { color: #888; margin-left: 4px; }
 </head>
 <body>
 <h1>分區設定</h1>
-<div class="hint">這份設定為全域共用，所有群組 / 任務都會參照。capacity：0 = 不限人數、其他數字 = 限制人數。</div>
+<div class="hint">這份設定為全域共用，所有群組 / 任務都會參照。每區限 1 人，檢驗中心不限。</div>
 
 <h2>① 區清單</h2>
 <table id="zones">
-  <thead><tr><th style="width:30px"></th><th>名稱</th><th class="center" style="width:100px">啟用</th><th class="center" style="width:100px">capacity</th></tr></thead>
+  <thead><tr><th style="width:30px"></th><th>名稱</th><th class="center" style="width:100px">啟用</th></tr></thead>
   <tbody></tbody>
 </table>
 <div class="add">
   <input id="newZone" placeholder="新增自訂區名（例：市政府、消防局）">
-  <input id="newCap" type="number" min="0" value="1" style="width:70px" title="capacity">
   <button onclick="addZone()">➕ 新增</button>
 </div>
 <div class="toolbar">

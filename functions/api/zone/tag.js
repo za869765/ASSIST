@@ -19,5 +19,31 @@ export async function onRequestPost({ request, env }) {
      ON CONFLICT(user_id) DO UPDATE SET zone = excluded.zone, last_seen_at = datetime('now')`
   ).bind(user_id, zone || null).run();
 
-  return Response.json({ ok: true, user_id, zone: zone || null });
+  // 衝突合併：真人被拉到某區時，若該區在進行中任務有 zone:<區> 代點紀錄
+  //   → 真人已有自己的 entry 在同任務 → 刪代點（真人優先）
+  //   → 真人沒 entry → 把代點 entry user_id 改為真人（保留點餐內容）
+  let merged = 0;
+  if (zone && !user_id.startsWith('zone:')) {
+    const proxyUid = `zone:${zone}`;
+    const openTasksRow = await env.DB.prepare(
+      `SELECT id FROM tasks WHERE status = 'open'`
+    ).all();
+    for (const t of (openTasksRow.results || [])) {
+      const proxyEntry = await env.DB.prepare(
+        `SELECT 1 FROM entries WHERE task_id = ? AND user_id = ?`
+      ).bind(t.id, proxyUid).first();
+      if (!proxyEntry) continue;
+      const realEntry = await env.DB.prepare(
+        `SELECT 1 FROM entries WHERE task_id = ? AND user_id = ?`
+      ).bind(t.id, user_id).first();
+      if (realEntry) {
+        await env.DB.prepare(`DELETE FROM entries WHERE task_id = ? AND user_id = ?`).bind(t.id, proxyUid).run();
+      } else {
+        await env.DB.prepare(`UPDATE entries SET user_id = ? WHERE task_id = ? AND user_id = ?`).bind(user_id, t.id, proxyUid).run();
+      }
+      merged++;
+    }
+  }
+
+  return Response.json({ ok: true, user_id, zone: zone || null, merged });
 }

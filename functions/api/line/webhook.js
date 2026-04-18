@@ -313,6 +313,13 @@ async function collectEntry(env, task, userId, text, replyToken) {
 
   // 管理員代點：「幫南區點素食便當」「永康要一個排骨飯」等，把名字記成該區
   const proxy = await tryProxyZone(env, userId, text);
+  if (proxy?.multi) {
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+      type: 'text',
+      text: `偵測到多區（${proxy.multi.join('、')}），請分開一句一區代點，例：\n「${proxy.multi[0]}點素食便當」\n「${proxy.multi[1]}點排骨飯」`,
+    }]);
+    return;
+  }
   if (proxy) {
     userId = proxy.userId;
     text = proxy.text;
@@ -923,16 +930,38 @@ async function tryProxyZone(env, userId, text) {
   const aliases = enabledZones.flatMap(z => z.endsWith('區') ? [z, z.slice(0, -1)] : [z]);
   const all = [...new Set([...aliases, ...memZones])].sort((a, b) => b.length - a.length);
 
+  const canonicalize = (name) =>
+    enabledZones.find(n => n === name) ||
+    enabledZones.find(n => n === name + '區') ||
+    memZones.find(n => n === name) || null;
+
+  // 多區偵測：文字中出現 ≥2 個合法區名 → 拆成多筆
+  const foundCanon = [];
+  for (const z of all) {
+    const canon = canonicalize(z);
+    if (!canon || foundCanon.includes(canon)) continue;
+    if (text.includes(z)) foundCanon.push(canon);
+  }
+  if (foundCanon.length >= 2) {
+    // 多區代點：不建 member row，回報給 caller 讓他提示使用者分開喊
+    return { multi: foundCanon };
+  }
+
   let zoneName = null;
   let stripped = text;
 
-  // 模式 1：幫/替/代/把/為 + <任意名稱> + 點/要/...
+  // 模式 1：幫/替/代/把/為 + <任意名稱> + 點/要/... — 必須是合法區名
   const m1 = text.match(/(?:幫|替|代|把|為)\s*([^\s，,。\.]+?)(?=\s*(?:點|要|來|需要|一個|一份|一杯|一碗|想|吃|喝))/);
   if (m1) {
-    zoneName = m1[1].trim();
-    stripped = text.replace(m1[0], '').trim();
-  } else {
-    // 模式 2：直接出現已知名稱 + 點/要
+    const candidate = m1[1].trim();
+    const canon = canonicalize(candidate);
+    if (canon) {
+      zoneName = canon;
+      stripped = text.replace(m1[0], '').trim();
+    }
+  }
+  if (!zoneName) {
+    // 模式 2：直接出現已知名稱 + 點/要/的/一個
     for (const z of all) {
       const idx = text.indexOf(z);
       if (idx < 0) continue;
@@ -940,24 +969,24 @@ async function tryProxyZone(env, userId, text) {
       const before = text.slice(0, idx);
       if (/^\s*(?:點|要|來|需要|一個|一份|一杯|一碗|的)/.test(after)
           || /(?:幫|替|代|把|為)\s*$/.test(before)) {
-        zoneName = z;
-        stripped = (before + after.replace(/^\s*(?:點|要|來|需要|的)/, '')).replace(/^(?:幫|替|代|把|為)\s*/, '').trim();
-        break;
+        const canon = canonicalize(z);
+        if (canon) {
+          zoneName = canon;
+          stripped = (before + after.replace(/^\s*(?:點|要|來|需要|的)/, '')).replace(/^(?:幫|替|代|把|為)\s*/, '').trim();
+          break;
+        }
       }
     }
   }
 
-  if (!zoneName || zoneName.length < 1 || zoneName.length > 10) return null;
+  if (!zoneName) return null;
 
-  // 短別名 → 正規化為 zones 表中的完整名稱（「新化」→「新化區」）
-  const canonical = enabledZones.find(n => n === zoneName) || enabledZones.find(n => n === zoneName + '區') || zoneName;
-
-  const synthId = `zone:${canonical}`;
+  const synthId = `zone:${zoneName}`;
   await env.DB.prepare(
     `INSERT INTO members (user_id, real_name, zone, bound_at, last_seen_at)
      VALUES (?, ?, ?, datetime('now'), datetime('now'))
      ON CONFLICT(user_id) DO UPDATE SET last_seen_at = datetime('now')`
-  ).bind(synthId, canonical, canonical).run();
+  ).bind(synthId, zoneName, zoneName).run();
 
   return { userId: synthId, text: stripped || text };
 }

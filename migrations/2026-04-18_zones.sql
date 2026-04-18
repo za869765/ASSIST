@@ -1,4 +1,4 @@
--- 2026-04-18：新增 zones 表 + 種子資料（36 區扣安平 + 檢驗中心）
+-- 2026-04-18：新增 zones 表 + 種子資料（36 區扣安平 + 衛生局）
 CREATE TABLE IF NOT EXISTS zones (
   name         TEXT PRIMARY KEY,
   capacity     INTEGER NOT NULL DEFAULT 1,
@@ -50,6 +50,6 @@ INSERT OR IGNORE INTO zones (name, capacity, enabled, sort_order) VALUES
   ('新市區', 1, 1, 49),
   ('安定區', 1, 1, 50);
 
--- 單位（檢驗中心 = 不限）
+-- 單位（衛生局 = 不限）
 INSERT OR IGNORE INTO zones (name, capacity, enabled, sort_order) VALUES
-  ('檢驗中心', 0, 1, 100);
+  ('衛生局', 0, 1, 100);
