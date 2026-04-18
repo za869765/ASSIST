@@ -340,7 +340,7 @@ async function handleNonsense(env, task, userId, text, replyToken, teaseFromAI) 
     if (nm) adminNames.push(nm);
   }
   const adminTag = adminNames.length ? adminNames.map(n => `@${n}`).join(' ') + ' ' : '';
-  const reply = `${adminTag}${who} 最後一次點了「${text}」，確定要幫他點這個嗎？\n回「秘書 裁定 ${who} 收/問/略」決定`;
+  const reply = `${adminTag}${who} 最後一次點了「${text}」，確定要幫他點這個嗎？`;
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
 }
 
