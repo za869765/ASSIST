@@ -1765,7 +1765,7 @@ async function upsertMemberSighting(DB, userId, groupId, token) {
   }
 }
 
-// 菜單照片訊息建構器（每 task 60 秒 rate limit）
+// 菜單提示訊息（以網址取代圖片 PO，避免多則訊息；每 task 60 秒冷卻）
 async function maybeMenuMessages(env, task) {
   if (!task?.menu_json) return [];
   const DB = env.DB;
@@ -1779,21 +1779,20 @@ async function maybeMenuMessages(env, task) {
     const last = Date.parse(String(r.pushed_at).replace(' ', 'T') + 'Z');
     if (!isNaN(last) && Date.now() - last < 60_000) return [];
   }
-  const photos = await DB.prepare(
-    `SELECT id FROM menu_photos WHERE task_id = ? ORDER BY created_at`
-  ).bind(task.id).all();
-  const list = (photos.results || []).slice(0, 4);
-  if (!list.length) return [];
+  const photoCount = await DB.prepare(
+    `SELECT COUNT(*) AS c FROM menu_photos WHERE task_id = ?`
+  ).bind(task.id).first();
+  if (!photoCount?.c) return [];
   await DB.prepare(
     `INSERT INTO menu_push_log (task_id, pushed_at) VALUES (?, datetime('now'))
      ON CONFLICT(task_id) DO UPDATE SET pushed_at = excluded.pushed_at`
   ).bind(task.id).run();
   const host = env.PUBLIC_HOST || 'https://assist-gcl.pages.dev';
-  return list.map(p => ({
-    type: 'image',
-    originalContentUrl: `${host}/api/menu/${task.id}/file/${p.id}`,
-    previewImageUrl: `${host}/api/menu/${task.id}/file/${p.id}`,
-  }));
+  const url = `${host}/t/${task.url_slug || task.id}`;
+  return [{
+    type: 'text',
+    text: `📷 ${task.task_name} 菜單：${url}`,
+  }];
 }
 
 // 模糊匹配菜單品項
