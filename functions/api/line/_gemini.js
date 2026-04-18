@@ -129,7 +129,7 @@ task_name 必須是 ${JSON.stringify(taskNames)} 其中之一。`;
 // 任務模式下，從使用者訊息抽出結構化欄位
 // taskName 為任務主題（例：「飲料」「便當」「晚餐」）
 // 回傳 { data: { 品項, 甜度, 冰塊, ... }, note, price, confidence }
-export async function geminiExtract(apiKey, taskName, userText, knownData = {}, itemNoFields = {}) {
+export async function geminiExtract(apiKey, taskName, userText, knownData = {}, itemNoFields = {}, menuItems = null) {
   if (!apiKey) return null;
   const hasKnown = knownData && Object.keys(knownData).length > 0;
   const noFieldsJson = JSON.stringify(itemNoFields || {});
@@ -137,8 +137,15 @@ export async function geminiExtract(apiKey, taskName, userText, knownData = {}, 
     ? `\n\n⚠️ 品項不適用欄位知識庫（跨任務累積學習；若本次品項在此清單內，該欄位「不要列進 missing、不要追問、也不要強填」，直接視為不存在）：${noFieldsJson}
      同系列品項可延伸：例如「冬瓜青茶」若標記「甜度」不適用，則「冬瓜檸檬/冬瓜鮮奶/冬瓜茶」等冬瓜系列也視同甜度不適用。`
     : '';
+  const menuHint = (Array.isArray(menuItems) && menuItems.length)
+    ? `\n\n📋 本任務有菜單（柔性模式）。菜單品項清單：${JSON.stringify(menuItems.map(it => it.name))}
+      規則：
+      - 優先把 data.品項 填成菜單上的名稱；使用者若打錯字/簡稱/同音/近音 → 自動對應到菜單上最相近的名稱
+      - 若使用者講的跟菜單完全對不上（例如整個不同的品項），仍照使用者原話抽進 data.品項，但在 follow_up 加一句提醒：「菜單上沒看到「X」，您是要「候選名」嗎？或還是要「X」？」讓他決定
+      - 不要自己編造菜單外的選項`
+    : '';
   const sys = `你是訂單解析助手。任務主題：「${taskName}」。
-從使用者訊息抽出結構化 JSON。先前已知資料：${JSON.stringify(knownData)}${noFieldsHint}
+從使用者訊息抽出結構化 JSON。先前已知資料：${JSON.stringify(knownData)}${noFieldsHint}${menuHint}
 動態決定該任務需要的欄位（例：飲料 → 品項、甜度、冰塊、大小；便當 → 品項、葷素、份量）。
 只抽有把握的欄位，沒提到就不要編造。
 
@@ -277,4 +284,54 @@ export async function geminiChat(apiKey, userText) {
   const parts = j?.candidates?.[0]?.content?.parts || [];
   const text = parts.map(p => p.text || '').join('').trim();
   return text || '（沒有回應）';
+}
+
+// 菜單照片 OCR：用 Gemini Vision 抽出 [{name, price}] 陣列
+export async function geminiParseMenu(apiKey, imageBase64, mimeType) {
+  if (!apiKey) return { items: [], _error: 'no api key' };
+  const prompt = `這是一張餐廳菜單照片。請抽出所有可點的品項與價格，回傳 JSON。
+
+要求：
+- 只回傳 JSON，無其他文字
+- 格式：{"items": [{"name": "珍珠奶茶", "price": 50, "category": "飲料"}, ...]}
+- name：品項全名（保留原本用字）
+- price：整數台幣金額；看不到就給 null
+- category：飲料/主食/便當/小菜/加料 等可辨識的分類；沒辦法判斷就給 null
+- 若照片不是菜單或讀不出來，回 {"items": []}
+- 不要把「冰塊/甜度/大小」這類選項當成品項`;
+
+  const body = {
+    contents: [{
+      role: 'user',
+      parts: [
+        { text: prompt },
+        { inline_data: { mime_type: mimeType, data: imageBase64 } },
+      ],
+    }],
+    generationConfig: { responseMimeType: 'application/json', temperature: 0 },
+  };
+  const r = await fetch(`${ENDPOINT}?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const err = await r.text().catch(() => '');
+    console.error('[gemini menu] http', r.status, err);
+    return { items: [], _error: `${r.status} ${err.slice(0, 200)}` };
+  }
+  const j = await r.json();
+  const text = (j?.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
+  try {
+    const parsed = JSON.parse(text);
+    const items = Array.isArray(parsed?.items) ? parsed.items : [];
+    return { items: items.map(it => ({
+      name: String(it.name || '').trim(),
+      price: (it.price != null && !isNaN(+it.price)) ? +it.price : null,
+      category: it.category ? String(it.category).trim() : null,
+    })).filter(it => it.name) };
+  } catch (e) {
+    console.error('[gemini menu] parse fail', text.slice(0, 200));
+    return { items: [], _error: 'parse fail' };
+  }
 }

@@ -13,7 +13,7 @@ export async function findOpenTask(DB, groupId) {
 export async function findOpenTasks(DB, groupId) {
   if (!DB || !groupId) return [];
   const r = await DB.prepare(
-    `SELECT id, task_name, mode, started_by, started_at, url_slug
+    `SELECT id, task_name, mode, menu_json, started_by, started_at, url_slug
        FROM tasks WHERE group_id = ? AND status = 'open'
        ORDER BY id DESC`
   ).bind(groupId).all();
@@ -54,9 +54,19 @@ export async function createTask(DB, { groupId, taskName, startedBy }) {
   throw new Error('createTask: slug 衝突太多次');
 }
 
-export async function closeTask(DB, taskId) {
+export async function closeTask(DB, taskId, MENU_BUCKET = null) {
+  // 先清菜單照片（R2 + D1），避免累積到免費額度爆
+  if (MENU_BUCKET) {
+    const photos = await DB.prepare(
+      `SELECT id, r2_key FROM menu_photos WHERE task_id = ?`
+    ).bind(taskId).all();
+    for (const p of (photos.results || [])) {
+      try { await MENU_BUCKET.delete(p.r2_key); } catch (e) { console.error('[closeTask r2]', e); }
+    }
+  }
+  await DB.prepare(`DELETE FROM menu_photos WHERE task_id = ?`).bind(taskId).run();
   await DB.prepare(
-    `UPDATE tasks SET status = 'closed', closed_at = datetime('now') WHERE id = ?`
+    `UPDATE tasks SET status = 'closed', closed_at = datetime('now'), menu_json = NULL WHERE id = ?`
   ).bind(taskId).run();
 }
 

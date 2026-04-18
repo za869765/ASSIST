@@ -8,3 +8,8 @@ pages_build_output_dir = "."
 binding = "DB"
 database_name = "assist_db"
 database_id = "2b3633de-caed-43e7-ba52-9f4acfb26908"
+
+# R2 bucket binding — 菜單照片
+[[r2_buckets]]
+binding = "MENU_BUCKET"
+bucket_name = "assist-menus"

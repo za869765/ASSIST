@@ -435,7 +435,7 @@ async function doCloseTask(env, picked, replyToken) {
   await env.DB.prepare(`DELETE FROM pending_profanity WHERE task_id = ?`).bind(picked.id).run();
 
   const entries = await listEntries(env.DB, picked.id);
-  await closeTask(env.DB, picked.id);
+  await closeTask(env.DB, picked.id, env.MENU_BUCKET);
 
   const rows = buildSheetRows(picked.task_name, entries);
   const bytes = buildXLSX(picked.task_name.slice(0, 31) || 'sheet', rows);
@@ -678,7 +678,8 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
     if (!itemNoFields[r.item]) itemNoFields[r.item] = [];
     itemNoFields[r.item].push(r.field);
   }
-  const parsed = await geminiExtract(env.GEMINI_API_KEY, task.task_name, text, known, itemNoFields);
+  const menuItems = task.menu_json ? JSON.parse(task.menu_json) : null;
+  let parsed = await geminiExtract(env.GEMINI_API_KEY, task.task_name, text, known, itemNoFields, menuItems);
   if (parsed?._error) {
     console.error('[extract error]', parsed._error);
     return; // 靜默，不打擾群組

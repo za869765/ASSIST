@@ -128,6 +128,18 @@ CREATE TABLE IF NOT EXISTS pending_profanity (
   PRIMARY KEY (task_id, user_id)
 );
 
+-- 菜單照片（存 R2，這裡只記 metadata）
+CREATE TABLE IF NOT EXISTS menu_photos (
+  id           TEXT PRIMARY KEY,                 -- uuid 或時戳亂數
+  task_id      INTEGER NOT NULL,
+  r2_key       TEXT NOT NULL,                    -- R2 object key，例如 menu/{task_id}/{id}
+  mime         TEXT,
+  size         INTEGER,
+  items_json   TEXT,                             -- 這張照片 OCR 出的品項 JSON array
+  created_at   TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_menu_photos_task ON menu_photos(task_id);
+
 -- 品項不適用欄位（累積學習；例：珍奶沒有冰塊、素麵沒有葷素）
 CREATE TABLE IF NOT EXISTS item_no_fields (
   item         TEXT NOT NULL,

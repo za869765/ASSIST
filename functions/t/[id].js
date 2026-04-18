@@ -112,6 +112,21 @@ li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 3px
 .tab.active { color: #fff; background: #2db87a; border-color: #2db87a; }
 @media (prefers-color-scheme: dark) { .tab { background: #3a3a3a; color: #aaa; } }
 .admin-toggle { float: right; font-size: 11px; color: #888; }
+.menu-card { margin: 8px 0 10px; padding: 8px 10px; border: 1px dashed #ccc6; border-radius: 8px; background: #fff1; }
+.menu-card summary { cursor: pointer; font-weight: 600; font-size: 13px; color: #2e7fe6; user-select: none; }
+.menu-card .menu-thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.menu-card .thumb { position: relative; width: 68px; height: 68px; border-radius: 6px; overflow: hidden; background: #eee; border: 1px solid #ccc4; }
+.menu-card .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; }
+.menu-card .thumb button { position: absolute; top: 2px; right: 2px; background: rgba(0,0,0,.5); color: white; border: 0; border-radius: 50%; width: 18px; height: 18px; line-height: 18px; font-size: 11px; padding: 0; cursor: pointer; }
+.menu-card .upload-row { margin-top: 6px; display: flex; gap: 6px; align-items: center; }
+.menu-card .upload-row label { display: inline-block; padding: 4px 10px; border-radius: 6px; background: #2db87a; color: white; font-size: 12px; cursor: pointer; }
+.menu-card .upload-row label.busy { background: #888; pointer-events: none; }
+.menu-card .upload-row span { font-size: 11px; color: #888; }
+.menu-card .items-list { margin-top: 6px; font-size: 11px; color: #666; max-height: 110px; overflow-y: auto; }
+.menu-card .items-list span { display: inline-block; padding: 1px 6px; margin: 1px; background: #eef; border-radius: 10px; }
+@media (prefers-color-scheme: dark) { .menu-card .items-list span { background: #333; } }
+.menu-lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: flex; align-items: center; justify-content: center; z-index: 999; cursor: zoom-out; }
+.menu-lightbox img { max-width: 95vw; max-height: 95vh; }
 </style>
 </head>
 <body>
@@ -119,6 +134,16 @@ ${tabs}
 <h1>${esc(task.task_name)} <span class="pill ${closed ? 'closed' : 'open'}">${statusLabel}</span><a class="admin-toggle" href="/admin/zones" target="_blank">🔧 管理員窗口</a></h1>
 <div class="meta">開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}・<span id="statLine">—</span>${closed ? '' : '・每 5 秒自動更新'}</div>
 
+${closed ? '' : `<details class="menu-card" id="menuCard">
+  <summary>📷 菜單（<span id="menuCount">0</span> 張／品項 <span id="menuItemCount">0</span>）</summary>
+  <div class="menu-thumbs" id="menuThumbs"></div>
+  <div class="upload-row">
+    <label id="uploadLabel" for="menuFile">＋ 上傳菜單照</label>
+    <input type="file" id="menuFile" accept="image/*" multiple style="display:none">
+    <span id="uploadMsg">支援多張；任務結單後自動清除</span>
+  </div>
+  <div class="items-list" id="menuItems"></div>
+</details>`}
 <div id="board"></div>
 
 <script>
@@ -201,6 +226,78 @@ async function poll() {
 
 render();
 ${closed ? '' : 'setInterval(poll, 5000);'}
+
+${closed ? '' : `
+const TASK_ID = ${task.id};
+async function loadMenu() {
+  try {
+    const r = await fetch('/api/menu/' + TASK_ID);
+    if (!r.ok) return;
+    const j = await r.json();
+    const thumbs = document.getElementById('menuThumbs');
+    thumbs.innerHTML = (j.photos || []).map(p => \`
+      <div class="thumb" data-id="\${esc(p.id)}">
+        <img src="\${esc(p.url)}" alt="menu">
+        <button title="刪除" data-del="\${esc(p.id)}">×</button>
+      </div>\`).join('');
+    thumbs.querySelectorAll('img').forEach(img => img.addEventListener('click', () => openLightbox(img.src)));
+    thumbs.querySelectorAll('button[data-del]').forEach(b => b.addEventListener('click', (e) => {
+      e.stopPropagation(); deletePhoto(b.dataset.del);
+    }));
+    document.getElementById('menuCount').textContent = (j.photos || []).length;
+    document.getElementById('menuItemCount').textContent = (j.items || []).length;
+    document.getElementById('menuItems').innerHTML = (j.items || []).map(it => {
+      const price = it.price ? \` \$\${it.price}\` : '';
+      return \`<span>\${esc(it.name)}\${price}</span>\`;
+    }).join('');
+    if ((j.photos || []).length > 0) document.getElementById('menuCard').open = true;
+  } catch (e) { console.error(e); }
+}
+
+async function uploadFiles(files) {
+  const label = document.getElementById('uploadLabel');
+  const msg = document.getElementById('uploadMsg');
+  label.classList.add('busy'); label.textContent = '上傳中…';
+  let done = 0;
+  for (const f of files) {
+    msg.textContent = \`上傳 \${++done}/\${files.length} …\`;
+    const fd = new FormData(); fd.append('photo', f);
+    try {
+      const r = await fetch('/api/menu/' + TASK_ID, { method: 'POST', body: fd });
+      const j = await r.json();
+      if (!r.ok) msg.textContent = '失敗：' + (j.error || r.status);
+    } catch (e) { msg.textContent = '失敗：' + e.message; }
+  }
+  label.classList.remove('busy'); label.textContent = '＋ 上傳菜單照';
+  msg.textContent = '完成';
+  await loadMenu();
+  setTimeout(() => { msg.textContent = '支援多張；任務結單後自動清除'; }, 3000);
+}
+
+async function deletePhoto(id) {
+  if (!confirm('刪掉這張菜單照嗎？')) return;
+  try {
+    await fetch('/api/menu/' + TASK_ID, {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photoId: id }),
+    });
+    await loadMenu();
+  } catch (e) { alert('刪除失敗：' + e.message); }
+}
+
+function openLightbox(src) {
+  const d = document.createElement('div'); d.className = 'menu-lightbox';
+  d.innerHTML = '<img src="' + src + '">';
+  d.addEventListener('click', () => d.remove());
+  document.body.appendChild(d);
+}
+
+document.getElementById('menuFile').addEventListener('change', (e) => {
+  const files = [...e.target.files]; e.target.value = '';
+  if (files.length) uploadFiles(files);
+});
+loadMenu();
+`}
 </script>
 </body>
 </html>`;
