@@ -109,29 +109,91 @@ export function buildXLSX(sheetName, rows) {
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
 <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 </Relationships>`;
+  // 樣式索引：
+  //   1=預設(text)  2=標題(18pt 白字,深金底)  3=區塊標題(12pt 白字,深藍底)
+  //   4=表頭(粗體,淺青底,邊框)                5=資料列(邊框)
+  //   6=合計列(粗體,淺金底,邊框)
   const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 <numFmts count="1"><numFmt numFmtId="49" formatCode="@"/></numFmts>
-<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>
-<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
-<borders count="1"><border/></borders>
+<fonts count="5">
+<font><sz val="11"/><name val="Calibri"/></font>
+<font><sz val="18"/><b/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
+<font><sz val="12"/><b/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
+<font><sz val="11"/><b/><color rgb="FF1F2937"/><name val="Calibri"/></font>
+<font><sz val="11"/><b/><color rgb="FF78350F"/><name val="Calibri"/></font>
+</fonts>
+<fills count="6">
+<fill><patternFill patternType="none"/></fill>
+<fill><patternFill patternType="gray125"/></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFB8860B"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FF1F2937"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFCCFBF1"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFFEF3C7"/><bgColor indexed="64"/></patternFill></fill>
+</fills>
+<borders count="2">
+<border/>
+<border><left style="thin"><color rgb="FFB8B8B8"/></left><right style="thin"><color rgb="FFB8B8B8"/></right><top style="thin"><color rgb="FFB8B8B8"/></top><bottom style="thin"><color rgb="FFB8B8B8"/></bottom></border>
+</borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="2">
+<cellXfs count="7">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+<xf numFmtId="49" fontId="1" fillId="2" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+<xf numFmtId="49" fontId="2" fillId="3" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="49" fontId="3" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+<xf numFmtId="49" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="49" fontId="4" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
 </cellXfs>
 </styleSheet>`;
-  const sheetRows = rows.map((row, rIdx) => {
+
+  // 分類每一列的樣式
+  // 約定：
+  //   row[0] 以 '■' 或 '任務：' 開頭 → 視為「區塊／標題列」
+  //   緊跟在 '■' 列之後、且是多欄且無數字 → 視為「表頭列」
+  //   row[0] 為 '合計' → 合計列
+  //   其他有多欄內容 → 資料列
+  const classify = (row, idx, prevStyle) => {
+    const first = String(row[0] ?? '');
+    if (idx === 0 && first.startsWith('任務：')) return 2; // 主標題
+    if (first.startsWith('■')) return 3; // 區塊標題
+    if (first === '合計') return 6;
+    if (prevStyle === 3 && row.length > 1) return 4; // 表頭（區塊後第一列）
+    if (row.length > 1) return 5; // 資料
+    return 1;
+  };
+
+  // 估算欄寬
+  const colMax = [];
+  for (const row of rows) {
+    for (let i = 0; i < row.length; i++) {
+      const s = String(row[i] ?? '');
+      let w = 0;
+      for (const ch of s) w += ch.charCodeAt(0) > 127 ? 2 : 1;
+      if (w > (colMax[i] || 0)) colMax[i] = w;
+    }
+  }
+  const cols = colMax.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${Math.min(50, Math.max(8, w * 1.1 + 2))}" customWidth="1"/>`).join('');
+
+  let prevStyle = 0;
+  const sheetRowsArr = rows.map((row, rIdx) => {
+    const style = classify(row, rIdx, prevStyle);
+    prevStyle = style;
     const r = rIdx + 1;
+    const rowAttrs = style === 2 ? ` ht="28" customHeight="1"` : (style === 3 ? ` ht="22" customHeight="1"` : '');
     const cells = row.map((v, cIdx) => {
       const ref = `${colLetter(cIdx + 1)}${r}`;
       const text = xmlEscape(v == null ? '' : String(v));
-      return `<c r="${ref}" t="inlineStr" s="1"><is><t xml:space="preserve">${text}</t></is></c>`;
+      return `<c r="${ref}" t="inlineStr" s="${style}"><is><t xml:space="preserve">${text}</t></is></c>`;
     }).join('');
-    return `<row r="${r}">${cells}</row>`;
-  }).join('');
+    return `<row r="${r}"${rowAttrs}>${cells}</row>`;
+  });
+  const sheetRows = sheetRowsArr.join('');
+
+  // 凍結第 1 列（title）方便滾動
+  const frozen = `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`;
   const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${sheetRows}</sheetData></worksheet>`;
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${frozen}<cols>${cols}</cols><sheetData>${sheetRows}</sheetData></worksheet>`;
 
   return zipStore([
     { name: '[Content_Types].xml', data: enc.encode(contentTypes) },
