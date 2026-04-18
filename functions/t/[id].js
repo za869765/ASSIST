@@ -270,7 +270,17 @@ li:hover { background: #fff8; }
 
 /* ========== LUXE 主題疊加（參考 Claude Design：LUXE DINING） ========== */
 :root { --gold:#d4af37; --rose:#e8a8c8; --teal:#2dd4bf; --luxe-bg:#0f0f0f; --luxe-card:#1a1a1a; --luxe-text:#e8e8e8; }
-body.luxe { background: linear-gradient(135deg, var(--luxe-bg) 0%, #1a0f2e 100%); color: var(--luxe-text); min-height: 100vh; position: relative; }
+body.luxe.t-green  { --gold:#10b981; --rose:#34d399; --teal:#6ee7b7; --luxe-bg:#052e1c; --luxe-card:#064e3b; --luxe-text:#d1fae5; }
+body.luxe.t-purple { --gold:#a78bfa; --rose:#d8b4fe; --teal:#c4b5fd; --luxe-bg:#1e1b4b; --luxe-card:#312e81; --luxe-text:#e9d5ff; }
+body.luxe.t-red    { --gold:#ef4444; --rose:#fca5a5; --teal:#f87171; --luxe-bg:#450a0a; --luxe-card:#7f1d1d; --luxe-text:#fecaca; }
+body.luxe.t-blue   { --gold:#3b82f6; --rose:#60a5fa; --teal:#93c5fd; --luxe-bg:#0c2340; --luxe-card:#1e3a5f; --luxe-text:#dbeafe; }
+body.luxe.t-orange { --gold:#f97316; --rose:#fb923c; --teal:#fdba74; --luxe-bg:#431407; --luxe-card:#7c2d12; --luxe-text:#fed7aa; }
+body.luxe { background: linear-gradient(135deg, var(--luxe-bg) 0%, #1a0f2e 100%); color: var(--luxe-text); min-height: 100vh; position: relative; transition: background .4s; }
+body.luxe.t-green  { background: linear-gradient(135deg, var(--luxe-bg) 0%, #0a4030 100%); }
+body.luxe.t-purple { background: linear-gradient(135deg, var(--luxe-bg) 0%, #3b2a6e 100%); }
+body.luxe.t-red    { background: linear-gradient(135deg, var(--luxe-bg) 0%, #991b1b 100%); }
+body.luxe.t-blue   { background: linear-gradient(135deg, var(--luxe-bg) 0%, #1e3a5f 100%); }
+body.luxe.t-orange { background: linear-gradient(135deg, var(--luxe-bg) 0%, #9a3412 100%); }
 body.luxe .particles { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
 body.luxe .particle { position: absolute; width: 4px; height: 4px; background: var(--gold); border-radius: 50%; opacity: .3; animation: luxeFloat 20s infinite; }
 @keyframes luxeFloat { 0% { transform: translateY(0) translateX(0); opacity: 0; } 10%,90% { opacity: .3; } 100% { transform: translateY(-100vh) translateX(80px); opacity: 0; } }
@@ -320,9 +330,18 @@ body.luxe .item-chip.rec-hit .item-pick { color: #fff3c4 !important; text-shadow
 body.luxe .admin-banner { background: rgba(232,168,200,.15); border-color: var(--rose); color: var(--rose); }
 body.luxe .del-btn { background: transparent; border-color: var(--rose); color: var(--rose); }
 body.luxe .del-btn:hover { background: var(--rose); color: var(--luxe-bg); }
-/* 主題切換按鈕 */
+/* 主題切換按鈕（6 色） */
 .luxe-toggle { position: fixed; bottom: 20px; right: 20px; width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--gold); background: rgba(26,26,26,.85); color: var(--gold); font-size: 20px; cursor: pointer; z-index: 9999; box-shadow: 0 4px 16px rgba(0,0,0,.3); backdrop-filter: blur(4px); transition: transform .2s; }
 .luxe-toggle:hover { transform: scale(1.1) rotate(15deg); }
+.theme-switcher { position: fixed; bottom: 20px; left: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+.theme-switcher.hidden { display: none; }
+.theme-btn { width: 42px; height: 42px; border-radius: 50%; border: 2px solid rgba(255,255,255,.4); background: rgba(0,0,0,.5); color: #fff; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .2s; backdrop-filter: blur(6px); }
+.theme-btn:hover { transform: scale(1.15); }
+.theme-btn.active { border-color: #fff; box-shadow: 0 0 20px rgba(255,255,255,.6); transform: scale(1.1); }
+@media (max-width: 480px) {
+  .theme-switcher { bottom: 14px; left: 14px; gap: 6px; }
+  .theme-btn { width: 34px; height: 34px; font-size: 14px; }
+}
 /* 點單成功浮動 toast */
 .luxe-toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); background: linear-gradient(135deg, var(--gold), var(--rose)); color: white; padding: 1.2rem 2.4rem; border-radius: 50px; font-weight: 700; font-size: 16px; z-index: 10000; box-shadow: 0 10px 40px rgba(212,175,55,.6); pointer-events: none; animation: luxeToastFloat 1.4s ease-out forwards; }
 @keyframes luxeToastFloat { 0% { opacity: 0; transform: translate(-50%,-50%) scale(.6); } 15% { opacity: 1; transform: translate(-50%,-50%) scale(1); } 100% { opacity: 0; transform: translate(-50%,-180%) scale(1.1); } }
@@ -372,13 +391,31 @@ ${closed ? '' : `<div id="adminBanner" class="admin-banner" style="display:none"
 <div id="board"></div>
 <div class="particles" id="luxeParticles" style="display:none"></div>
 <button id="luxeToggle" class="luxe-toggle" title="切換 LUXE 主題">✨</button>
+<div class="theme-switcher hidden" id="themeSwitcher">
+  <button class="theme-btn active" data-t="" title="黑金" style="background:linear-gradient(135deg,#d4af37,#e8a8c8)">✨</button>
+  <button class="theme-btn" data-t="t-green" title="綠色清新" style="background:linear-gradient(135deg,#10b981,#6ee7b7)">🌿</button>
+  <button class="theme-btn" data-t="t-purple" title="紫色神秘" style="background:linear-gradient(135deg,#a78bfa,#d8b4fe)">💜</button>
+  <button class="theme-btn" data-t="t-red" title="紅色熱烈" style="background:linear-gradient(135deg,#ef4444,#fca5a5)">❤️</button>
+  <button class="theme-btn" data-t="t-blue" title="藍色冷調" style="background:linear-gradient(135deg,#3b82f6,#93c5fd)">💙</button>
+  <button class="theme-btn" data-t="t-orange" title="橙色溫暖" style="background:linear-gradient(135deg,#f97316,#fdba74)">🧡</button>
+</div>
 
 <script>
 const INITIAL = ${JSON.stringify(initData)};
 let state = INITIAL;
 
-// LUXE 主題切換（localStorage 記憶）
+// LUXE 主題切換（localStorage 記憶：開關 + 6 色）
 const LS_LUXE = 'ui:luxe';
+const LS_THEME = 'ui:luxe-theme';
+const THEMES = ['', 't-green', 't-purple', 't-red', 't-blue', 't-orange'];
+function applyTheme(name) {
+  THEMES.forEach(t => t && document.body.classList.remove(t));
+  if (name) document.body.classList.add(name);
+  document.querySelectorAll('.theme-btn').forEach(b => {
+    b.classList.toggle('active', (b.dataset.t || '') === (name || ''));
+  });
+  localStorage.setItem(LS_THEME, name || '');
+}
 function applyLuxe(on) {
   document.body.classList.toggle('luxe', on);
   const p = document.getElementById('luxeParticles');
@@ -399,13 +436,19 @@ function applyLuxe(on) {
     }
   }
   const btn = document.getElementById('luxeToggle');
-  if (btn) btn.textContent = on ? '🍵' : '✨';
+  if (btn) btn.textContent = on ? '🎨' : '✨';
+  const sw = document.getElementById('themeSwitcher');
+  if (sw) sw.classList.toggle('hidden', !on);
+  if (on) applyTheme(localStorage.getItem(LS_THEME) || '');
 }
 applyLuxe(localStorage.getItem(LS_LUXE) === '1');
 document.getElementById('luxeToggle')?.addEventListener('click', () => {
   const on = !document.body.classList.contains('luxe');
   localStorage.setItem(LS_LUXE, on ? '1' : '0');
   applyLuxe(on);
+});
+document.querySelectorAll('.theme-btn').forEach(b => {
+  b.addEventListener('click', () => applyTheme(b.dataset.t || ''));
 });
 
 function showToast(msg) {
