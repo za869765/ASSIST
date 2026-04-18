@@ -857,8 +857,9 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
     delete parsed.data['葷素'];
   }
 
-  // 菜單模式：非白名單品項需模糊比對；多候選/未命中 → 追問，不寫入（admin 發送者 bypass）
-  if (!isAdminUser && Array.isArray(menuItems) && menuItems.length && parsed?.data?.品項) {
+  // 菜單模式：非白名單品項需模糊比對；多候選/未命中 → 追問，不寫入
+  // 注意：admin 也要受限（admin 裁定應走明確流程，不是自動 bypass）
+  if (Array.isArray(menuItems) && menuItems.length && parsed?.data?.品項) {
     const DEFAULT_PASSES = new Set(['葷食便當', '素食便當']);
     const itemName = String(parsed.data.品項).trim();
     if (!DEFAULT_PASSES.has(itemName)) {
