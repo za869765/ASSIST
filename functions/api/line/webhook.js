@@ -240,7 +240,8 @@ function normalizeVerdict(s) {
   const t = String(s).trim().toUpperCase().replace(/[\s!?！？。.]+/g, '');
   if (/^(收|OK|可以|好|照記|照寫|記下|記|收下|就這樣|照舊)/.test(t)) return '收';
   if (/^(問|再問|重問|再一次|重來|AGAIN|RETRY|問他|問一下|叫他|叫他講|請他)/.test(t)) return '問';
-  if (/^(略|略過|跳過|不吃|算了|跳|不要|忽略|不用管|不管)/.test(t)) return '略';
+  if (/^(略|略過|跳過|跳|忽略|算了|不要|不用管|不管|別管|別理|不理)/.test(t)) return '略';
+  if (/(不吃|沒吃|不來|別吃|他不|不點|不用了|不用吃)/.test(t)) return '略';
   return null;
 }
 
