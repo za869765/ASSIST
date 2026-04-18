@@ -100,6 +100,27 @@ async function handleEvent(ev, env) {
       return;
     }
 
+    // 管理員切換菜單/自由模式（保留 menu_json，只改 mode 旗標）
+    if (admin) {
+      const tText = text.trim();
+      const toFree = /^(無菜單|自由|自由模式|關閉菜單|解除菜單)[\s!?！？。.~～]*$/.test(tText);
+      const toMenu = /^(啟用菜單|菜單模式|開啟菜單|恢復菜單)[\s!?！？。.~～]*$/.test(tText);
+      if (toFree || toMenu) {
+        const newMode = toFree ? 'free' : 'menu';
+        const targets = tasks.filter(t => t.menu_json);
+        for (const t of targets) {
+          await env.DB.prepare(`UPDATE tasks SET mode = ? WHERE id = ?`).bind(newMode, t.id).run();
+        }
+        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+          type: 'text',
+          text: targets.length
+            ? `✅ 已切換為${toFree ? '自由' : '菜單'}模式（${targets.map(t => t.task_name).join('、')}）`
+            : '（目前沒有含菜單的任務）',
+        }]);
+        return;
+      }
+    }
+
     // 管理員「菜單」→ PO 菜單照（每分鐘最多 1 次）
     if (admin && /^菜單[\s!?！？。.~～]*$/.test(text.trim())) {
       const all = [];
@@ -700,7 +721,8 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
     if (!itemNoFields[r.item]) itemNoFields[r.item] = [];
     itemNoFields[r.item].push(r.field);
   }
-  const menuItems = task.menu_json ? JSON.parse(task.menu_json) : null;
+  // 菜單模式只在「有菜單照 + mode !== 'free'」兩條件同時成立時生效
+  const menuItems = (task.menu_json && task.mode !== 'free') ? JSON.parse(task.menu_json) : null;
   let parsed = await geminiExtract(env.GEMINI_API_KEY, task.task_name, text, known, itemNoFields, menuItems);
   if (parsed?._error) {
     console.error('[extract error]', parsed._error, 'text=', text);
