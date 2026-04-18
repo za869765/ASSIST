@@ -498,6 +498,9 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
   // 管理員裁示指令：放行/通過/清除 <姓名>
   if (await tryClearPendingProfanity(env, task, userId, text, replyToken)) return;
 
+  // 明顯非任務相關的閒聊 → 直接靜默（不進 profanity 計數、不進 Gemini）
+  if (isChitchat(text)) return;
+
   // 若此用戶有污穢發言待裁示，後續任何訊息先提醒管理員，不處理點餐
   const pendingP = await env.DB.prepare(
     `SELECT count, last_text FROM pending_profanity WHERE task_id = ? AND user_id = ?`
@@ -1266,6 +1269,26 @@ async function processProxyOrder(env, task, zoneName, orderText) {
 
 // 硬規則污穢字偵測：體液/排泄物/性器官/中文粗話等
 const PROFANITY_RE = /(尿液|尿尿|屎|大便|糞|屁股|精液|嘔吐|鼻屎|痰|月經|經血|陰道|陰莖|雞雞|屌|幹你|幹他|操你|肏|去死|靠北|靠腰|幹話|白癡|智障|低能|f[u\*]ck|shit|bitch|dick|pussy|asshole)/i;
+// 明顯非任務相關的閒聊／語助詞／吐槽 → 直接忽略（不進入 profanity 計數、不呼叫 Gemini）
+function isChitchat(text) {
+  const s = String(text || '').trim();
+  if (!s) return false;
+  // 純表情 / 純標點
+  if (/^[\s。.!！?？~～、,，…0-9a-zA-Z]+$/.test(s) && s.length <= 5) return true;
+  // 常見口語吐槽、語助詞、抱怨，整句不超過 12 字
+  if (s.length > 12) return false;
+  const patterns = [
+    /^(笑死|笑鼠|笑噴|傻眼|超扯|扯爆|真假的?|我的天啊?|天啊|無言|傻眼貓咪|蛤|齁|哈哈+|呵呵+|笑了|xswl|XD+|嘻嘻+)[\s。.!！?？~～]*$/,
+    /^(我哪有|才沒有|哪有|才怪|騙人|誰說的|不是我|不關我事)[\s。.!！?？~～]*$/,
+    /^(干你屁事|關你屁事|要你管|管太多|不關你的事|你很煩|別吵|閉嘴)[\s。.!！?？~～]*$/,
+    /^(無聊|好累|好煩|累死了?|想睡|煩死了?|好想睡)[\s。.!！?？~～]*$/,
+    /^(笨\s*AI|笨機器人|笨小秘|笨蛋\s*AI|爛\s*AI|智障\s*AI|AI\s*很笨|小秘好笨)[\s。.!！?？~～]*$/i,
+    /^(不要再問了?|別再問了?|不要吵了?|別吵了?|聽無|聽不懂|不會|不知道啦|隨便啦|都可以|隨便)[\s。.!！?？~～]*$/,
+    /^(好[的啦喔呀]?|OK|ok|Ok|收到|嗯+|喔+|哦+|是[喔啊]?|對[啊阿呀]?)[\s。.!！?？~～]*$/,
+  ];
+  return patterns.some(re => re.test(s));
+}
+
 function isProfane(text) {
   const s = String(text || '').trim();
   if (!s) return false;
