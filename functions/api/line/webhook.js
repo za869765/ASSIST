@@ -7,7 +7,7 @@ import {
   verifyLineSignature, lineReply, linePush, isAdmin, isWakeword, stripWakeword,
   getGroupMemberProfile, getUserProfile,
 } from './_lib.js';
-import { geminiChat, geminiExtract, geminiIntent, geminiClassifyTask } from './_gemini.js';
+import { geminiChat, geminiExtract, geminiIntent, geminiClassifyTask, geminiSplitTasks } from './_gemini.js';
 import { buildXLSX } from './_xlsx.js';
 import {
   findOpenTask, findOpenTasks, matchTaskByHint,
@@ -159,6 +159,27 @@ async function handleEvent(ev, env) {
       }
       if (!routed) {
         const names = tasks.map(t => t.task_name);
+        // 先試著拆分：若訊息橫跨多個任務（例「雞腿便當 檸檬綠」）→ 各任務各收一筆
+        const segments = await geminiSplitTasks(env.GEMINI_API_KEY, names, text);
+        const validSegs = (segments || [])
+          .map(s => ({ task: matchTaskByHint(tasks, s.task_name), seg: (s.text || '').trim() }))
+          .filter(x => x.task && x.seg);
+        const uniqTaskIds = new Set(validSegs.map(x => x.task.id));
+        if (validSegs.length >= 2 && uniqTaskIds.size >= 2) {
+          // 第一段用 replyToken，其餘用 push 逐條送出
+          let first = true;
+          for (const { task, seg } of validSegs) {
+            if (first) {
+              await collectEntry(env, task, userId, seg, replyToken, groupId);
+              first = false;
+            } else if (groupId) {
+              // 模擬 replyToken：用 push 取代
+              const pushProxy = 'push:' + groupId;
+              await collectEntry(env, task, userId, seg, pushProxy, groupId);
+            }
+          }
+          return;
+        }
         const { task_name } = await geminiClassifyTask(env.GEMINI_API_KEY, names, text);
         const picked = (task_name ? matchTaskByHint(tasks, task_name) : null) || tasks[0];
         target = picked;

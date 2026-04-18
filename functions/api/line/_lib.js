@@ -15,6 +15,11 @@ export async function verifyLineSignature(secret, body, signature) {
 
 export async function lineReply(token, replyToken, messages) {
   const arr = Array.isArray(messages) ? messages : [{ type: 'text', text: String(messages) }];
+  // 特殊標記 "push:<to>"：改走 push API（用在多段切分、一次處理多筆回覆）
+  if (typeof replyToken === 'string' && replyToken.startsWith('push:')) {
+    const to = replyToken.slice(5);
+    return linePush(token, to, arr);
+  }
   return fetch('https://api.line.me/v2/bot/message/reply', {
     method: 'POST',
     headers: {
