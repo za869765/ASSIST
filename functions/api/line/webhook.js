@@ -238,9 +238,38 @@ async function collectEntry(env, task, userId, text, replyToken) {
   if (existing && /^[\s]*(對|對阿|對啊|沒錯|是|是的|好|好的|OK|ok|嗯|Y|y)[\s!?！？。.~～]*$/.test(text)) {
     return;
   }
-  // 純否認詞（不對/錯了）：提示重說
+  // 純否認詞（不對/錯了）：計次，第 1 次引導重說，第 2 次以上 @ 管理員裁示
   if (existing && /^[\s]*(不對|錯了|不是|錯|不對啦)[\s!?！？。.~～]*$/.test(text)) {
-    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '好的，麻煩再講一次完整的訂單內容～' }]);
+    const row = await env.DB.prepare(
+      `SELECT count FROM nonsense_strikes WHERE task_id = ? AND user_id = ?`
+    ).bind(task.id, userId).first();
+    const cnt = (row?.count || 0) + 1;
+    await env.DB.prepare(
+      `INSERT INTO nonsense_strikes (task_id, user_id, count, last_text, last_at)
+       VALUES (?, ?, ?, ?, datetime('now'))
+       ON CONFLICT(task_id, user_id) DO UPDATE SET count = excluded.count, last_text = excluded.last_text, last_at = datetime('now')`
+    ).bind(task.id, userId, cnt, text).run();
+
+    const m = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
+    const who = m?.real_name || m?.line_display || userId.slice(0, 6);
+    const oldItem = Object.values(JSON.parse(existing.data_json || '{}')).filter(Boolean).join('/') || '(未辨識)';
+
+    if (cnt >= 2) {
+      const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+      const adminNames = [];
+      for (const aid of adminIds) {
+        const a = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(aid).first();
+        const nm = a?.real_name || a?.line_display;
+        if (nm) adminNames.push(nm);
+      }
+      const adminTag = adminNames.length ? adminNames.map(n => `@${n}`).join(' ') + ' ' : '';
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+        type: 'text',
+        text: `${adminTag}${who} 已經反應兩次「不對」了，目前紀錄是「${oldItem}」，麻煩您協助問一下實際要點什麼，謝謝 🙏`,
+      }]);
+    } else {
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `${who} 不好意思～麻煩再講一次完整的訂單內容，謝謝您 🙏` }]);
+    }
     return;
   }
 
@@ -293,6 +322,8 @@ async function collectEntry(env, task, userId, text, replyToken) {
     rawText: text,
     additive,
   });
+  // 成功收單 → 清零否認/亂點計數
+  await env.DB.prepare(`DELETE FROM nonsense_strikes WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
 
   const parts = Object.values(parsed.data).filter(Boolean).join('/');
   const price = parsed.price ? ` $${parsed.price}` : '';
