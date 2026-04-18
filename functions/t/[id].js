@@ -460,8 +460,49 @@ document.getElementById('menuFile').addEventListener('change', (e) => {
 });
 
 const recommendedSet = new Set(); // 跨 direction 累計已推薦過的品項，避免重複
+const REC_TTL_MS = 2 * 60 * 60 * 1000; // 本地快取 2 小時
+function recCacheKey(dir) { return 'rec:' + TASK_ID + ':' + dir; }
+function loadRecCache(dir) {
+  try {
+    const raw = localStorage.getItem(recCacheKey(dir));
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj || !obj.ts || (Date.now() - obj.ts) > REC_TTL_MS) return null;
+    return obj.data;
+  } catch { return null; }
+}
+function saveRecCache(dir, data) {
+  try { localStorage.setItem(recCacheKey(dir), JSON.stringify({ ts: Date.now(), data })); } catch {}
+}
+// 首次初始化：把 localStorage 裡已推薦過的品項加進 recommendedSet（跨重整也能避免重複）
+function primeRecommendedSet() {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('rec:' + TASK_ID + ':')) continue;
+      const obj = JSON.parse(localStorage.getItem(k) || '{}');
+      if (!obj.ts || (Date.now() - obj.ts) > REC_TTL_MS) continue;
+      for (const p of (obj.data?.picks || [])) recommendedSet.add(p.name);
+    }
+  } catch {}
+}
+primeRecommendedSet();
+
+function renderRecommend(dir, j, fromCache) {
+  const result = document.getElementById('recommendResult');
+  const picks = (j.picks || []).map(p => {
+    const price = (p.price != null) ? ' $' + p.price : '';
+    return '<span class="pick"><b>' + esc(p.name) + price + '</b>' + (p.reason ? ' — ' + esc(p.reason) : '') + '</span>';
+  }).join('');
+  const note = j.note ? '<div class="note">' + esc(j.note) + '</div>' : '';
+  const tag = fromCache ? ' (本地快取)' : (j.cached ? ' (伺服快取)' : '');
+  result.innerHTML = '<div style="margin:4px 0;font-size:11px;color:#2db87a">' + esc(j.label || dir) + tag + '</div>' + (picks || '<span style="color:#888">沒有推薦</span>') + note;
+}
+
 async function fetchRecommend(btn, dir) {
   const result = document.getElementById('recommendResult');
+  const cached = loadRecCache(dir);
+  if (cached) { renderRecommend(dir, cached, true); return; }
   btn.classList.add('busy'); const orig = btn.textContent; btn.textContent = '思考中…';
   try {
     const exclude = [...recommendedSet].slice(-30).join(',');
@@ -473,12 +514,8 @@ async function fetchRecommend(btn, dir) {
       return;
     }
     for (const p of (j.picks || [])) recommendedSet.add(p.name);
-    const picks = (j.picks || []).map(p => {
-      const price = (p.price != null) ? ' $' + p.price : '';
-      return '<span class="pick"><b>' + esc(p.name) + price + '</b>' + (p.reason ? ' — ' + esc(p.reason) : '') + '</span>';
-    }).join('');
-    const note = j.note ? '<div class="note">' + esc(j.note) + '</div>' : '';
-    result.innerHTML = '<div style="margin:4px 0;font-size:11px;color:#2db87a">' + esc(j.label || dir) + (j.cached ? ' (快取)' : '') + '</div>' + (picks || '<span style="color:#888">沒有推薦</span>') + note;
+    saveRecCache(dir, j);
+    renderRecommend(dir, j, false);
   } catch (e) {
     result.innerHTML = '<span style="color:#d4543a">錯誤：' + esc(e.message) + '</span>';
   } finally {
