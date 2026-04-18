@@ -189,6 +189,7 @@ async function handleEvent(ev, env) {
       });
     }
     await env.DB.prepare(`DELETE FROM pending_dups WHERE task_id = ?`).bind(picked.id).run();
+    await env.DB.prepare(`DELETE FROM pending_profanity WHERE task_id = ?`).bind(picked.id).run();
 
     const entries = await listEntries(env.DB, picked.id);
     await closeTask(env.DB, picked.id);
@@ -284,6 +285,18 @@ async function collectEntry(env, task, userId, text, replyToken) {
     } else {
       await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `${who} 麻煩您再說清楚一點，謝謝您 🙏` }]);
     }
+    return;
+  }
+
+  // 管理員裁示指令：放行/通過/清除 <姓名>
+  if (await tryClearPendingProfanity(env, task, userId, text, replyToken)) return;
+
+  // 若此用戶有污穢發言待裁示，後續任何訊息先提醒管理員，不處理點餐
+  const pendingP = await env.DB.prepare(
+    `SELECT count, last_text FROM pending_profanity WHERE task_id = ? AND user_id = ?`
+  ).bind(task.id, userId).first();
+  if (pendingP) {
+    await handleProfanity(env, task, userId, text, replyToken);
     return;
   }
 
@@ -769,10 +782,51 @@ async function handleProfanity(env, task, userId, text, replyToken) {
     if (nm) adminNames.push(nm);
   }
   const adminTag = adminNames.length ? adminNames.map(n => `@${n}`).join(' ') + ' ' : '';
-  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
-    type: 'text',
-    text: `${adminTag}${who} 似乎講了不太適合的字眼，麻煩您處理一下，謝謝 🙏`,
-  }]);
+
+  // 記錄待裁示
+  await env.DB.prepare(
+    `INSERT INTO pending_profanity (task_id, user_id, last_text, count, last_at)
+     VALUES (?, ?, ?, 1, datetime('now'))
+     ON CONFLICT(task_id, user_id) DO UPDATE SET
+       last_text = excluded.last_text,
+       count = pending_profanity.count + 1,
+       last_at = datetime('now')`
+  ).bind(task.id, userId, text).run();
+  const row = await env.DB.prepare(
+    `SELECT count FROM pending_profanity WHERE task_id = ? AND user_id = ?`
+  ).bind(task.id, userId).first();
+  const n = row?.count || 1;
+
+  const msg = n === 1
+    ? `${adminTag}${who} 似乎講了不太適合的字眼（「${text}」），麻煩您裁示一下，謝謝 🙏`
+    : `${adminTag}${who} 又講了不太適合的字眼（「${text}」，累計 ${n} 次），還在等您裁示，麻煩您處理一下，謝謝 🙏`;
+  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: msg }]);
+}
+
+// 管理員下達：@小秘書 放行 <姓名>、@小秘書 通過 <姓名>、@小秘書 清除 <姓名>
+// 或 admin 直接在群組說「放行兆鑫」「通過 兆鑫」等
+async function tryClearPendingProfanity(env, task, senderUserId, text, replyToken) {
+  const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (!adminIds.includes(senderUserId)) return false;
+  const m = text.match(/(放行|通過|清除|放過)\s*@?\s*([\u4e00-\u9fa5A-Za-z0-9]+)/);
+  if (!m) return false;
+  const name = m[2];
+  // 找出該名字對應的 user_id
+  const target = await env.DB.prepare(
+    `SELECT user_id, real_name, line_display FROM members WHERE real_name = ? OR line_display = ? LIMIT 1`
+  ).bind(name, name).first();
+  if (!target) return false;
+  const r = await env.DB.prepare(
+    `DELETE FROM pending_profanity WHERE task_id = ? AND user_id = ?`
+  ).bind(task.id, target.user_id).run();
+  if ((r.meta?.changes || 0) > 0) {
+    const who = target.real_name || target.line_display || name;
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+      type: 'text', text: `✅ 已清除 ${who} 的污穢發言待裁示紀錄，對方可以重新點餐。`,
+    }]);
+    return true;
+  }
+  return false;
 }
 
 async function handleNonsense(env, task, userId, text, replyToken, teaseFromAI, hasExisting) {

@@ -107,6 +107,17 @@ CREATE TABLE IF NOT EXISTS exports (
 );
 CREATE INDEX IF NOT EXISTS idx_exports_task ON exports(task_id);
 
+-- 污穢發言待管理員裁示（裁示前，該用戶後續發言會提醒管理員）
+CREATE TABLE IF NOT EXISTS pending_profanity (
+  task_id      INTEGER NOT NULL,
+  user_id      TEXT NOT NULL,
+  last_text    TEXT,
+  count        INTEGER NOT NULL DEFAULT 1,
+  created_at   TEXT DEFAULT (datetime('now')),
+  last_at      TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (task_id, user_id)
+);
+
 -- 品項不適用欄位（累積學習；例：珍奶沒有冰塊、素麵沒有葷素）
 CREATE TABLE IF NOT EXISTS item_no_fields (
   item         TEXT NOT NULL,
