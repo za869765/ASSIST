@@ -681,8 +681,9 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
   const menuItems = task.menu_json ? JSON.parse(task.menu_json) : null;
   let parsed = await geminiExtract(env.GEMINI_API_KEY, task.task_name, text, known, itemNoFields, menuItems);
   if (parsed?._error) {
-    console.error('[extract error]', parsed._error);
-    return; // 靜默，不打擾群組
+    console.error('[extract error]', parsed._error, 'text=', text);
+    // 不再靜默：若文字看起來像合理品項，走下方 looksLikeItem fallback 仍可寫入
+    parsed = null;
   }
   // 只有「AI 標髒話 + 完全沒抽到任何合法欄位」才真的觸發裁示；否則當正常點餐
   if (parsed?.profanity && (!parsed.data || Object.keys(parsed.data).length === 0)) {
