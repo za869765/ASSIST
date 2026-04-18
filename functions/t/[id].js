@@ -584,12 +584,16 @@ function openOrderModal(itemName, price) {
     '<label>甜度</label>' + optBtns('sweet', SWEET_OPTS, 0) +
     '<label>冰塊</label>' + optBtns('ice', ICE_OPTS, 0)
   ) : '';
+  // 衛生局：預設會員，只有非會員需要勾選
+  const memberRow = '<div id="omMemberRow" style="display:none"><label>身份（預設會員，非會員請勾）</label>' +
+    '<div class="opt-grid"><button type="button" id="omNonMember">勾選：非會員</button></div></div>';
   const priceStr = price != null ? ' $' + price : '';
   const d = document.createElement('div');
   d.className = 'order-modal';
   d.innerHTML = '<div class="box">' +
     '<h3>下單：<span style="color:#2db87a">' + esc(itemName) + '</span>' + esc(priceStr) + '</h3>' +
     '<label>哪一區 / 誰</label><select id="omZone">' + zoneOpts + '</select>' +
+    memberRow +
     drinkRow +
     '<label>備註（選填）</label><input id="omNote" maxlength="60" placeholder="例：不要香菜">' +
     '<div class="row-btns"><button id="omCancel">取消</button><button class="primary" id="omOk">送出</button></div>' +
@@ -598,13 +602,30 @@ function openOrderModal(itemName, price) {
   const close = () => d.remove();
   d.addEventListener('click', (e) => { if (e.target === d) close(); });
   // 選項按鈕：點擊切換 active（同組只能選一個）
-  d.querySelectorAll('.opt-grid').forEach(grid => {
+  d.querySelectorAll('.opt-grid[data-group]').forEach(grid => {
     grid.addEventListener('click', (ev) => {
       const b = ev.target.closest('button'); if (!b) return;
       grid.querySelectorAll('button').forEach(x => x.classList.remove('active'));
       b.classList.add('active');
     });
   });
+  // 非會員 toggle（單鈕切換）
+  const nonMemberBtn = d.querySelector('#omNonMember');
+  if (nonMemberBtn) {
+    nonMemberBtn.addEventListener('click', () => {
+      nonMemberBtn.classList.toggle('active');
+      nonMemberBtn.textContent = nonMemberBtn.classList.contains('active') ? '✓ 非會員' : '勾選：非會員';
+    });
+  }
+  // 依區動態顯示/隱藏 會員勾選
+  const memberRowEl = d.querySelector('#omMemberRow');
+  const zoneSel = d.querySelector('#omZone');
+  const syncMemberRow = () => {
+    const z = zoneSel.value || '';
+    memberRowEl.style.display = /衛生局/.test(z) ? '' : 'none';
+  };
+  zoneSel.addEventListener('change', syncMemberRow);
+  syncMemberRow();
   const getOpt = (group) => {
     const g = d.querySelector('.opt-grid[data-group="' + group + '"]');
     if (!g) return null;
@@ -619,10 +640,11 @@ function openOrderModal(itemName, price) {
     const sweet = IS_DRINK_TASK ? getOpt('sweet') : null;
     const ice = IS_DRINK_TASK ? getOpt('ice') : null;
     const note = d.querySelector('#omNote').value.trim() || null;
+    const isNonMember = /衛生局/.test(zone) && d.querySelector('#omNonMember')?.classList.contains('active');
     try {
       const r = await fetch('/api/t/' + TASK_ID + '/quick-entry', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ zone, item: itemName, price, sweet, ice, note }),
+        body: JSON.stringify({ zone, item: itemName, price, sweet, ice, note, nonMember: isNonMember }),
       });
       const j = await r.json();
       if (!r.ok) { alert('失敗：' + (j.error || r.status)); okBtn.disabled = false; okBtn.textContent = '送出'; return; }

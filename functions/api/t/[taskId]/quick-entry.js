@@ -21,6 +21,7 @@ export async function onRequestPost({ env, params, request }) {
   const price = body.price == null || body.price === '' ? null : +body.price;
   const sweet = body.sweet == null ? null : String(body.sweet).slice(0, 10);
   const ice = body.ice == null ? null : String(body.ice).slice(0, 10);
+  const nonMember = !!body.nonMember;
   if (price != null && (isNaN(price) || price < 0 || price > 100000)) {
     return json({ error: 'bad price' }, 400);
   }
@@ -58,12 +59,13 @@ export async function onRequestPost({ env, params, request }) {
   const data = { 品項: item };
   if (sweet) data['甜度'] = sweet;
   if (ice) data['冰塊'] = ice;
+  if (nonMember && /衛生局/.test(zone)) data['身份'] = '非會員';
 
   await upsertEntry(env.DB, {
     taskId, userId,
     data,
     note, price,
-    rawText: `[web] ${zone} → ${item}${sweet ? '/' + sweet : ''}${ice ? '/' + ice : ''}`,
+    rawText: `[web] ${zone}${nonMember ? '(非會員)' : ''} → ${item}${sweet ? '/' + sweet : ''}${ice ? '/' + ice : ''}`,
     additive: false,
   });
 
