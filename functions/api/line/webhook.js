@@ -119,12 +119,12 @@ async function handleEvent(ev, env) {
       await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `「${taskName}」已經在進行中了` }]);
       return;
     }
-    const newId = await createTask(env.DB, { groupId, taskName, startedBy: userId });
+    const created = await createTask(env.DB, { groupId, taskName, startedBy: userId });
     const sibling = openTasks.length
       ? `\n(同時進行中：${openTasks.map(t => t.task_name).join('、')})` : '';
     const hint = confidence === 'mid' ? '\n(若不是這個意思，請再講清楚或「秘書 結單」取消)' : '';
     const base = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
-    const viewUrl = `${base}/t/${newId}`;
+    const viewUrl = `${base}/t/${created.slug}`;
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
       { type: 'text', text: `📝 開始統計「${taskName}」，請大家直接回覆\n即時看板：${viewUrl}${sibling}${hint}` },
     ]);
@@ -175,9 +175,9 @@ async function handleEvent(ev, env) {
       { type: 'text', text: `✅ 任務「${picked.task_name}」已結單（共 ${entries.length} 筆）\n\n${summarizeEntries(entries)}\n\n看板已改為僅限管理員檢視，已將私人連結傳給管理員。` },
     ]);
     // 把 tokenized URL 私推給每位管理員
-    const tokRow = await env.DB.prepare(`SELECT view_token FROM tasks WHERE id = ?`).bind(picked.id).first();
+    const tokRow = await env.DB.prepare(`SELECT view_token, url_slug FROM tasks WHERE id = ?`).bind(picked.id).first();
     const base = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
-    const privateUrl = `${base}/t/${picked.id}?k=${tokRow?.view_token || ''}`;
+    const privateUrl = `${base}/t/${tokRow?.url_slug || picked.id}?k=${tokRow?.view_token || ''}`;
     const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
     for (const aid of adminIds) {
       try {

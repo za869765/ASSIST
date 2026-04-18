@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   started_at   TEXT DEFAULT (datetime('now')),
   closed_at    TEXT,
   excel_url    TEXT,                          -- 結案後 Excel 連結
-  view_token   TEXT                           -- 結單後私人查看連結的 token（只有管理員收到）
+  view_token   TEXT,                          -- 結單後私人查看連結的 token（只有管理員收到）
+  url_slug     TEXT UNIQUE                    -- 公開看板 URL 的隨機 slug（每個任務不同）
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_group_status ON tasks(group_id, status);
 

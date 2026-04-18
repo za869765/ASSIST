@@ -1,11 +1,16 @@
 // 即時點單看板（server-rendered HTML，5 秒自動刷新）
 export async function onRequestGet({ params, request, env }) {
-  const id = parseInt(params.id, 10);
-  if (!id) return new Response('Bad id', { status: 400 });
-
-  const task = await env.DB.prepare(
-    `SELECT id, task_name, mode, status, started_at, closed_at, view_token FROM tasks WHERE id = ?`
-  ).bind(id).first();
+  const key = String(params.id || '');
+  if (!key) return new Response('Bad id', { status: 400 });
+  // 優先以 slug 查；找不到再以數字 id 向下相容
+  let task = await env.DB.prepare(
+    `SELECT id, task_name, mode, status, started_at, closed_at, view_token FROM tasks WHERE url_slug = ?`
+  ).bind(key).first();
+  if (!task && /^\d+$/.test(key)) {
+    task = await env.DB.prepare(
+      `SELECT id, task_name, mode, status, started_at, closed_at, view_token FROM tasks WHERE id = ?`
+    ).bind(parseInt(key, 10)).first();
+  }
   if (!task) return new Response('Not found', { status: 404 });
 
   // 結單後：需要 ?k=<view_token> 才可檢視

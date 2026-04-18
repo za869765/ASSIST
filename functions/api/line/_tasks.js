@@ -39,10 +39,19 @@ function genToken() {
 
 export async function createTask(DB, { groupId, taskName, startedBy }) {
   const token = genToken();
-  const r = await DB.prepare(
-    `INSERT INTO tasks (group_id, task_name, started_by, view_token) VALUES (?, ?, ?, ?)`
-  ).bind(groupId, taskName, startedBy, token).run();
-  return r.meta.last_row_id;
+  // slug 每次隨機 12 hex，UNIQUE 衝突就重抽
+  for (let i = 0; i < 5; i++) {
+    const slug = genToken().slice(0, 12);
+    try {
+      const r = await DB.prepare(
+        `INSERT INTO tasks (group_id, task_name, started_by, view_token, url_slug) VALUES (?, ?, ?, ?, ?)`
+      ).bind(groupId, taskName, startedBy, token, slug).run();
+      return { id: r.meta.last_row_id, slug, token };
+    } catch (e) {
+      if (!String(e).includes('UNIQUE')) throw e;
+    }
+  }
+  throw new Error('createTask: slug 衝突太多次');
 }
 
 export async function closeTask(DB, taskId) {
