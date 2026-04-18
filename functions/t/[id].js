@@ -212,8 +212,11 @@ body.luxe .in-office-tag { background: linear-gradient(135deg, var(--gold), var(
   .order-modal button { background: #333; color: #eee; border-color: #555; }
 }
 .menu-card .items-list span b { font-weight: 700; margin-left: 2px; }
-.menu-card .items-list .price-edit { color: #2db87a; cursor: pointer; text-decoration: underline dotted; margin-left: 2px; font-variant-numeric: tabular-nums; }
-.menu-card .items-list .price-edit:hover { color: #249864; text-decoration: underline; }
+.menu-card .items-list .price-edit { color: #2db87a; margin-left: 2px; font-variant-numeric: tabular-nums; pointer-events: none; }
+body.is-edit-price .menu-card .items-list .price-edit { cursor: pointer; text-decoration: underline dotted; pointer-events: auto; background: rgba(212,175,55,.2); padding: 1px 6px; border-radius: 4px; border: 1px dashed #d4af37; animation: pricePulse 2s ease-in-out infinite; }
+body.is-edit-price .menu-card .items-list .price-edit:hover { color: #b8860b; background: rgba(212,175,55,.4); }
+@keyframes pricePulse { 0%,100% { box-shadow: 0 0 0 0 rgba(212,175,55,.5); } 50% { box-shadow: 0 0 0 4px rgba(212,175,55,0); } }
+body.is-edit-price h1::after { content: '💰 編輯價格模式'; display: inline-block; margin-left: 10px; font-size: 13px; background: linear-gradient(135deg,#d4af37,#f0c050); color: #1a1a1a; padding: 3px 10px; border-radius: 999px; vertical-align: middle; animation: pricePulse 2s ease-in-out infinite; }
 .menu-summary { margin-top: 6px; padding: 6px 8px; background: #fff3e0; border-radius: 6px; font-size: 12px; color: #b04a1a; }
 .menu-summary:empty { display: none; }
 .recommend-bar { margin-top: 10px; padding: 8px 8px 10px; border-top: 1px dashed #ccc6; background: linear-gradient(180deg, #fff8e1 0%, #fff 70%); border-radius: 0 0 8px 8px; }
@@ -416,7 +419,7 @@ body.luxe .success-price { color: var(--rose); }
 </head>
 <body>
 ${tabs}
-<h1>${esc(task.task_name)} <span class="pill ${closed ? 'closed' : 'open'}">${statusLabel}</span><a class="admin-toggle" href="/admin/zones" target="_blank">🔧 管理員窗口</a>${closed ? '' : `<a class="admin-toggle" href="?admin=1" style="margin-right:8px">🗑 刪除模式</a><a class="admin-toggle" href="/api/t/${task.id}/export" style="margin-right:8px;color:#2db87a;font-weight:700">📊 匯出 XLSX</a>`}</h1>
+<h1>${esc(task.task_name)} <span class="pill ${closed ? 'closed' : 'open'}">${statusLabel}</span><a class="admin-toggle" href="/admin/zones" target="_blank">🔧 管理員窗口</a>${closed ? '' : `<a class="admin-toggle" href="?admin=1" style="margin-right:8px">🗑 刪除模式</a><a class="admin-toggle" href="?edit=1" style="margin-right:8px;color:#d4af37">💰 編輯價格</a><a class="admin-toggle" href="/api/t/${task.id}/export" style="margin-right:8px;color:#2db87a;font-weight:700">📊 匯出 XLSX</a>`}</h1>
 <div class="meta">開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}・<span id="statLine">—</span>${closed ? '' : '・每 5 秒自動更新'}</div>
 
 ${closed ? '' : `<details class="menu-card" id="menuCard">
@@ -569,11 +572,18 @@ function showSuccessPopup({ item, zone, name, sweet, ice, note, price }) {
 }
 
 const IS_ADMIN = new URLSearchParams(location.search).get('admin') === '1';
+const IS_EDIT_PRICE = new URLSearchParams(location.search).get('edit') === '1';
 if (IS_ADMIN) {
   document.body.classList.add('is-admin');
   const banner = document.getElementById('adminBanner');
   if (banner) banner.style.display = '';
 }
+if (IS_EDIT_PRICE) {
+  document.body.classList.add('is-edit-price');
+}
+
+// 記住目前 AI 推薦命中，loadMenu 重新渲染後還原
+let currentRecHits = new Set();
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -753,26 +763,19 @@ async function loadMenu() {
       document.getElementById('menuItems').innerHTML = sections + extraBtn;
       if (recBar) recBar.style.display = '';
     }
-    // 綁定價格編輯
-    document.querySelectorAll('.price-edit').forEach(el => {
-      el.addEventListener('click', async () => {
-        const name = el.dataset.name;
-        const current = el.textContent.replace(/[^\\d]/g, '') || '';
-        const raw = prompt('修改「' + name + '」的價格（留空=未知，僅數字）：', current);
-        if (raw === null) return;
-        const val = raw.trim() === '' ? null : +raw.trim();
-        if (val != null && (isNaN(val) || val < 0)) { alert('價格不合法'); return; }
-        try {
-          const r = await fetch('/api/menu/' + TASK_ID, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, price: val }),
-          });
-          if (!r.ok) { const j = await r.json().catch(() => ({})); alert('更新失敗：' + (j.error || r.status)); return; }
-          loadMenu();
-        } catch (e) { alert('錯誤：' + e.message); }
+    // 綁定價格編輯（僅編輯模式）
+    if (IS_EDIT_PRICE) {
+      document.querySelectorAll('.price-edit').forEach(el => {
+        el.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const name = el.dataset.name;
+          const current = el.textContent.replace(/[^\\d]/g, '') || '';
+          openPriceModal(name, current);
+        });
       });
-    });
+    }
+    // 還原 AI 推薦高亮
+    if (currentRecHits.size) highlightChips([...currentRecHits]);
     // 品項 chip 點擊 → 開下單 modal
     document.querySelectorAll('.item-chip').forEach(chip => {
       chip.addEventListener('click', (ev) => {
@@ -920,20 +923,66 @@ primeRecommendedSet();
 
 function highlightChips(names) {
   const norm = (s) => String(s || '').replace(/\\s+/g, '').toLowerCase();
-  const targets = new Set((names || []).map(norm));
+  const list = Array.isArray(names) ? names : [];
+  currentRecHits = new Set(list); // 記住，loadMenu 之後可還原
+  const targets = new Set(list.map(norm));
   const chips = document.querySelectorAll('.item-chip');
   let first = null;
   chips.forEach(c => {
     const hit = targets.has(norm(c.dataset.name));
     c.classList.remove('rec-hit');
     if (hit) {
-      // 強制重啟動畫：先 reflow 再加 class
       void c.offsetWidth;
       c.classList.add('rec-hit');
       if (!first) first = c;
     }
   });
   if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function openPriceModal(itemName, current) {
+  const d = document.createElement('div');
+  d.className = 'order-modal';
+  d.innerHTML = \`
+    <div class="box" style="max-width:380px">
+      <h3>💰 修改「\${esc(itemName)}」的價格</h3>
+      <label>金額（留空＝未知、僅數字）</label>
+      <input id="pmVal" type="number" inputmode="numeric" min="0" max="9999" value="\${esc(current)}" autofocus>
+      <div class="row-btns">
+        <button id="pmCancel">取消</button>
+        <button id="pmClear" style="background:#fee;color:#b04a1a;border-color:#f5a595">清除</button>
+        <button id="pmOk" class="primary">儲存</button>
+      </div>
+    </div>
+  \`;
+  document.body.appendChild(d);
+  const close = () => { d.classList.add('closing'); setTimeout(() => d.remove(), 200); };
+  const input = d.querySelector('#pmVal');
+  setTimeout(() => { input.focus(); input.select(); }, 50);
+  d.querySelector('#pmCancel').addEventListener('click', close);
+  d.addEventListener('click', (e) => { if (e.target === d) close(); });
+  const submit = async (val) => {
+    if (val != null && (isNaN(val) || val < 0)) { alert('價格不合法'); return; }
+    try {
+      const r = await fetch('/api/menu/' + TASK_ID, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: itemName, price: val }),
+      });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); alert('更新失敗：' + (j.error || r.status)); return; }
+      close();
+      loadMenu();
+    } catch (e) { alert('錯誤：' + e.message); }
+  };
+  d.querySelector('#pmOk').addEventListener('click', () => {
+    const raw = input.value.trim();
+    submit(raw === '' ? null : +raw);
+  });
+  d.querySelector('#pmClear').addEventListener('click', () => submit(null));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') d.querySelector('#pmOk').click();
+    if (e.key === 'Escape') close();
+  });
 }
 
 function renderRecommend(dir, j, fromCache) {
