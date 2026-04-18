@@ -175,6 +175,36 @@ async function handleEvent(ev, env) {
       }
     }
 
+    // 「<名字> 刪除<任務>」「<任務>刪除」「取消便當」→ 刪該人該任務的紀錄
+    const delMatch = text.trim().match(/^(?:(.{1,20}?)\s+)?(刪除|刪掉|取消|移除|清除)\s*(.{1,10})$/);
+    if (delMatch) {
+      const personHint = (delMatch[1] || '').trim();
+      const taskHint = (delMatch[3] || '').trim();
+      const pickedTask = matchTaskByHint(tasks, taskHint);
+      if (pickedTask) {
+        let uid = userId;
+        let label = '';
+        if (personHint && admin) {
+          const proxy = await tryProxyZone(env, userId, personHint);
+          if (proxy && !proxy.multi) { uid = proxy.userId; label = `「${personHint}」`; }
+          else {
+            const p2 = await tryProxyPerson(env, userId, personHint);
+            if (p2) { uid = p2.userId; label = `「${personHint}」`; }
+          }
+        }
+        const result = await env.DB.prepare(
+          `DELETE FROM entries WHERE task_id = ? AND user_id = ?`
+        ).bind(pickedTask.id, uid).run();
+        await env.DB.prepare(`DELETE FROM pending_dups WHERE task_id = ? AND user_id = ?`).bind(pickedTask.id, uid).run();
+        await env.DB.prepare(`DELETE FROM pending_profanity WHERE user_id = ?`).bind(uid).run();
+        const hit = result.meta?.changes || 0;
+        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+          type: 'text', text: hit ? `🗑 已刪除${label}「${pickedTask.task_name}」紀錄` : `找不到${label}「${pickedTask.task_name}」的紀錄`,
+        }]);
+        return;
+      }
+    }
+
     // 「飲料不用 / 便當不用」→ 針對該任務記請假（可 admin 代點區 或 本人）
     const skipMatch = text.trim().match(/^(.{1,10}?)\s*(不用了?|不要了?|免了?|跳過|不需要)$/);
     if (skipMatch) {
@@ -565,20 +595,12 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
   // 明顯非任務相關的閒聊 → 直接靜默（不進 profanity 計數、不進 Gemini）
   if (isChitchat(text)) return;
 
-  // 若此用戶有污穢發言待裁示，後續任何訊息先提醒管理員，不處理點餐
-  const pendingP = await env.DB.prepare(
-    `SELECT count, last_text FROM pending_profanity WHERE task_id = ? AND user_id = ?`
-  ).bind(task.id, userId).first();
-  if (pendingP) {
-    await handleProfanity(env, task, userId, text, replyToken);
-    return;
-  }
-
   // 硬規則：明顯污穢/體液/性暗示字眼直接 @ 管理員，不進 Gemini
   if (isProfane(text)) {
     await handleProfanity(env, task, userId, text, replyToken);
     return;
   }
+  // pendingP 僅對「新一次也是污穢」才重複提醒；一般訊息放行（避免無辜訊息被累計）
 
   // 撈「品項不適用欄位」知識庫當 Gemini 提示
   const noFieldsRows = await env.DB.prepare(`SELECT item, field FROM item_no_fields`).all();
