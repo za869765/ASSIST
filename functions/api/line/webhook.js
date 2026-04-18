@@ -626,7 +626,7 @@ async function askAddOrReplace(env, task, userId, text, parsed, oldData, replyTo
   const newParts = Object.values(parsed.data || {}).filter(Boolean).join('/') || text;
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
     type: 'text',
-    text: `${who} 您已經點了「${oldParts}」，剛剛的「${newParts}」(辨識後)，請問是要「更改」還是「加點」呢？\n回「加」或「改」，若沒回覆則預設為更改，謝謝您 🙏`,
+    text: `${who} 您已經點了「${oldParts}」，剛剛的「${newParts}」，請問是要「更改」還是「加點」呢？\n回「加」或「改」，若沒回覆則預設為更改，謝謝您 🙏`,
   }]);
 }
 
