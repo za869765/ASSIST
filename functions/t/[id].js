@@ -13,10 +13,21 @@ export async function onRequestGet({ params, request, env }) {
   }
   if (!task) return new Response('Not found', { status: 404 });
 
-  // 結單後：一律關閉公開看板
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+
+  // 結單後：一律關閉公開看板，但列出同群組其他還在進行中的任務
   if (task.status === 'closed') {
+    const openRow = await env.DB.prepare(
+      `SELECT id, task_name, url_slug FROM tasks WHERE group_id = ? AND status = 'open' ORDER BY started_at ASC`
+    ).bind(task.group_id).all();
+    const open = openRow.results || [];
+    const openList = open.length
+      ? `<h3 style="margin-top:32px;color:#333">同群組還在進行中的任務：</h3><ul style="list-style:none;padding:0">${open.map(t => `<li style="margin:8px 0"><a href="/t/${esc(t.url_slug || t.id)}" style="color:#2db87a;text-decoration:none;font-size:16px">→ ${esc(t.task_name)}</a></li>`).join('')}</ul>`
+      : '';
     return new Response(
-      '<!DOCTYPE html><meta charset="utf-8"><title>已結單</title><style>body{font-family:-apple-system,"PingFang TC",sans-serif;max-width:480px;margin:80px auto;padding:16px;text-align:center;color:#666}</style><h2>🔒 此任務已結單</h2><p>看板已停止公開，請洽管理員索取結果檔案。</p>',
+      `<!DOCTYPE html><meta charset="utf-8"><title>已結單｜${esc(task.task_name)}</title><style>body{font-family:-apple-system,"PingFang TC",sans-serif;max-width:480px;margin:80px auto;padding:16px;text-align:center;color:#666}</style><h2>🔒 「${esc(task.task_name)}」已結單</h2><p>此任務看板已停止公開，請洽管理員索取結果檔案。</p>${openList}`,
       { status: 403, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
     );
   }
@@ -30,10 +41,6 @@ export async function onRequestGet({ params, request, env }) {
       ORDER BY e.updated_at ASC`
   ).bind(task.id).all();
   const rows = entries.results || [];
-
-  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]));
 
   const lis = rows.map((e) => {
     const name = e.real_name || e.line_display || e.user_id.slice(0, 6);
