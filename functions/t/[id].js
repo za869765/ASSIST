@@ -17,17 +17,24 @@ export async function onRequestGet({ params, request, env }) {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[c]));
 
-  // 結單後：一律關閉公開看板，但列出同群組其他還在進行中的任務
+  // 結單後：若同群組還有進行中任務 → 列出並引導切換；都沒了才顯示「已結單」
   if (task.status === 'closed') {
     const openRow = await env.DB.prepare(
       `SELECT id, task_name, url_slug FROM tasks WHERE group_id = ? AND status = 'open' ORDER BY started_at ASC`
     ).bind(task.group_id).all();
     const open = openRow.results || [];
-    const openList = open.length
-      ? `<h3 style="margin-top:32px;color:#333">同群組還在進行中的任務：</h3><ul style="list-style:none;padding:0">${open.map(t => `<li style="margin:8px 0"><a href="/t/${esc(t.url_slug || t.id)}" style="color:#2db87a;text-decoration:none;font-size:16px">→ ${esc(t.task_name)}</a></li>`).join('')}</ul>`
-      : '';
+    if (open.length) {
+      // 只有一個進行中 → 直接 302 到那個
+      if (open.length === 1) {
+        const o = open[0];
+        return Response.redirect(new URL(`/t/${o.url_slug || o.id}`, request.url).toString(), 302);
+      }
+      // 多個 → 顯示選單
+      const body = `<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>請選擇任務</title><style>body{font-family:-apple-system,"PingFang TC",sans-serif;max-width:480px;margin:40px auto;padding:16px}h2{font-size:18px}a.item{display:block;padding:14px 16px;margin:8px 0;background:#2db87a;color:white;text-decoration:none;border-radius:8px;font-size:16px}small{color:#888}</style></head><body><h2>「${esc(task.task_name)}」已結單</h2><small>以下是此群組還在進行中的任務：</small>${open.map(t => `<a class="item" href="/t/${esc(t.url_slug || t.id)}">${esc(t.task_name)} →</a>`).join('')}</body></html>`;
+      return new Response(body, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+    }
     return new Response(
-      `<!DOCTYPE html><meta charset="utf-8"><title>已結單｜${esc(task.task_name)}</title><style>body{font-family:-apple-system,"PingFang TC",sans-serif;max-width:480px;margin:80px auto;padding:16px;text-align:center;color:#666}</style><h2>🔒 「${esc(task.task_name)}」已結單</h2><p>此任務看板已停止公開，請洽管理員索取結果檔案。</p>${openList}`,
+      `<!DOCTYPE html><meta charset="utf-8"><title>已結單｜${esc(task.task_name)}</title><style>body{font-family:-apple-system,"PingFang TC",sans-serif;max-width:480px;margin:80px auto;padding:16px;text-align:center;color:#666}</style><h2>🔒 「${esc(task.task_name)}」已結單</h2><p>此任務看板已停止公開，請洽管理員索取結果檔案。</p>`,
       { status: 403, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
     );
   }
