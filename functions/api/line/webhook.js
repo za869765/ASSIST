@@ -239,7 +239,7 @@ async function collectEntry(env, task, userId, text, replyToken) {
 function normalizeVerdict(s) {
   const t = String(s).trim().toUpperCase().replace(/[\s!?！？。.]+/g, '');
   if (/^(收|OK|可以|好|照記|照寫|記下|記|收下|就這樣|照舊)/.test(t)) return '收';
-  if (/^(問|再問|重問|問他|問一下|叫他|叫他講|請他)/.test(t)) return '問';
+  if (/^(問|再問|重問|再一次|重來|AGAIN|RETRY|問他|問一下|叫他|叫他講|請他)/.test(t)) return '問';
   if (/^(略|略過|跳過|不吃|算了|跳|不要|忽略|不用管|不管)/.test(t)) return '略';
   return null;
 }
