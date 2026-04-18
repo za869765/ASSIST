@@ -1003,24 +1003,31 @@ async function tryProxyZone(env, userId, text) {
 
   if (!zoneName) return null;
 
+  const targetId = await resolveZoneTargetId(env, zoneName);
+  return { userId: targetId, text: stripped || text };
+}
+
+// 若該區已綁某位真人 → 直接用他的 LINE userId（視同本人回覆）；否則 fallback 用 zone:<名> 代點
+async function resolveZoneTargetId(env, zoneName) {
+  const real = await env.DB.prepare(
+    `SELECT user_id FROM members
+      WHERE zone = ? AND user_id NOT LIKE 'zone:%'
+      ORDER BY last_seen_at DESC LIMIT 1`
+  ).bind(zoneName).first();
+  if (real?.user_id) return real.user_id;
+
   const synthId = `zone:${zoneName}`;
   await env.DB.prepare(
     `INSERT INTO members (user_id, real_name, zone, bound_at, last_seen_at)
      VALUES (?, ?, ?, datetime('now'), datetime('now'))
      ON CONFLICT(user_id) DO UPDATE SET last_seen_at = datetime('now')`
   ).bind(synthId, zoneName, zoneName).run();
-
-  return { userId: synthId, text: stripped || text };
+  return synthId;
 }
 
 // 多區代點用：直接處理單一區的一筆點餐（不走 replyToken，回傳一行確認字串）
 async function processProxyOrder(env, task, zoneName, orderText) {
-  const synthId = `zone:${zoneName}`;
-  await env.DB.prepare(
-    `INSERT INTO members (user_id, real_name, zone, bound_at, last_seen_at)
-     VALUES (?, ?, ?, datetime('now'), datetime('now'))
-     ON CONFLICT(user_id) DO UPDATE SET last_seen_at = datetime('now')`
-  ).bind(synthId, zoneName, zoneName).run();
+  const targetId = await resolveZoneTargetId(env, zoneName);
 
   const noFieldsRows = await env.DB.prepare(`SELECT item, field FROM item_no_fields`).all();
   const itemNoFields = {};
@@ -1033,7 +1040,7 @@ async function processProxyOrder(env, task, zoneName, orderText) {
     return `⚠️ ${zoneName}：無法辨識「${orderText}」`;
   }
   await upsertEntry(env.DB, {
-    taskId: task.id, userId: synthId,
+    taskId: task.id, userId: targetId,
     data: parsed.data, note: parsed.note, price: parsed.price,
     rawText: orderText, additive: false,
   });
