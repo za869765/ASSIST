@@ -9,7 +9,9 @@ export async function onRequestGet() {
 <style>
 :root { color-scheme: light dark; }
 body { font-family: -apple-system, 'PingFang TC', 'Microsoft JhengHei', sans-serif; max-width: 720px; margin: 0 auto; padding: 16px; line-height: 1.5; }
-h1 { font-size: 20px; margin: 0 0 4px; }
+h1 { font-size: 20px; margin: 0 0 4px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.back-btn { font-size: 14px; font-weight: 600; color: #fff; background: #2db87a; text-decoration: none; padding: 8px 14px; border-radius: 8px; }
+.back-btn:hover { background: #249864; }
 h2 { font-size: 16px; margin: 20px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #ddd4; }
 .hint { color: #888; font-size: 13px; margin-bottom: 10px; }
 button { padding: 7px 14px; font-size: 13px; cursor: pointer; border-radius: 6px; border: 1px solid #ccc4; background: #f0f0f022; }
@@ -37,18 +39,13 @@ summary { cursor: pointer; padding: 6px 0; font-weight: 600; font-size: 14px; }
 </style>
 </head>
 <body>
-<h1>分區設定</h1>
-<div class="hint">全域共用。勾選 = 啟用；衛生局不限人數，其他限 1 人。</div>
+<h1>分區設定 <a id="backBtn" class="back-btn" href="#">← 回點單看板</a></h1>
+<div class="hint">全域共用。點擊區名切換啟用（藍）/停用（灰），自動儲存。</div>
 
 <h2>① 區清單</h2>
 <div id="zones" class="zone-grid"></div>
-<div class="add">
-  <input id="newZone" placeholder="新增自訂區名（例：市政府、消防局）">
-  <button onclick="addZone()">➕ 新增</button>
-</div>
 <div class="toolbar">
   <span class="msg" id="zoneMsg"></span>
-  <button class="primary" onclick="saveZones()">💾 儲存</button>
 </div>
 
 <h2>② 成員區對照</h2>
@@ -86,34 +83,23 @@ function renderZones() {
   box.innerHTML = ZONES.map((z, i) => \`
     <span class="zone-chip \${z.enabled ? 'on' : 'off'}" data-i="\${i}">\${esc(zoneLabel(z))}</span>\`).join('');
   box.querySelectorAll('.zone-chip').forEach(el => {
-    el.addEventListener('click', () => {
+    el.addEventListener('click', async () => {
       const i = +el.dataset.i;
       ZONES[i].enabled = ZONES[i].enabled ? 0 : 1;
       el.classList.toggle('on', !!ZONES[i].enabled);
       el.classList.toggle('off', !ZONES[i].enabled);
+      await saveZones();
     });
   });
 }
 
-function addZone() {
-  const name = document.getElementById('newZone').value.trim();
-  if (!name) return;
-  if (ZONES.some(z => z.name === name)) { msg('已存在', true); return; }
-  const maxSort = Math.max(0, ...ZONES.map(z => +z.sort_order || 0));
-  ZONES.push({ name, capacity: 1, enabled: 1, sort_order: maxSort + 1 });
-  document.getElementById('newZone').value = '';
-  renderZones();
-}
-
 async function saveZones() {
-  // 保留既有 sort_order（不要被 index 覆寫）
   const r = await fetch('/api/zones', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ zones: ZONES }),
   });
-  if (r.ok) { msg('已儲存 ✓'); load(); }
-  else msg('儲存失敗', true);
+  if (r.ok) msg('已儲存 ✓'); else msg('儲存失敗', true);
 }
 
 function msg(t, err) {
@@ -162,6 +148,13 @@ async function tagMember(user_id, zone) {
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+
+(function initBack() {
+  const btn = document.getElementById('backBtn');
+  const ref = document.referrer;
+  if (ref && /\/t\//.test(ref)) btn.href = ref;
+  else btn.onclick = (e) => { e.preventDefault(); history.back(); };
+})();
 
 load();
 </script>
