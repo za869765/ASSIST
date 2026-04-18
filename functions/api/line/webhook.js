@@ -312,8 +312,22 @@ async function collectEntry(env, task, userId, text, replyToken) {
     const intent = parsed.dup_intent;
     const conf = typeof parsed.dup_confidence === 'number' ? parsed.dup_confidence : 0;
     additive = (intent === 'add' && conf >= 70);
+
+    // 若新解析內容跟舊的一模一樣 → 視為重複確認，不改單也不加點
+    const oldData = JSON.parse(existing.data_json || '{}');
+    const sameData = JSON.stringify(oldData) === JSON.stringify(parsed.data || {})
+      && (existing.note || null) === (parsed.note || null)
+      && (existing.price || null) === (parsed.price ?? null);
+    if (sameData && !additive) {
+      const m = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
+      const who = m?.real_name || m?.line_display || userId.slice(0, 6);
+      const parts = Object.values(oldData).filter(Boolean).join('/');
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `${who} 您已經點過「${parts}」了，記錄維持原樣～` }]);
+      return;
+    }
+
     if (!additive) {
-      oldItemForReport = Object.values(JSON.parse(existing.data_json || '{}')).filter(Boolean).join('/');
+      oldItemForReport = Object.values(oldData).filter(Boolean).join('/');
     }
   }
 
