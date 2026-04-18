@@ -102,10 +102,26 @@ async function handleEvent(ev, env) {
 
     let target = tasks[0];
     if (tasks.length > 1) {
-      const names = tasks.map(t => t.task_name);
-      const { task_name } = await geminiClassifyTask(env.GEMINI_API_KEY, names, text);
-      const picked = (task_name ? matchTaskByHint(tasks, task_name) : null) || tasks[0];
-      target = picked;
+      // 若此人正在任一任務中有 pending_dup 且訊息是加/改裁示 → 優先導向該任務
+      let routed = false;
+      const v = normalizeVerdict(text);
+      if (v === '加' || v === '改') {
+        const ids = tasks.map(t => t.id);
+        const placeholders = ids.map(() => '?').join(',');
+        const pendingTask = await env.DB.prepare(
+          `SELECT task_id FROM pending_dups WHERE user_id = ? AND task_id IN (${placeholders}) LIMIT 1`
+        ).bind(userId, ...ids).first();
+        if (pendingTask) {
+          target = tasks.find(t => t.id === pendingTask.task_id) || tasks[0];
+          routed = true;
+        }
+      }
+      if (!routed) {
+        const names = tasks.map(t => t.task_name);
+        const { task_name } = await geminiClassifyTask(env.GEMINI_API_KEY, names, text);
+        const picked = (task_name ? matchTaskByHint(tasks, task_name) : null) || tasks[0];
+        target = picked;
+      }
     }
     await collectEntry(env, target, userId, text, replyToken);
     return;
@@ -221,6 +237,12 @@ async function handleEvent(ev, env) {
       await handleVerdict(env, groupId, verdict[1], action, replyToken);
       return;
     }
+  }
+
+  // ─── 群組內無進行中任務 → 保持靜默（避免未開任務時亂答）
+  if (groupId) {
+    const openTasks = await findOpenTasks(env.DB, groupId);
+    if (!openTasks.length) return;
   }
 
   // ─── 其他一律閒聊 ───
