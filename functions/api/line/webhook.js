@@ -123,11 +123,11 @@ async function handleEvent(ev, env) {
       return;
     }
     const created = await createTask(env.DB, { groupId, taskName, startedBy: userId });
-    const sibling = openTasks.length
-      ? `\n(同時進行中：${openTasks.map(t => t.task_name).join('、')})` : '';
-    const hint = confidence === 'mid' ? '\n(若不是這個意思，請再講清楚或「秘書 結單」取消)' : '';
     const base = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
     const viewUrl = `${base}/t/${created.slug}`;
+    const sibling = openTasks.length
+      ? `\n(同時進行中：\n${openTasks.map(t => `・${t.task_name}：${base}/t/${t.url_slug || t.id}`).join('\n')})` : '';
+    const hint = confidence === 'mid' ? '\n(若不是這個意思，請再講清楚或「秘書 結單」取消)' : '';
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
       { type: 'text', text: `📝 開始統計「${taskName}」，請大家直接回覆\n即時看板：${viewUrl}${sibling}${hint}` },
     ]);

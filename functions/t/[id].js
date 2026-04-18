@@ -4,11 +4,11 @@ export async function onRequestGet({ params, request, env }) {
   if (!key) return new Response('Bad id', { status: 400 });
   // 優先以 slug 查；找不到再以數字 id 向下相容
   let task = await env.DB.prepare(
-    `SELECT id, task_name, mode, status, started_at, closed_at, view_token FROM tasks WHERE url_slug = ?`
+    `SELECT id, task_name, mode, status, started_at, closed_at, view_token, group_id, url_slug FROM tasks WHERE url_slug = ?`
   ).bind(key).first();
   if (!task && /^\d+$/.test(key)) {
     task = await env.DB.prepare(
-      `SELECT id, task_name, mode, status, started_at, closed_at, view_token FROM tasks WHERE id = ?`
+      `SELECT id, task_name, mode, status, started_at, closed_at, view_token, group_id, url_slug FROM tasks WHERE id = ?`
     ).bind(parseInt(key, 10)).first();
   }
   if (!task) return new Response('Not found', { status: 404 });
@@ -49,6 +49,19 @@ export async function onRequestGet({ params, request, env }) {
   const closed = task.status === 'closed';
   const statusLabel = closed ? '已結單' : '進行中';
   const refresh = closed ? '' : '<meta http-equiv="refresh" content="5">';
+
+  // 同群組其他進行中任務（做上方分頁切換）
+  const siblingsRow = await env.DB.prepare(
+    `SELECT id, task_name, url_slug FROM tasks WHERE group_id = ? AND status = 'open' ORDER BY started_at ASC`
+  ).bind(task.group_id).all();
+  const siblings = (siblingsRow.results || []);
+  const tabs = siblings.length > 1
+    ? `<nav class="tabs">${siblings.map(t => {
+        const active = t.id === task.id;
+        const href = `/t/${t.url_slug || t.id}`;
+        return `<a class="tab${active ? ' active' : ''}" href="${esc(href)}">${esc(t.task_name)}</a>`;
+      }).join('')}</nav>`
+    : '';
   const html = `<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -71,9 +84,13 @@ li { display: grid; grid-template-columns: 80px 1fr auto; gap: 8px; padding: 10p
 .price { color: #2db87a; font-variant-numeric: tabular-nums; }
 .total { text-align: right; font-weight: 600; margin-top: 12px; font-size: 16px; }
 .empty { color: #888; text-align: center; padding: 32px 0; }
+.tabs { display: flex; gap: 4px; margin: -4px 0 12px; border-bottom: 1px solid #ddd4; overflow-x: auto; }
+.tab { padding: 8px 14px; text-decoration: none; color: #888; border-bottom: 2px solid transparent; white-space: nowrap; font-size: 14px; }
+.tab.active { color: inherit; border-bottom-color: #2db87a; font-weight: 600; }
 </style>
 </head>
 <body>
+${tabs}
 <h1>${esc(task.task_name)} <span class="pill ${closed ? 'closed' : 'open'}">${statusLabel}</span></h1>
 <div class="meta">開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}・共 ${rows.length} 筆${closed ? '' : '・每 5 秒自動更新'}</div>
 ${rows.length ? `<ul>${lis}</ul>${total ? `<div class="total">合計：$${total}</div>` : ''}` : '<div class="empty">還沒有人填～</div>'}
