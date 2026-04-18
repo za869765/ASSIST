@@ -649,7 +649,21 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
           }]);
           return;
         }
-        // 目標不在現有品項中 → 留給 Gemini / 後續流程（可能是閒聊或是其他意思）
+        // 目標不是現有品項 → 視為特殊需求（如「不要茄子」「不要香菜」），併入 note
+        if (items.length >= 1) {
+          const noteText = `不要${rawTarget}`;
+          const prevNote = String(existing.note || '').trim();
+          const parts = prevNote ? prevNote.split(/[;；,，、\s]+/).filter(Boolean) : [];
+          if (!parts.some(p => p === noteText || p.includes(noteText))) parts.push(noteText);
+          const newNote = parts.join('；');
+          await env.DB.prepare(
+            `UPDATE entries SET note = ?, updated_at = datetime('now') WHERE task_id = ? AND user_id = ?`
+          ).bind(newNote, task.id, userId).run();
+          await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+            type: 'text', text: `✅ 已幫 ${who} 加註「${noteText}」`,
+          }]);
+          return;
+        }
       }
     }
   }
