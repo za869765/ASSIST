@@ -89,6 +89,18 @@ async function handleEvent(ev, env) {
       return;
     }
 
+    // 管理員「全部結算 / 兩個都結算 / 都結」→ 一次結掉所有 open tasks
+    const allShort = String(text || '').replace(/[?？!！。.\s]/g, '');
+    if (admin && /^(全部|都|兩個都|兩個|三個|四個|五個|所有|都要)(結算|結單|結|算)(吧|喔|啦)?$/.test(allShort)) {
+      await env.DB.prepare(`DELETE FROM pending_close WHERE group_id = ? AND admin_id = ?`).bind(groupId, userId).run();
+      let rt = replyToken;
+      for (const tk of tasks) {
+        await doCloseTask(env, tk, rt);
+        rt = `push:${groupId}`;
+      }
+      return;
+    }
+
     // 管理員直接講「結算 / 結單 / 收單」等（不用喚醒詞）→ 結單流程
     const closeShort = String(text || '').replace(/[?？!！。.\s]/g, '');
     if (admin && /^(結單|結算|結束|關閉|收單|結束統計|結單吧|關閉統計|收工|收了|打烊)(.*)?$/.test(closeShort)) {
