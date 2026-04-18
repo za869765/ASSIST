@@ -52,6 +52,25 @@ async function handleEvent(ev, env) {
     if (!groupId) return;
     const tasks = await findOpenTasks(env.DB, groupId);
     if (!tasks.length) return;
+
+    // 管理員直接講「結算 / 結單 / 收單」等（不用喚醒詞）→ 結單流程
+    const closeShort = String(text || '').replace(/[?？!！。.\s]/g, '');
+    if (admin && /^(結單|結算|結束|關閉|收單|結束統計|結單吧|關閉統計|收工|收了|打烊)(.*)?$/.test(closeShort)) {
+      const hintText = closeShort.replace(/^(結單|結算|結束|關閉|收單|結束統計|結單吧|關閉統計|收工|收了|打烊)/, '').trim();
+      const hinted = hintText ? matchTaskByHint(tasks, hintText) : null;
+      const picked = hinted || (tasks.length === 1 ? tasks[0] : null);
+      if (!picked) {
+        const names = tasks.map(t => `「${t.task_name}」`).join('、');
+        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+          type: 'text', text: `目前有多個任務：${names}\n請指定要結算哪個，例：「結算 飲料」或「結算 便當」`,
+        }]);
+        return;
+      }
+      // 轉由 close 流程處理（複用既有邏輯：用喚醒命令重入不划算，直接複製關鍵動作）
+      await doCloseTask(env, picked, replyToken);
+      return;
+    }
+
     let target = tasks[0];
     if (tasks.length > 1) {
       const names = tasks.map(t => t.task_name);
@@ -95,7 +114,7 @@ async function handleEvent(ev, env) {
   const cmdShort = cmd.replace(/[?？!！。.\s]/g, '');
   let fast = null;
   if (/^(進度|目前|狀態|現況|收到幾筆|幾筆了)$/.test(cmdShort)) fast = { intent: 'progress' };
-  else if (/^(結單|結束|關閉|收單|結束統計|結單吧|關閉統計)$/.test(cmdShort)) fast = { intent: 'close' };
+  else if (/^(結單|結算|結束|關閉|收單|結束統計|結單吧|關閉統計|收工|收了|打烊)$/.test(cmdShort)) fast = { intent: 'close' };
 
   // ─── Gemini 意圖辨識（start_task / progress / close / chat）───
   const { intent, task_name: taskNameRaw, confidence } =
@@ -173,42 +192,10 @@ async function handleEvent(ev, env) {
     const picked = hinted || (tasks.length === 1 ? tasks[0] : null);
     if (!picked) {
       const names = tasks.map(t => `「${t.task_name}」`).join('、');
-      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `目前有多個任務：${names}\n請說「秘書 結單 飲料」之類指定要結哪個` }]);
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `目前有多個任務：${names}\n請指定要結算哪個，例：「結算 飲料」或「結算 便當」` }]);
       return;
     }
-    // 結單前：未回應的 pending_dups 預設視為「更改」，全部套用
-    const pendingRows = await env.DB.prepare(
-      `SELECT user_id, new_text, new_data, new_note, new_price FROM pending_dups WHERE task_id = ?`
-    ).bind(picked.id).all();
-    for (const p of (pendingRows.results || [])) {
-      await upsertEntry(env.DB, {
-        taskId: picked.id, userId: p.user_id,
-        data: JSON.parse(p.new_data || '{}'),
-        note: p.new_note, price: p.new_price, rawText: p.new_text,
-        additive: false,
-      });
-    }
-    await env.DB.prepare(`DELETE FROM pending_dups WHERE task_id = ?`).bind(picked.id).run();
-    await env.DB.prepare(`DELETE FROM pending_profanity WHERE task_id = ?`).bind(picked.id).run();
-
-    const entries = await listEntries(env.DB, picked.id);
-    await closeTask(env.DB, picked.id);
-
-    // 產 XLSX（文字格式避免失真：01234、長數字、日期字串不被 Excel 自動轉型）
-    const rows = buildSheetRows(picked.task_name, entries);
-    const bytes = buildXLSX(picked.task_name.slice(0, 31) || 'sheet', rows);
-    const token = genDownloadToken();
-    const filename = `${picked.task_name}_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    await env.DB.prepare(
-      `INSERT INTO exports (token, task_id, filename, content_type, blob) VALUES (?, ?, ?, ?, ?)`
-    ).bind(token, picked.id, filename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', bytes).run();
-
-    const base = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
-    const dlUrl = `${base}/d/${token}`;
-    const aggText = buildAggregateText(picked.task_name, entries);
-    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-      { type: 'text', text: `✅ 任務「${picked.task_name}」已結單\n\n${aggText}\n\n📎 完整明細（彙總+依品項排序）一次性下載：\n${dlUrl}` },
-    ]);
+    await doCloseTask(env, picked, replyToken);
     return;
   }
 
@@ -225,6 +212,41 @@ async function handleEvent(ev, env) {
   // ─── 其他一律閒聊 ───
   const reply = await geminiChat(env.GEMINI_API_KEY, cmd);
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
+}
+
+async function doCloseTask(env, picked, replyToken) {
+  // 結單前：未回應的 pending_dups 預設視為「更改」，全部套用
+  const pendingRows = await env.DB.prepare(
+    `SELECT user_id, new_text, new_data, new_note, new_price FROM pending_dups WHERE task_id = ?`
+  ).bind(picked.id).all();
+  for (const p of (pendingRows.results || [])) {
+    await upsertEntry(env.DB, {
+      taskId: picked.id, userId: p.user_id,
+      data: JSON.parse(p.new_data || '{}'),
+      note: p.new_note, price: p.new_price, rawText: p.new_text,
+      additive: false,
+    });
+  }
+  await env.DB.prepare(`DELETE FROM pending_dups WHERE task_id = ?`).bind(picked.id).run();
+  await env.DB.prepare(`DELETE FROM pending_profanity WHERE task_id = ?`).bind(picked.id).run();
+
+  const entries = await listEntries(env.DB, picked.id);
+  await closeTask(env.DB, picked.id);
+
+  const rows = buildSheetRows(picked.task_name, entries);
+  const bytes = buildXLSX(picked.task_name.slice(0, 31) || 'sheet', rows);
+  const token = genDownloadToken();
+  const filename = `${picked.task_name}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  await env.DB.prepare(
+    `INSERT INTO exports (token, task_id, filename, content_type, blob) VALUES (?, ?, ?, ?, ?)`
+  ).bind(token, picked.id, filename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', bytes).run();
+
+  const base = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
+  const dlUrl = `${base}/d/${token}`;
+  const aggText = buildAggregateText(picked.task_name, entries);
+  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+    { type: 'text', text: `✅ 任務「${picked.task_name}」已結單\n\n${aggText}\n\n📎 完整明細（彙總+依品項排序）一次性下載：\n${dlUrl}` },
+  ]);
 }
 
 async function collectEntry(env, task, userId, text, replyToken) {
