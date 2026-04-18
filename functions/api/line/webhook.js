@@ -56,9 +56,20 @@ async function handleEvent(ev, env) {
       const names = tasks.map(t => t.task_name);
       const { task_name, confidence } = await geminiClassifyTask(env.GEMINI_API_KEY, names, text);
       console.log('[classify]', { text, names, task_name, confidence });
-      if (!task_name) return;
+      if (!task_name) {
+        // DEBUG: 暫時回覆，讓我們看到分類結果
+        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+          { type: 'text', text: `[debug] 分類「${text}」→ null (${confidence})，未歸屬任何任務` },
+        ]);
+        return;
+      }
       const picked = matchTaskByHint(tasks, task_name);
-      if (!picked) return;
+      if (!picked) {
+        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+          { type: 'text', text: `[debug] 分類回「${task_name}」但找不到對應任務（現有：${names.join('、')}）` },
+        ]);
+        return;
+      }
       target = picked;
     }
     await collectEntry(env, target, userId, text, replyToken);
