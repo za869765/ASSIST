@@ -1147,7 +1147,9 @@ export function normalizeParsed(entries) {
   return entries.map(e => {
     let data = {};
     try { data = JSON.parse(e.data_json || '{}'); } catch {}
-    const name = e.real_name || e.line_display || (e.user_id ? e.user_id.slice(0, 6) : '');
+    const rawName = e.real_name || e.line_display || (e.user_id ? e.user_id.slice(0, 6) : '');
+    // 看板下單會加 🌐 前綴做來源識別；XLSX 給店家看不需要這個符號
+    const name = String(rawName).replace(/^🌐\s*/, '');
     const item = data['品項'] || '';
     const rest = { ...data }; delete rest['品項'];
     return { name, item, data, rest, note: e.note || '', price: e.price, updated: e.updated_at, zone: e.zone || '' };
@@ -1168,8 +1170,10 @@ export function buildSheetRows(taskName, entries) {
     g.total += p.price || 0;
     g.people.push(p.name);
     // 把備註與「非品項」欄位一起當修飾（方便店家看）
+    //  - 跳過 '姓名'：看板下單會把會員名寫進 data['姓名']，這跟 p.name 完全重複
     const modParts = [];
     for (const k of Object.keys(p.rest)) {
+      if (k === '姓名') continue;
       if (p.rest[k]) modParts.push(`${k}:${p.rest[k]}`);
     }
     if (p.note) modParts.push(p.note);

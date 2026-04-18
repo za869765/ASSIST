@@ -131,13 +131,20 @@ export function buildXLSX(sheetName, rows) {
 <fill><patternFill patternType="solid"><fgColor rgb="FFCCFBF1"/><bgColor indexed="64"/></patternFill></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FFFEF3C7"/><bgColor indexed="64"/></patternFill></fill>
 </fills>
-<borders count="3">
+<borders count="10">
 <border/>
 <border><left style="thin"><color rgb="FF94A3B8"/></left><right style="thin"><color rgb="FF94A3B8"/></right><top style="thin"><color rgb="FF94A3B8"/></top><bottom style="thin"><color rgb="FF94A3B8"/></bottom></border>
-<border><left style="medium"><color rgb="FFB8860B"/></left><right style="medium"><color rgb="FFB8860B"/></right><top style="medium"><color rgb="FFB8860B"/></top><bottom style="medium"><color rgb="FFB8860B"/></bottom></border>
+<border><left style="double"><color rgb="FFB8860B"/></left><right style="double"><color rgb="FFB8860B"/></right><top style="double"><color rgb="FFB8860B"/></top><bottom style="double"><color rgb="FFB8860B"/></bottom></border>
+<border><left style="double"><color rgb="FFB8860B"/></left><right style="thin"><color rgb="FF94A3B8"/></right><top style="thin"><color rgb="FF94A3B8"/></top><bottom style="thin"><color rgb="FF94A3B8"/></bottom></border>
+<border><left style="thin"><color rgb="FF94A3B8"/></left><right style="double"><color rgb="FFB8860B"/></right><top style="thin"><color rgb="FF94A3B8"/></top><bottom style="thin"><color rgb="FF94A3B8"/></bottom></border>
+<border><left style="double"><color rgb="FFB8860B"/></left></border>
+<border><right style="double"><color rgb="FFB8860B"/></right></border>
+<border><bottom style="double"><color rgb="FFB8860B"/></bottom></border>
+<border><left style="double"><color rgb="FFB8860B"/></left><bottom style="double"><color rgb="FFB8860B"/></bottom></border>
+<border><right style="double"><color rgb="FFB8860B"/></right><bottom style="double"><color rgb="FFB8860B"/></bottom></border>
 </borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="7">
+<cellXfs count="20">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
 <xf numFmtId="49" fontId="1" fillId="2" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
@@ -145,6 +152,19 @@ export function buildXLSX(sheetName, rows) {
 <xf numFmtId="49" fontId="3" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
 <xf numFmtId="49" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
 <xf numFmtId="49" fontId="4" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+<xf numFmtId="49" fontId="2" fillId="3" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="49" fontId="2" fillId="3" borderId="4" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="49" fontId="3" fillId="4" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="49" fontId="3" fillId="4" borderId="4" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="49" fontId="0" fillId="0" borderId="3" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+<xf numFmtId="49" fontId="0" fillId="0" borderId="4" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+<xf numFmtId="49" fontId="4" fillId="5" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+<xf numFmtId="49" fontId="4" fillId="5" borderId="4" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+<xf numFmtId="49" fontId="0" fillId="0" borderId="5" xfId="0" applyNumberFormat="1" applyBorder="1"/>
+<xf numFmtId="49" fontId="0" fillId="0" borderId="6" xfId="0" applyNumberFormat="1" applyBorder="1"/>
+<xf numFmtId="49" fontId="0" fillId="0" borderId="7" xfId="0" applyNumberFormat="1" applyBorder="1"/>
+<xf numFmtId="49" fontId="0" fillId="0" borderId="8" xfId="0" applyNumberFormat="1" applyBorder="1"/>
+<xf numFmtId="49" fontId="0" fillId="0" borderId="9" xfId="0" applyNumberFormat="1" applyBorder="1"/>
 </cellXfs>
 </styleSheet>`;
 
@@ -185,6 +205,15 @@ export function buildXLSX(sheetName, rows) {
   const maxCols = rows.reduce((m, r) => Math.max(m, r.length), 1);
   const lastColLetter = colLetter(maxCols);
 
+  // A4 直式一頁大約 48 列（預設行高）。若 content 能塞進單頁就加「金色雙線大外框」；
+  // 超過單頁就不畫（否則第一頁收不到底邊，反而醜）
+  const SINGLE_PAGE_CAP = 46;
+  const FRAME_BOTTOM = 48;
+  const singlePage = rows.length <= SINGLE_PAGE_CAP;
+
+  // style → { left, right } 變體索引：同樣底色/字色，但左/右換成「金色雙線 + 其餘薄灰」
+  const EDGE_MAP = { 3: { left: 7, right: 8 }, 4: { left: 9, right: 10 }, 5: { left: 11, right: 12 }, 6: { left: 13, right: 14 } };
+
   const merges = [];
   let prevStyle = 0;
   const sheetRowsArr = rows.map((row, rIdx) => {
@@ -201,11 +230,42 @@ export function buildXLSX(sheetName, rows) {
     const cells = padded.map((v, cIdx) => {
       const ref = `${colLetter(cIdx + 1)}${r}`;
       const text = xmlEscape(v == null ? '' : String(v));
-      return `<c r="${ref}" t="inlineStr" s="${style}"><is><t xml:space="preserve">${text}</t></is></c>`;
+      // 邊緣 cell 改用「+金色左/右外框」的變體；style=2 自帶完整金框不動；多頁時不套邊緣變體
+      let cellStyle = style;
+      const variant = EDGE_MAP[style];
+      if (singlePage && variant && padded.length > 1) {
+        if (cIdx === 0) cellStyle = variant.left;
+        else if (cIdx === padded.length - 1) cellStyle = variant.right;
+      }
+      return `<c r="${ref}" t="inlineStr" s="${cellStyle}"><is><t xml:space="preserve">${text}</t></is></c>`;
     }).join('');
     return `<row r="${r}"${rowAttrs}>${cells}</row>`;
   });
-  const sheetRows = sheetRowsArr.join('');
+
+  // 單頁才畫 padding：把金色雙線左/右延伸到頁尾並在底部收邊；多頁直接跳過，避免跨頁斷邊
+  const paddingRowsArr = [];
+  if (singlePage) {
+    for (let rr = rows.length + 1; rr <= FRAME_BOTTOM; rr++) {
+      const isBottom = rr === FRAME_BOTTOM;
+      const cellStrs = [];
+      for (let c = 1; c <= maxCols; c++) {
+        let s;
+        if (isBottom) {
+          if (c === 1) s = 18;              // BL
+          else if (c === maxCols) s = 19;   // BR
+          else s = 17;                      // 底邊
+        } else {
+          if (c === 1) s = 15;              // 左邊
+          else if (c === maxCols) s = 16;   // 右邊
+          else s = 1;                       // 中間空白，不畫線
+        }
+        cellStrs.push(`<c r="${colLetter(c)}${rr}" t="inlineStr" s="${s}"><is><t xml:space="preserve"></t></is></c>`);
+      }
+      paddingRowsArr.push(`<row r="${rr}">${cellStrs.join('')}</row>`);
+    }
+  }
+
+  const sheetRows = sheetRowsArr.join('') + paddingRowsArr.join('');
   const mergeCellsXml = merges.length
     ? `<mergeCells count="${merges.length}">${merges.map(m => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>`
     : '';
