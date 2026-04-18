@@ -475,6 +475,13 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
   if (proxy) {
     userId = proxy.userId;
     text = proxy.text;
+  } else {
+    // 沒比對到區 → 再試人名（real_name / line_display）前綴；有比對到就換成那個人
+    const person = await tryProxyPerson(env, userId, text);
+    if (person) {
+      userId = person.userId;
+      text = person.text;
+    }
   }
 
   // 若此人在此任務有待確認的 pending_dup，且這次訊息能辨識成「加/改」→ 直接處理
@@ -1182,6 +1189,38 @@ async function tryZoneLeave(env, userId, text) {
 
 // 管理員代點：偵測「幫南區點素食便當」「衛生局要一個排骨飯」等
 // 回傳 {userId, text} 或 null。userId 會被替換為 zone:<名稱>，text 則是移除代點用詞的點餐內容
+// 偵測人名前綴（admin 代點用），例：「倖妤 葷食便當」「倖妤+1」→ 改用該人的 user_id
+async function tryProxyPerson(env, userId, text) {
+  const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (!adminIds.includes(userId)) return null;
+  const trimmed = String(text || '').trim();
+  if (trimmed.length < 3) return null;
+  // 取候選人名（排除 synthetic zone:）
+  const rows = await env.DB.prepare(
+    `SELECT user_id, real_name, line_display FROM members WHERE user_id NOT LIKE 'zone:%'`
+  ).all();
+  const candidates = [];
+  for (const r of (rows.results || [])) {
+    if (r.real_name) candidates.push({ name: r.real_name, uid: r.user_id });
+    if (r.line_display && r.line_display !== r.real_name) candidates.push({ name: r.line_display, uid: r.user_id });
+  }
+  // 長名字優先
+  candidates.sort((a, b) => b.name.length - a.name.length);
+  for (const c of candidates) {
+    if (c.name.length < 2) continue;
+    // 只認「名字在最前面」的情況，且名字後面是空白/標點/+/數字/葷/素
+    const re = new RegExp('^' + c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\\s:：,，、\\-+＋]*(.*)$');
+    const m = trimmed.match(re);
+    if (!m) continue;
+    const after = (m[1] || '').trim();
+    if (after.length > 30) continue;
+    // 自己打自己名字不算代點
+    if (c.uid === userId) continue;
+    return { userId: c.uid, text: after || '+1' };
+  }
+  return null;
+}
+
 async function tryProxyZone(env, userId, text) {
   const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
   if (!adminIds.includes(userId)) return null;
