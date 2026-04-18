@@ -4,7 +4,7 @@
 // 閒聊：非 M1/M3 指令的「秘書 xxx」→ Gemini 日常回應
 
 import {
-  verifyLineSignature, lineReply, linePush, isAdmin, isWakeword, stripWakeword,
+  verifyLineSignature, lineReply, isAdmin, isWakeword, stripWakeword,
   getGroupMemberProfile, getUserProfile,
 } from './_lib.js';
 import { geminiChat, geminiExtract, geminiIntent, geminiClassifyTask, geminiSplitTasks } from './_gemini.js';
@@ -293,18 +293,12 @@ async function handleEvent(ev, env) {
           .filter(x => x.task && x.seg);
         const uniqTaskIds = new Set(validSegs.map(x => x.task.id));
         if (validSegs.length >= 2 && uniqTaskIds.size >= 2) {
-          // 第一段用 replyToken，其餘用 push 逐條送出
-          let first = true;
-          for (const { task, seg } of validSegs) {
-            if (first) {
-              await collectEntry(env, task, userId, seg, replyToken, groupId);
-              first = false;
-            } else if (groupId) {
-              // 模擬 replyToken：用 push 取代
-              const pushProxy = 'push:' + groupId;
-              await collectEntry(env, task, userId, seg, pushProxy, groupId);
-            }
-          }
+          // 不用 push → 只處理第一段，其他段落請使用者分開再發一次
+          const { task: firstTask, seg: firstSeg } = validSegs[0];
+          const others = validSegs.slice(1).map(x => `${x.task.task_name}：「${x.seg}」`).join('\n');
+          await collectEntry(env, firstTask, userId, firstSeg, replyToken, groupId);
+          // 提示訊息只在 log，不再發 push；使用者看到第一段被處理後，可自己再發下一段
+          console.log('[multi-seg] skip others (no-push policy):', others);
           return;
         }
         const { task_name } = await geminiClassifyTask(env.GEMINI_API_KEY, names, text);

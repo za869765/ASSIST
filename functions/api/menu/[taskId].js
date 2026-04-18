@@ -3,7 +3,6 @@
 //  POST   → 上傳一張照片（multipart/form-data, field 名 "photo"）
 //  DELETE → 刪除單張（body: { photoId }）
 import { geminiParseMenu } from '../line/_gemini.js';
-import { linePush } from '../line/_lib.js';
 
 function uuid() {
   // 短亂數 id，避免引入 crypto.randomUUID 以相容舊環境
@@ -91,28 +90,6 @@ export async function onRequestPost({ env, params, request }) {
   await env.DB.prepare(
     `UPDATE tasks SET menu_json = ?, mode = 'menu' WHERE id = ?`
   ).bind(JSON.stringify(agg), taskId).run();
-
-  // 上傳後立即 PO 到群組（每張都 PO，不受 1/min 冷卻限制；但同步更新 menu_push_log 避免 chat 立刻重複）
-  if (task.group_id && env.LINE_CHANNEL_ACCESS_TOKEN) {
-    try {
-      const host = env.PUBLIC_HOST || new URL(request.url).origin;
-      const imgUrl = `${host}/api/menu/${taskId}/file/${id}`;
-      await linePush(env.LINE_CHANNEL_ACCESS_TOKEN, task.group_id, [{
-        type: 'image',
-        originalContentUrl: imgUrl,
-        previewImageUrl: imgUrl,
-      }]);
-      await env.DB.prepare(
-        `CREATE TABLE IF NOT EXISTS menu_push_log (task_id INTEGER PRIMARY KEY, pushed_at TEXT)`
-      ).run();
-      await env.DB.prepare(
-        `INSERT INTO menu_push_log (task_id, pushed_at) VALUES (?, datetime('now'))
-         ON CONFLICT(task_id) DO UPDATE SET pushed_at = excluded.pushed_at`
-      ).bind(taskId).run();
-    } catch (e) {
-      console.error('[menu push]', e);
-    }
-  }
 
   return json({ id, itemCount: items.length, items, aggItems: agg });
 }
