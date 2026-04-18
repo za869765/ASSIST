@@ -81,6 +81,18 @@ CREATE TABLE IF NOT EXISTS nonsense_strikes (
   PRIMARY KEY (task_id, user_id)
 );
 
+-- 重複點餐待裁定（同人又點了東西，AI 不確定是覆蓋還是加點時）
+CREATE TABLE IF NOT EXISTS pending_dups (
+  task_id      INTEGER NOT NULL,
+  user_id      TEXT NOT NULL,
+  new_text     TEXT NOT NULL,
+  new_data     TEXT,        -- 本次 AI 抽出的 data_json（string）
+  new_note     TEXT,
+  new_price    INTEGER,
+  created_at   TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (task_id, user_id)
+);
+
 -- 同義詞對照（學習累積，給 Gemini 當 few-shot 參考）
 CREATE TABLE IF NOT EXISTS synonyms (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,

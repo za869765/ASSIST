@@ -119,12 +119,14 @@ async function handleEvent(ev, env) {
       await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `「${taskName}」已經在進行中了` }]);
       return;
     }
-    await createTask(env.DB, { groupId, taskName, startedBy: userId });
+    const newId = await createTask(env.DB, { groupId, taskName, startedBy: userId });
     const sibling = openTasks.length
       ? `\n(同時進行中：${openTasks.map(t => t.task_name).join('、')})` : '';
     const hint = confidence === 'mid' ? '\n(若不是這個意思，請再講清楚或「秘書 結單」取消)' : '';
+    const base = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
+    const viewUrl = `${base}/t/${newId}`;
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-      { type: 'text', text: `📝 開始統計「${taskName}」，請大家直接回覆${sibling}${hint}` },
+      { type: 'text', text: `📝 開始統計「${taskName}」，請大家直接回覆\n即時看板：${viewUrl}${sibling}${hint}` },
     ]);
     return;
   }
@@ -191,7 +193,18 @@ async function handleEvent(ev, env) {
 }
 
 async function collectEntry(env, task, userId, text, replyToken) {
-  // 讀該使用者目前已累積的資料，一起丟給 Gemini 合併判斷
+  // 若此人在此任務有待確認的 pending_dup，且這次訊息能辨識成「加/改」→ 直接處理
+  const pending = await env.DB.prepare(
+    `SELECT new_text, new_data, new_note, new_price FROM pending_dups WHERE task_id = ? AND user_id = ?`
+  ).bind(task.id, userId).first();
+  if (pending) {
+    const v = normalizeVerdict(text);
+    if (v === '加' || v === '改') {
+      await applyDupDecision(env, task.id, userId, pending, v === '加', replyToken);
+      return;
+    }
+  }
+
   const existing = await env.DB.prepare(
     `SELECT data_json, note, price FROM entries WHERE task_id = ? AND user_id = ?`
   ).bind(task.id, userId).first();
@@ -218,6 +231,25 @@ async function collectEntry(env, task, userId, text, replyToken) {
     ]);
     return;
   }
+
+  // 重複點餐判斷（有舊資料時）
+  let additive = false;
+  if (existing) {
+    const intent = parsed.dup_intent;
+    const conf = typeof parsed.dup_confidence === 'number' ? parsed.dup_confidence : 0;
+    if ((intent === 'add' || intent === 'replace') && conf >= 80) {
+      additive = (intent === 'add');
+    } else if ((intent === 'add' || intent === 'replace') && conf >= 60) {
+      // 60~80 → 反問當事人確認
+      await askSelfConfirm(env, task, userId, text, parsed, intent, replyToken);
+      return;
+    } else {
+      // < 60 → 問管理員
+      await handleDupPending(env, task, userId, text, parsed, replyToken);
+      return;
+    }
+  }
+
   await upsertEntry(env.DB, {
     taskId: task.id,
     userId,
@@ -225,6 +257,7 @@ async function collectEntry(env, task, userId, text, replyToken) {
     note: parsed.note,
     price: parsed.price,
     rawText: text,
+    additive,
   });
 
   const parts = Object.values(parsed.data).filter(Boolean).join('/');
@@ -247,6 +280,8 @@ async function collectEntry(env, task, userId, text, replyToken) {
 
 function normalizeVerdict(s) {
   const t = String(s).trim().toUpperCase().replace(/[\s!?！？。.]+/g, '');
+  if (/^(加|加點|再加|多加|累加|追加|一起|都要|ADD)/.test(t)) return '加';
+  if (/^(改|覆蓋|換|換成|新|以新為主|REPLACE|OVERWRITE)/.test(t)) return '改';
   if (/^(收|OK|可以|好|照記|照寫|記下|記|收下|就這樣|照舊)/.test(t)) return '收';
   if (/^(問|再問|重問|再一次|重來|AGAIN|RETRY|問他|問一下|叫他|叫他講|請他)/.test(t)) return '問';
   if (/^(略|略過|跳過|跳|忽略|算了|不要|不用管|不管|別管|別理|不理)/.test(t)) return '略';
@@ -255,6 +290,32 @@ function normalizeVerdict(s) {
 }
 
 async function handleVerdict(env, groupId, nameHint, action, replyToken) {
+  // 先找 pending_dups（加/改 場景）
+  if (action === '加' || action === '改') {
+    const dups = await env.DB.prepare(
+      `SELECT p.task_id, p.user_id, p.new_text, p.new_data, p.new_note, p.new_price,
+              m.real_name, m.line_display
+         FROM pending_dups p
+         JOIN tasks t ON t.id = p.task_id
+         LEFT JOIN members m ON m.user_id = p.user_id
+        WHERE t.group_id = ? AND t.status = 'open'
+        ORDER BY p.created_at DESC`
+    ).bind(groupId).all();
+    const dlist = dups.results || [];
+    const dhit = dlist.find(r => {
+      const n = r.real_name || r.line_display || '';
+      return n.startsWith(nameHint) || n.includes(nameHint);
+    });
+    if (dhit) {
+      await applyDupDecision(env, dhit.task_id, dhit.user_id, {
+        new_text: dhit.new_text, new_data: dhit.new_data, new_note: dhit.new_note, new_price: dhit.new_price,
+      }, action === '加', replyToken);
+      return;
+    }
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `找不到待裁定的「${nameHint}」` }]);
+    return;
+  }
+
   // 找該群組目前有 pending nonsense 的使用者（以名字/暱稱前綴比對）
   const pending = await env.DB.prepare(
     `SELECT n.task_id, n.user_id, n.last_text, m.real_name, m.line_display, t.task_name
@@ -304,6 +365,76 @@ async function handleVerdict(env, groupId, nameHint, action, replyToken) {
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `✓ ${who}：不吃（管理員裁定略過）` }]);
     return;
   }
+}
+
+async function applyDupDecision(env, taskId, userId, pending, additive, replyToken) {
+  const data = JSON.parse(pending.new_data || '{}');
+  await upsertEntry(env.DB, {
+    taskId, userId,
+    data,
+    note: pending.new_note,
+    price: pending.new_price,
+    rawText: pending.new_text,
+    additive,
+  });
+  await env.DB.prepare(`DELETE FROM pending_dups WHERE task_id = ? AND user_id = ?`).bind(taskId, userId).run();
+  const m = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
+  const who = m?.real_name || m?.line_display || userId.slice(0, 6);
+  const row = await env.DB.prepare(`SELECT data_json, price FROM entries WHERE task_id = ? AND user_id = ?`).bind(taskId, userId).first();
+  const parts = Object.values(JSON.parse(row?.data_json || '{}')).filter(Boolean).join('/');
+  const price = row?.price ? ` $${row.price}` : '';
+  const verb = additive ? '加點' : '改為';
+  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `✓ ${who} ${verb} ${parts}${price}` }]);
+}
+
+// 60~80%：反問當事人本人是否為 XXX（改單 / 加點）
+async function askSelfConfirm(env, task, userId, text, parsed, intent, replyToken) {
+  // 用 pending_dups 暫存本次解析結果，等他確認
+  await env.DB.prepare(
+    `INSERT INTO pending_dups (task_id, user_id, new_text, new_data, new_note, new_price, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(task_id, user_id) DO UPDATE SET
+       new_text = excluded.new_text, new_data = excluded.new_data,
+       new_note = excluded.new_note, new_price = excluded.new_price,
+       created_at = datetime('now')`
+  ).bind(task.id, userId, text, JSON.stringify(parsed.data || {}), parsed.note || null, parsed.price ?? null).run();
+  const parts = Object.values(parsed.data || {}).filter(Boolean).join('/') || text;
+  const m = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
+  const who = m?.real_name || m?.line_display || userId.slice(0, 6);
+  const verb = intent === 'add' ? '加點' : '改單';
+  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+    type: 'text',
+    text: `${who} 你是要${verb}「${parts}」嗎？\n回「加」=加點、「改」=改單就好`,
+  }]);
+}
+
+// <60%：問管理員裁定 加/改
+async function handleDupPending(env, task, userId, text, parsed, replyToken) {
+  await env.DB.prepare(
+    `INSERT INTO pending_dups (task_id, user_id, new_text, new_data, new_note, new_price, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(task_id, user_id) DO UPDATE SET
+       new_text = excluded.new_text, new_data = excluded.new_data,
+       new_note = excluded.new_note, new_price = excluded.new_price,
+       created_at = datetime('now')`
+  ).bind(task.id, userId, text, JSON.stringify(parsed.data || {}), parsed.note || null, parsed.price ?? null).run();
+
+  const m = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
+  const who = m?.real_name || m?.line_display || userId.slice(0, 6);
+  const oldRow = await env.DB.prepare(`SELECT data_json FROM entries WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).first();
+  const oldItem = oldRow ? (JSON.parse(oldRow.data_json || '{}')['品項'] || '') : '';
+  const newItem = Object.values(parsed.data || {}).filter(Boolean).join('/') || text;
+
+  const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const adminNames = [];
+  for (const aid of adminIds) {
+    const a = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(aid).first();
+    const nm = a?.real_name || a?.line_display;
+    if (nm) adminNames.push(nm);
+  }
+  const adminTag = adminNames.length ? adminNames.map(n => `@${n}`).join(' ') + ' ' : '';
+  const reply = `${adminTag}${who} 之前點「${oldItem}」，現在又講「${newItem}」，是要加點還是改單？`;
+  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
 }
 
 async function handleNonsense(env, task, userId, text, replyToken, teaseFromAI) {

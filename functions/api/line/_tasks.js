@@ -44,25 +44,41 @@ export async function closeTask(DB, taskId) {
   ).bind(taskId).run();
 }
 
-export async function upsertEntry(DB, { taskId, userId, data, note, price, rawText }) {
-  // 先讀舊的 raw_texts 累積
+// additive=false（預設）：以最新一次為主，覆蓋舊的 data/note/price
+// additive=true：加點模式，把新 data 串接到舊 data 的「品項」欄，其他欄位以新為主
+export async function upsertEntry(DB, { taskId, userId, data, note, price, rawText, additive = false }) {
   const old = await DB.prepare(
-    `SELECT raw_texts, data_json FROM entries WHERE task_id = ? AND user_id = ?`
+    `SELECT raw_texts, data_json, note, price FROM entries WHERE task_id = ? AND user_id = ?`
   ).bind(taskId, userId).first();
   const raws = old ? JSON.parse(old.raw_texts || '[]') : [];
   raws.push(rawText);
-  const mergedData = old ? { ...JSON.parse(old.data_json || '{}'), ...data } : data;
+
+  let finalData = data;
+  let finalNote = note || null;
+  let finalPrice = price ?? null;
+
+  if (additive && old) {
+    const oldData = JSON.parse(old.data_json || '{}');
+    const oldItem = oldData['品項'] || '';
+    const newItem = data['品項'] || '';
+    finalData = { ...oldData, ...data };
+    if (oldItem && newItem && oldItem !== newItem) {
+      finalData['品項'] = `${oldItem} + ${newItem}`;
+    }
+    finalNote = note ?? old.note ?? null;
+    finalPrice = (price ?? 0) + (old.price || 0) || (price ?? old.price ?? null);
+  }
 
   await DB.prepare(
     `INSERT INTO entries (task_id, user_id, data_json, note, price, raw_texts, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT(task_id, user_id) DO UPDATE SET
        data_json = excluded.data_json,
-       note      = COALESCE(excluded.note, note),
-       price     = COALESCE(excluded.price, price),
+       note      = excluded.note,
+       price     = excluded.price,
        raw_texts = excluded.raw_texts,
        updated_at= datetime('now')`
-  ).bind(taskId, userId, JSON.stringify(mergedData), note || null, price || null, JSON.stringify(raws)).run();
+  ).bind(taskId, userId, JSON.stringify(finalData), finalNote, finalPrice, JSON.stringify(raws)).run();
 }
 
 export async function listEntries(DB, taskId) {
