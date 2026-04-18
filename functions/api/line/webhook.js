@@ -175,11 +175,14 @@ async function handleEvent(ev, env) {
     return;
   }
 
-  // 秘書 裁定 <名字> 收/問/略
-  const verdict = cmd.match(/^裁定\s+(\S+)\s*(收|問|略)$/);
+  // 秘書 裁定 <名字> 收/問/略（或口語）
+  const verdict = cmd.match(/^裁定\s+(\S+)\s+(.+)$/);
   if (verdict && groupId) {
-    await handleVerdict(env, groupId, verdict[1], verdict[2], replyToken);
-    return;
+    const action = normalizeVerdict(verdict[2]);
+    if (action) {
+      await handleVerdict(env, groupId, verdict[1], action, replyToken);
+      return;
+    }
   }
 
   // ─── 其他一律閒聊 ───
@@ -231,6 +234,14 @@ async function collectEntry(env, task, userId, text, replyToken) {
     reply += `\n${followUp}`;
   }
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
+}
+
+function normalizeVerdict(s) {
+  const t = String(s).trim().toUpperCase().replace(/[\s!?！？。.]+/g, '');
+  if (/^(收|OK|可以|好|照記|照寫|記下|記|收下|就這樣|照舊)/.test(t)) return '收';
+  if (/^(問|再問|重問|問他|問一下|叫他|叫他講|請他)/.test(t)) return '問';
+  if (/^(略|略過|跳過|不吃|算了|跳|不要|忽略|不用管|不管)/.test(t)) return '略';
+  return null;
 }
 
 async function handleVerdict(env, groupId, nameHint, action, replyToken) {
