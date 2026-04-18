@@ -54,8 +54,9 @@ export async function onRequestPost({ env, params, request }) {
     } catch {}
   }
 
-  // 菜單模式：item 必須在菜單上（防止前端亂送）
-  if (task.menu_json) {
+  // 菜單模式：item 必須在菜單上（防止前端亂送）；custom=true 允許菜單外
+  const isCustom = !!body.custom;
+  if (task.menu_json && !isCustom) {
     const menu = JSON.parse(task.menu_json);
     const norm = (s) => String(s || '').replace(/\s+/g, '').toLowerCase();
     const hit = menu.find(it => norm(it.name) === norm(item));

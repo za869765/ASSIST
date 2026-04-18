@@ -755,6 +755,17 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
   }
   // 菜單模式只在「有菜單照 + mode !== 'free'」兩條件同時成立時生效
   const menuItems = (task.menu_json && task.mode !== 'free') ? JSON.parse(task.menu_json) : null;
+  // 飲料類任務：強制要有菜單，沒菜單直接擋
+  const isDrinkTask = /飲料|飲品|茶|咖啡|手搖|冷飲|熱飲|奶茶|果汁|冰沙/.test(task.task_name || '');
+  if (isDrinkTask && !(Array.isArray(menuItems) && menuItems.length)) {
+    if (replyToken) {
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+        type: 'text',
+        text: '🥤 此為飲料類任務，請先上傳菜單照後再點單。\n（管理員可在看板上傳菜單，或直接在 LINE 傳菜單圖給我）',
+      }]);
+    }
+    return;
+  }
   let parsed = await geminiExtract(env.GEMINI_API_KEY, task.task_name, text, known, itemNoFields, menuItems);
   if (parsed?._error) {
     console.error('[extract error]', parsed._error, 'text=', text);
@@ -1121,7 +1132,7 @@ function genDownloadToken() {
 }
 
 // 把 entries 正規化成 {name, item, data(其他欄位), note, price} 陣列
-function normalizeParsed(entries) {
+export function normalizeParsed(entries) {
   return entries.map(e => {
     let data = {};
     try { data = JSON.parse(e.data_json || '{}'); } catch {}
@@ -1133,7 +1144,7 @@ function normalizeParsed(entries) {
 }
 
 // 產生多段 XLSX rows：① 訂購彙總（對店家）② 明細（依品項排序，發餐用）
-function buildSheetRows(taskName, entries) {
+export function buildSheetRows(taskName, entries) {
   const parsed = normalizeParsed(entries);
 
   // 彙總：品項 → 份數、備註(含人名)、小計

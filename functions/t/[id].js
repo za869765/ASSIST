@@ -87,37 +87,54 @@ export async function onRequestGet({ params, request, env }) {
 <title>${esc(task.task_name)}｜即時點單</title>
 <style>
 :root { color-scheme: light dark; }
-body { font-family: -apple-system, 'PingFang TC', 'Microsoft JhengHei', sans-serif; max-width: 440px; margin: 0 auto; padding: 10px 12px; line-height: 1.35; font-size: 13px; }
+body { font-family: -apple-system, 'PingFang TC', 'Microsoft JhengHei', sans-serif; max-width: 440px; margin: 0 auto; padding: 10px 12px; line-height: 1.35; font-size: 13px; background: linear-gradient(180deg, #f0fff7 0%, #f7fafc 40%, #fff 100%); min-height: 100vh; }
+@media (prefers-color-scheme: dark) { body { background: linear-gradient(180deg, #0f1f18 0%, #141719 40%, #0c0c0d 100%); } }
 .card { border: 1px solid #ddd4; border-radius: 8px; padding: 8px 12px; margin-top: 8px; background: #fff1; }
 .zone-code { color: #aaa; font-variant-numeric: tabular-nums; margin-right: 4px; font-weight: 400; font-size: 11px; }
-h1 { margin: 0 0 2px; font-size: 17px; }
-.meta { color: #888; font-size: 11px; margin-bottom: 8px; }
-.pill { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 11px; }
-.pill.open { background: #2db87a; color: white; }
+h1 { margin: 0 0 4px; font-size: 19px; font-weight: 800; background: linear-gradient(90deg, #2db87a 0%, #1a8a5a 100%); -webkit-background-clip: text; background-clip: text; color: transparent; letter-spacing: .5px; }
+.meta { color: #888; font-size: 11px; margin-bottom: 8px; padding: 4px 8px; background: #fff8; border-radius: 6px; border-left: 3px solid #2db87a; }
+@media (prefers-color-scheme: dark) { .meta { background: #2224; color: #aaa; } }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; vertical-align: middle; }
+.pill.open { background: linear-gradient(135deg, #2db87a 0%, #5ad4a3 100%); color: white; box-shadow: 0 2px 6px rgba(45,184,122,.4); animation: pillPulse 2.2s ease-in-out infinite; }
 .pill.closed { background: #888; color: white; }
-h2.zone { font-size: 12px; font-weight: 600; margin: 8px 0 2px; padding: 2px 0; border-bottom: 1px solid #ddd4; color: #2db87a; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-h2.zone.none { color: #d4543a; }
-h2.zone.empty { color: #aaa; font-weight: 500; }
+@keyframes pillPulse { 0%,100% { box-shadow: 0 2px 6px rgba(45,184,122,.4); } 50% { box-shadow: 0 2px 12px rgba(45,184,122,.75); } }
+h2.zone { font-size: 12px; font-weight: 700; margin: 10px 0 4px; padding: 4px 8px; border-radius: 6px; color: #2db87a; background: linear-gradient(90deg, #e8f7ef 0%, transparent 80%); border-left: 3px solid #2db87a; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+h2.zone.none { color: #d4543a; background: linear-gradient(90deg, #ffe8e2 0%, transparent 80%); border-left-color: #d4543a; animation: zoneAlert 1.8s ease-in-out infinite; }
+h2.zone.empty { color: #aaa; font-weight: 500; background: #f8f8f8; border-left-color: #ddd; }
 h2.zone small { color: #888; font-weight: normal; font-size: 11px; }
+@keyframes zoneAlert { 0%,100% { box-shadow: 0 0 0 0 rgba(212,84,58,0); } 50% { box-shadow: 0 0 0 3px rgba(212,84,58,.25); } }
+@media (prefers-color-scheme: dark) {
+  h2.zone { background: linear-gradient(90deg, #1a3a2a 0%, transparent 80%); }
+  h2.zone.none { background: linear-gradient(90deg, #3a1a15 0%, transparent 80%); }
+  h2.zone.empty { background: #222; }
+}
 ul { list-style: none; padding: 0; margin: 0 0 4px; }
-li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 3px 0 3px 6px; border-bottom: 1px solid #eee2; align-items: center; }
+li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 6px 8px; border-bottom: 1px solid #eee2; align-items: center; border-radius: 4px; transition: background .15s; }
+li:hover { background: #fff8; }
+@media (prefers-color-scheme: dark) { li:hover { background: #2226; } }
 .uid-row { font-family: monospace; font-size: 9px; color: #bbb; word-break: break-all; font-weight: 400; }
 .who { font-weight: 600; font-size: 12px; }
 .body { word-break: break-all; font-size: 12px; }
 .price { color: #2db87a; font-variant-numeric: tabular-nums; text-align: right; font-size: 12px; }
 .zone-sel { padding: 1px 3px; font-size: 10px; border-radius: 3px; border: 1px solid #ccc4; background: #fff1; }
-.total { text-align: right; font-weight: 600; margin-top: 10px; font-size: 14px; }
-.tabs { display: flex; gap: 6px; margin: 4px 0 12px; overflow-x: auto; }
-.tab { flex: 1; min-width: 0; padding: 14px 16px; text-decoration: none; color: #666; background: #e8e8e8; border: 2px solid transparent; border-radius: 10px; white-space: nowrap; font-size: 18px; font-weight: 600; text-align: center; }
-.tab.active { color: #fff; background: #2db87a; border-color: #2db87a; }
-@media (prefers-color-scheme: dark) { .tab { background: #3a3a3a; color: #aaa; } }
+.total { text-align: right; font-weight: 800; margin-top: 14px; font-size: 18px; padding: 10px 14px; background: linear-gradient(135deg, #2db87a 0%, #1a8a5a 100%); color: white; border-radius: 10px; box-shadow: 0 3px 12px rgba(45,184,122,.35); }
+.tabs { display: flex; gap: 8px; margin: 4px 0 12px; overflow-x: auto; padding: 2px; }
+.tab { flex: 1; min-width: 0; padding: 14px 16px; text-decoration: none; color: #666; background: #fff; border: 2px solid #e0e0e0; border-radius: 12px; white-space: nowrap; font-size: 18px; font-weight: 700; text-align: center; transition: transform .1s, box-shadow .15s; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+.tab:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(45,184,122,.2); }
+.tab.active { color: #fff; background: linear-gradient(135deg, #2db87a 0%, #1a8a5a 100%); border-color: #2db87a; box-shadow: 0 4px 14px rgba(45,184,122,.45); }
+@media (prefers-color-scheme: dark) { .tab { background: #2a2a2a; color: #aaa; border-color: #3a3a3a; } }
 .admin-toggle { float: right; font-size: 11px; color: #888; }
 .admin-banner { background: #fff3e0; color: #b04a1a; border: 1px dashed #f0a058; border-radius: 6px; padding: 4px 8px; margin: 4px 0; font-size: 12px; }
 .del-btn { margin-left: 6px; padding: 2px 6px; font-size: 12px; line-height: 1; border: 1px solid #d4543a; background: #fff; color: #d4543a; border-radius: 4px; cursor: pointer; }
 .del-btn:hover { background: #d4543a; color: #fff; }
 .del-btn:active { transform: scale(.94); }
-.menu-card { margin: 8px 0 10px; padding: 8px 10px; border: 1px dashed #ccc6; border-radius: 8px; background: #fff1; }
-.menu-card summary { cursor: pointer; font-weight: 600; font-size: 13px; color: #2e7fe6; user-select: none; }
+.menu-card { margin: 8px 0 10px; padding: 10px 12px; border: 1px solid #c6e9d4; border-radius: 12px; background: linear-gradient(135deg, #fff 0%, #f0fff7 100%); box-shadow: 0 2px 10px rgba(45,184,122,.08); }
+.menu-card[open] { box-shadow: 0 4px 18px rgba(45,184,122,.15); }
+.menu-card summary { cursor: pointer; font-weight: 700; font-size: 14px; color: #1a8a5a; user-select: none; padding: 2px 0; }
+.menu-card summary:hover { color: #2db87a; }
+@media (prefers-color-scheme: dark) {
+  .menu-card { background: linear-gradient(135deg, #1a2420 0%, #0f1f18 100%); border-color: #2a4a3a; }
+}
 .menu-card .menu-thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .menu-card .thumb { position: relative; width: 68px; height: 68px; border-radius: 6px; overflow: hidden; background: #eee; border: 1px solid #ccc4; }
 .menu-card .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; }
@@ -214,7 +231,7 @@ li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 3px
 </head>
 <body>
 ${tabs}
-<h1>${esc(task.task_name)} <span class="pill ${closed ? 'closed' : 'open'}">${statusLabel}</span><a class="admin-toggle" href="/admin/zones" target="_blank">🔧 管理員窗口</a>${closed ? '' : `<a class="admin-toggle" href="?admin=1" style="margin-right:8px">🗑 刪除模式</a>`}</h1>
+<h1>${esc(task.task_name)} <span class="pill ${closed ? 'closed' : 'open'}">${statusLabel}</span><a class="admin-toggle" href="/admin/zones" target="_blank">🔧 管理員窗口</a>${closed ? '' : `<a class="admin-toggle" href="?admin=1" style="margin-right:8px">🗑 刪除模式</a><a class="admin-toggle" href="/api/t/${task.id}/export" style="margin-right:8px;color:#2db87a;font-weight:700">📊 匯出 XLSX</a>`}</h1>
 <div class="meta">開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}・<span id="statLine">—</span>${closed ? '' : '・每 5 秒自動更新'}</div>
 
 ${closed ? '' : `<details class="menu-card" id="menuCard">
@@ -416,10 +433,17 @@ async function loadMenu() {
       }).join('');
       return \`<div class="cat-row"><b>\${esc(cat)}</b>\${its}</div>\`;
     }).join('');
-    // 無菜單 fallback：直接給 葷食便當 / 素食便當 兩個預設 chip
+    // 無菜單 fallback
     const hasItems = (j.items || []).length > 0;
     const recBar = document.querySelector('.recommend-bar');
-    if (!hasItems && !IS_DRINK_TASK) {
+    if (!hasItems && IS_DRINK_TASK) {
+      // 飲料類強制要有菜單，沒上傳就擋住
+      document.getElementById('menuItems').innerHTML =
+        '<div style="padding:10px;background:#fff3e0;border:1px dashed #f0a058;border-radius:6px;color:#b04a1a;font-size:13px">' +
+        '🥤 飲料類任務必須先上傳菜單才能點單。<br>請先用上方「＋ 上傳菜單照」上傳菜單照片。' +
+        '</div>';
+      if (recBar) recBar.style.display = 'none';
+    } else if (!hasItems) {
       document.getElementById('menuItems').innerHTML =
         '<div class="cat-row"><b>便當</b>' +
         '<span class="item-chip" data-name="葷食便當" data-price=""><b class="item-pick">葷食便當</b></span>' +
@@ -428,8 +452,10 @@ async function loadMenu() {
         '<div style="margin-top:6px;font-size:11px;color:#888">（尚未上傳菜單；可直接點上面快速下單）</div>';
       if (recBar) recBar.style.display = 'none';
     } else {
-      document.getElementById('menuItems').innerHTML = sections;
-      if (recBar) recBar.style.display = hasItems ? '' : 'none';
+      // 菜單模式也允許新增菜單外品項
+      const extraBtn = '<div class="cat-row" style="margin-top:8px"><span class="item-chip add-custom" data-name="__custom__" style="background:#fff3e0;border-color:#f0a058"><b class="item-pick" style="color:#b04a1a">＋ 新增品項（菜單外）</b></span></div>';
+      document.getElementById('menuItems').innerHTML = sections + extraBtn;
+      if (recBar) recBar.style.display = '';
     }
     // 綁定價格編輯
     document.querySelectorAll('.price-edit').forEach(el => {
@@ -455,6 +481,16 @@ async function loadMenu() {
     document.querySelectorAll('.item-chip').forEach(chip => {
       chip.addEventListener('click', (ev) => {
         if (ev.target.closest('.price-edit')) return; // 點到價格修改區不觸發
+        if (chip.dataset.name === '__custom__') {
+          const name = prompt('請輸入品項名稱（菜單外自訂）：');
+          if (!name || !name.trim()) return;
+          const priceRaw = prompt('價格（選填，僅數字；沒填留空）：', '');
+          if (priceRaw === null) return;
+          const price = priceRaw.trim() === '' ? null : +priceRaw.trim();
+          if (price != null && (isNaN(price) || price < 0)) { alert('價格不合法'); return; }
+          openOrderModal(name.trim(), price, true);
+          return;
+        }
         const name = chip.dataset.name;
         const price = chip.dataset.price === '' ? null : +chip.dataset.price;
         openOrderModal(name, price);
@@ -655,7 +691,7 @@ const SWEET_OPTS = ['正常糖','少糖','半糖','微糖','無糖'];
 const ICE_OPTS = ['正常冰','少冰','微冰','去冰','溫','熱'];
 const LS_LAST_ZONE = 'lastZone:' + TASK_ID;
 
-function openOrderModal(itemName, price) {
+function openOrderModal(itemName, price, isCustom) {
   const zones = (state.zones || []).filter(z => z.enabled !== 0);
   if (!zones.length) { alert('沒有可選的分區'); return; }
   const lastZone = localStorage.getItem(LS_LAST_ZONE) || '';
@@ -781,7 +817,7 @@ function openOrderModal(itemName, price) {
     try {
       const r = await fetch('/api/t/' + TASK_ID + '/quick-entry', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ zone, item: itemName, price, sweet, ice, note, memberName, nonMemberName }),
+        body: JSON.stringify({ zone, item: itemName, price, sweet, ice, note, memberName, nonMemberName, custom: !!isCustom }),
       });
       const j = await r.json();
       if (!r.ok) { alert('失敗：' + (j.error || r.status)); okBtn.disabled = false; okBtn.textContent = '送出'; return; }
