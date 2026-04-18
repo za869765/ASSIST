@@ -55,14 +55,8 @@ async function handleEvent(ev, env) {
     if (tasks.length > 1) {
       const names = tasks.map(t => t.task_name);
       const { task_name } = await geminiClassifyTask(env.GEMINI_API_KEY, names, text);
-      const picked = task_name ? matchTaskByHint(tasks, task_name) : null;
-      if (picked) {
-        await collectEntry(env, picked, userId, text, replyToken);
-        return;
-      }
-      // fallback：分類器沒決定 → 對每個任務都試著抽欄位，取第一個有抽到的
-      await collectEntryMulti(env, tasks, userId, text, replyToken);
-      return;
+      const picked = (task_name ? matchTaskByHint(tasks, task_name) : null) || tasks[0];
+      target = picked;
     }
     await collectEntry(env, target, userId, text, replyToken);
     return;
@@ -186,48 +180,6 @@ async function handleEvent(ev, env) {
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
 }
 
-async function collectEntryMulti(env, tasks, userId, text, replyToken) {
-  // 並行對每個任務試抽欄位
-  const results = await Promise.all(tasks.map(async (t) => {
-    const existing = await env.DB.prepare(
-      `SELECT data_json, note, price FROM entries WHERE task_id = ? AND user_id = ?`
-    ).bind(t.id, userId).first();
-    const known = existing ? {
-      ...JSON.parse(existing.data_json || '{}'),
-      ...(existing.note ? { 備註: existing.note } : {}),
-      ...(existing.price ? { 價格: existing.price } : {}),
-    } : {};
-    const parsed = await geminiExtract(env.GEMINI_API_KEY, t.task_name, text, known);
-    const got = parsed && !parsed._error && parsed.data && Object.keys(parsed.data).length > 0;
-    return { task: t, parsed, got };
-  }));
-  const winner = results.find(r => r.got);
-  if (!winner) {
-    // DEBUG：看兩邊 extractor 各回什麼
-    const dbg = results.map(r => {
-      if (r.parsed?._error) return `${r.task.task_name}: ${r.parsed._error}`;
-      return `${r.task.task_name}=${JSON.stringify(r.parsed?.data || null)}`;
-    }).join(' | ');
-    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-      { type: 'text', text: `[debug multi] ${dbg}` },
-    ]);
-    return;
-  }
-  const { task, parsed } = winner;
-  await upsertEntry(env.DB, {
-    taskId: task.id, userId,
-    data: parsed.data, note: parsed.note, price: parsed.price, rawText: text,
-  });
-  const parts = Object.values(parsed.data).filter(Boolean).join(' / ');
-  const price = parsed.price ? ` $${parsed.price}` : '';
-  const note = parsed.note ? `（${parsed.note}）` : '';
-  const missing = Array.isArray(parsed.missing) ? parsed.missing : [];
-  const followUp = parsed.follow_up || '';
-  let reply = `✓ 已記錄到「${task.task_name}」：${parts}${price}${note}`;
-  if (missing.length && followUp) reply += `\n${followUp}`;
-  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
-}
-
 async function collectEntry(env, task, userId, text, replyToken) {
   // 讀該使用者目前已累積的資料，一起丟給 Gemini 合併判斷
   const existing = await env.DB.prepare(
@@ -258,7 +210,7 @@ async function collectEntry(env, task, userId, text, replyToken) {
   const missing = Array.isArray(parsed.missing) ? parsed.missing : [];
   const followUp = parsed.follow_up || '';
 
-  let reply = `✓ 已記錄：${parts}${price}${note}`;
+  let reply = `✓ 已記錄到「${task.task_name}」：${parts}${price}${note}`;
   if (missing.length && followUp) {
     reply += `\n${followUp}`;
   }

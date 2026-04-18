@@ -1,7 +1,7 @@
 // Gemini 2.5 Flash chat helper
 // 預設開啟 Google Search grounding，讓模型能回即時/事實型問題（天氣、新聞、匯率...）
 
-const MODEL = 'gemini-2.5-flash';
+const MODEL = 'gemini-2.5-flash-lite';
 const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
 const SYSTEM_INSTRUCTION = `你是「小秘書」，一位親切簡潔的 LINE 個人助理，講繁體中文、台灣用語。
