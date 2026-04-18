@@ -114,7 +114,7 @@ li { display: grid; grid-template-columns: 70px 1fr auto auto; gap: 6px; padding
 </head>
 <body>
 ${tabs}
-<h1>${esc(task.task_name)} <span class="pill ${closed ? 'closed' : 'open'}">${statusLabel}</span><label class="admin-toggle"><input type="checkbox" id="adminMode"> 管理員模式</label></h1>
+<h1>${esc(task.task_name)} <span class="pill ${closed ? 'closed' : 'open'}">${statusLabel}</span></h1>
 <div class="meta">開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}・<span id="statLine">—</span>${closed ? '' : '・每 5 秒自動更新'}</div>
 
 <div id="board"></div>
@@ -122,13 +122,6 @@ ${tabs}
 <script>
 const INITIAL = ${JSON.stringify(initData)};
 let state = INITIAL;
-let adminMode = localStorage.getItem('adminMode') === '1';
-document.getElementById('adminMode').checked = adminMode;
-document.getElementById('adminMode').addEventListener('change', (e) => {
-  adminMode = e.target.checked;
-  localStorage.setItem('adminMode', adminMode ? '1' : '0');
-  render();
-});
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -141,8 +134,9 @@ function render() {
   const { zones, entries } = state;
   // 分組：每個啟用的 zone 一組；加「未分區」組
   const groups = new Map();
-  for (const z of zones) groups.set(z.name, { zone: z, list: [] });
+  // 未分區排最上面：管理員優先看到尚未辨識的人
   groups.set('__unassigned__', { zone: { name: '未分區', capacity: 0 }, list: [] });
+  for (const z of zones) groups.set(z.name, { zone: z, list: [] });
   for (const e of entries) {
     const key = e.zone && groups.has(e.zone) ? e.zone : '__unassigned__';
     groups.get(key).list.push(e);
@@ -169,7 +163,7 @@ function render() {
     parts.push('<ul>' + g.list.map(e => {
       const price = e.price ? \`$\${e.price}\` : '';
       const noteShown = e.note && entryBody(e) !== '(未辨識)' ? \`（\${esc(e.note)}）\` : '';
-      const zoneSel = adminMode ? zoneSelectorHtml(e) : \`<small style="color:#888">\${esc(e.zone || '')}</small>\`;
+      const zoneSel = zoneSelectorHtml(e);
       return \`<li><span class="who">\${esc(e.name)}</span><span class="body">\${esc(entryBody(e))}\${noteShown}</span><span>\${zoneSel}</span><span class="price">\${esc(price)}</span></li>\`;
     }).join('') + '</ul>');
   }
