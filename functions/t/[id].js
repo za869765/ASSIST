@@ -122,22 +122,31 @@ li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 3px
 .menu-card .upload-row label { display: inline-block; padding: 4px 10px; border-radius: 6px; background: #2db87a; color: white; font-size: 12px; cursor: pointer; }
 .menu-card .upload-row label.busy { background: #888; pointer-events: none; }
 .menu-card .upload-row span { font-size: 11px; color: #888; }
-.menu-card .items-list { margin-top: 6px; font-size: 11px; color: #666; max-height: 220px; overflow-y: auto; }
+.menu-card .items-list { margin-top: 6px; font-size: 13px; color: #666; max-height: 260px; overflow-y: auto; }
 .menu-card .items-list .cat-row { margin: 4px 0 6px; }
 .menu-card .items-list .cat-row > b { display: inline-block; margin-right: 6px; padding: 1px 6px; background: #2db87a; color: white; border-radius: 10px; font-size: 11px; font-weight: 600; }
-.menu-card .items-list span { display: inline-block; padding: 1px 6px; margin: 1px; background: #eef; border-radius: 10px; }
-.menu-card .items-list .item-chip { cursor: pointer; transition: background .15s; }
-.menu-card .items-list .item-chip:hover { background: #d5ead9; }
-.menu-card .items-list .item-chip .item-pick { color: #2db87a; font-weight: 700; }
+.menu-card .items-list span { display: inline-block; padding: 6px 10px; margin: 3px; background: #eef; border-radius: 14px; min-height: 28px; }
+.menu-card .items-list .item-chip { cursor: pointer; transition: background .15s, transform .08s; border: 1px solid transparent; user-select: none; }
+.menu-card .items-list .item-chip:hover { background: #c8e5cf; }
+.menu-card .items-list .item-chip:active { transform: scale(.96); background: #9fd4ad; }
+.menu-card .items-list .item-chip .item-pick { color: #1e8a5c; font-weight: 700; font-size: 14px; }
+@media (max-width: 480px) {
+  .menu-card .items-list span { padding: 8px 12px; font-size: 14px; }
+  .menu-card .items-list .item-chip .item-pick { font-size: 15px; }
+}
 .order-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 998; display: flex; align-items: center; justify-content: center; }
-.order-modal .box { background: #fff; border-radius: 10px; padding: 16px 18px; max-width: 360px; width: 92vw; box-shadow: 0 8px 32px rgba(0,0,0,.3); }
-.order-modal h3 { margin: 0 0 10px; font-size: 15px; }
-.order-modal label { display: block; font-size: 12px; color: #555; margin: 8px 0 3px; }
-.order-modal select, .order-modal input { width: 100%; padding: 6px 8px; font-size: 13px; border: 1px solid #bbb; border-radius: 5px; box-sizing: border-box; }
-.order-modal .row-btns { margin-top: 14px; display: flex; gap: 8px; justify-content: flex-end; }
-.order-modal button { padding: 6px 14px; font-size: 13px; border-radius: 6px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
-.order-modal button.primary { background: #2db87a; color: white; border-color: #2db87a; }
-.order-modal button.primary:disabled { background: #888; border-color: #888; cursor: wait; }
+.order-modal .box { background: #fff; border-radius: 12px; padding: 20px 20px 18px; max-width: 420px; width: 94vw; max-height: 92vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,.3); }
+.order-modal h3 { margin: 0 0 14px; font-size: 17px; line-height: 1.3; }
+.order-modal label { display: block; font-size: 13px; color: #555; margin: 12px 0 5px; font-weight: 600; }
+.order-modal select, .order-modal input { width: 100%; padding: 12px 10px; font-size: 15px; border: 1px solid #bbb; border-radius: 8px; box-sizing: border-box; }
+.order-modal .opt-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.order-modal .opt-grid button { flex: 1 0 auto; min-width: 64px; padding: 10px 8px; font-size: 14px; border-radius: 8px; border: 1.5px solid #ccc; background: #f8f8f8; color: #333; cursor: pointer; user-select: none; }
+.order-modal .opt-grid button.active { background: #2db87a; color: white; border-color: #2db87a; font-weight: 600; }
+.order-modal .opt-grid button:active { transform: scale(.96); }
+.order-modal .row-btns { margin-top: 18px; display: flex; gap: 10px; }
+.order-modal .row-btns button { flex: 1; padding: 12px; font-size: 15px; border-radius: 8px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+.order-modal .row-btns button.primary { background: #2db87a; color: white; border-color: #2db87a; font-weight: 600; }
+.order-modal .row-btns button.primary:disabled { background: #888; border-color: #888; cursor: wait; }
 @media (prefers-color-scheme: dark) {
   .order-modal .box { background: #222; color: #eee; }
   .order-modal select, .order-modal input { background: #333; color: #eee; border-color: #555; }
@@ -568,9 +577,12 @@ function openOrderModal(itemName, price) {
     const sel = z.name === lastZone ? ' selected' : '';
     return '<option value="' + esc(z.name) + '"' + sel + '>' + esc(code + z.name) + '</option>';
   }).join('');
+  const optBtns = (group, opts, defaultIdx) => '<div class="opt-grid" data-group="' + group + '">' +
+    opts.map((o, i) => '<button type="button" data-val="' + esc(o) + '"' + (i === defaultIdx ? ' class="active"' : '') + '>' + esc(o) + '</button>').join('') +
+    '</div>';
   const drinkRow = IS_DRINK_TASK ? (
-    '<label>甜度</label><select id="omSweet">' + SWEET_OPTS.map(o => '<option>' + o + '</option>').join('') + '</select>' +
-    '<label>冰塊</label><select id="omIce">' + ICE_OPTS.map(o => '<option>' + o + '</option>').join('') + '</select>'
+    '<label>甜度</label>' + optBtns('sweet', SWEET_OPTS, 0) +
+    '<label>冰塊</label>' + optBtns('ice', ICE_OPTS, 0)
   ) : '';
   const priceStr = price != null ? ' $' + price : '';
   const d = document.createElement('div');
@@ -585,13 +597,27 @@ function openOrderModal(itemName, price) {
   document.body.appendChild(d);
   const close = () => d.remove();
   d.addEventListener('click', (e) => { if (e.target === d) close(); });
+  // 選項按鈕：點擊切換 active（同組只能選一個）
+  d.querySelectorAll('.opt-grid').forEach(grid => {
+    grid.addEventListener('click', (ev) => {
+      const b = ev.target.closest('button'); if (!b) return;
+      grid.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+    });
+  });
+  const getOpt = (group) => {
+    const g = d.querySelector('.opt-grid[data-group="' + group + '"]');
+    if (!g) return null;
+    const a = g.querySelector('button.active');
+    return a ? a.dataset.val : null;
+  };
   d.querySelector('#omCancel').addEventListener('click', close);
   d.querySelector('#omOk').addEventListener('click', async () => {
     const okBtn = d.querySelector('#omOk');
     okBtn.disabled = true; okBtn.textContent = '送出中…';
     const zone = d.querySelector('#omZone').value;
-    const sweet = IS_DRINK_TASK ? d.querySelector('#omSweet').value : null;
-    const ice = IS_DRINK_TASK ? d.querySelector('#omIce').value : null;
+    const sweet = IS_DRINK_TASK ? getOpt('sweet') : null;
+    const ice = IS_DRINK_TASK ? getOpt('ice') : null;
     const note = d.querySelector('#omNote').value.trim() || null;
     try {
       const r = await fetch('/api/t/' + TASK_ID + '/quick-entry', {
