@@ -1,12 +1,5 @@
-// 全域分區設定：讀取 / 批次覆寫（需 ?uid=<admin LINE userId>）
-function checkAdmin(request, env) {
-  const url = new URL(request.url);
-  const uid = String(url.searchParams.get('uid') || '').trim();
-  const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
-  return uid && adminIds.includes(uid);
-}
-export async function onRequestGet({ request, env }) {
-  if (!checkAdmin(request, env)) return new Response('forbidden', { status: 403 });
+// 全域分區設定：讀取 / 批次覆寫
+export async function onRequestGet({ env }) {
   const row = await env.DB.prepare(
     `SELECT name, capacity, enabled, sort_order FROM zones ORDER BY sort_order ASC, name ASC`
   ).all();
@@ -14,7 +7,6 @@ export async function onRequestGet({ request, env }) {
 }
 
 export async function onRequestPost({ request, env }) {
-  if (!checkAdmin(request, env)) return new Response('forbidden', { status: 403 });
   let body;
   try { body = await request.json(); } catch { return new Response('Bad JSON', { status: 400 }); }
   const zones = Array.isArray(body?.zones) ? body.zones : null;

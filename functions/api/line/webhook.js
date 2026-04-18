@@ -71,17 +71,6 @@ async function handleEvent(ev, env) {
       }
     }
 
-    // 管理員要分區設定連結（不用喚醒詞）
-    const zoneShort = String(text || '').replace(/[?？!！。.\s]/g, '');
-    if (admin && /^(分區|分區設定|設定分區|分組|分組設定)$/.test(zoneShort)) {
-      const base = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
-      const link = `${base}/admin/zones?uid=${encodeURIComponent(userId)}`;
-      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-        { type: 'text', text: `🔧 分區設定：\n${link}\n⚠️ 此連結綁您的 LINE ID，請勿外流。` },
-      ]);
-      return;
-    }
-
     // 管理員直接問「進度」等（不用喚醒詞）
     const progShort = String(text || '').replace(/[?？!！。.\s]/g, '');
     if (admin && /^(進度|目前|狀態|現況|收到幾筆|幾筆了)(.*)?$/.test(progShort)) {

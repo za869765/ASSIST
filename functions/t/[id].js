@@ -100,7 +100,8 @@ h2.zone.none { color: #d4543a; }
 h2.zone.empty { color: #aaa; font-weight: 500; }
 h2.zone small { color: #888; font-weight: normal; font-size: 11px; }
 ul { list-style: none; padding: 0; margin: 0 0 4px; }
-li { display: grid; grid-template-columns: 70px 1fr auto auto; gap: 6px; padding: 3px 0 3px 6px; border-bottom: 1px solid #eee2; align-items: center; }
+li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 3px 0 3px 6px; border-bottom: 1px solid #eee2; align-items: center; }
+.uid-row { font-family: monospace; font-size: 9px; color: #bbb; word-break: break-all; font-weight: 400; }
 .who { font-weight: 600; font-size: 12px; }
 .body { word-break: break-all; font-size: 12px; }
 .price { color: #2db87a; font-variant-numeric: tabular-nums; text-align: right; font-size: 12px; }
@@ -114,7 +115,7 @@ li { display: grid; grid-template-columns: 70px 1fr auto auto; gap: 6px; padding
 </head>
 <body>
 ${tabs}
-<h1>${esc(task.task_name)} <span class="pill ${closed ? 'closed' : 'open'}">${statusLabel}</span></h1>
+<h1>${esc(task.task_name)} <span class="pill ${closed ? 'closed' : 'open'}">${statusLabel}</span><a class="admin-toggle" href="/admin/zones" target="_blank">🔧 管理員窗口</a></h1>
 <div class="meta">開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}・<span id="statLine">—</span>${closed ? '' : '・每 5 秒自動更新'}</div>
 
 <div id="board"></div>
@@ -163,8 +164,8 @@ function render() {
     parts.push('<ul>' + g.list.map(e => {
       const price = e.price ? \`$\${e.price}\` : '';
       const noteShown = e.note && entryBody(e) !== '(未辨識)' ? \`（\${esc(e.note)}）\` : '';
-      const zoneSel = zoneSelectorHtml(e);
-      return \`<li><span class="who">\${esc(e.name)}</span><span class="body">\${esc(entryBody(e))}\${noteShown}</span><span>\${zoneSel}</span><span class="price">\${esc(price)}</span></li>\`;
+      const idLine = isUnassigned ? \`<div class="uid-row">\${esc(e.user_id)}</div>\` : '';
+      return \`<li><span class="who">\${esc(e.name)}\${idLine}</span><span class="body">\${esc(entryBody(e))}\${noteShown}</span><span class="price">\${esc(price)}</span></li>\`;
     }).join('') + '</ul>');
   }
 
@@ -173,28 +174,6 @@ function render() {
   board.innerHTML = parts.join('');
 
   document.getElementById('statLine').textContent = \`共 \${entries.length} 筆・已填 \${filledZones}/\${totalZonesEnabled} 區\`;
-
-  // 綁定下拉事件
-  board.querySelectorAll('select.zone-sel').forEach(sel => {
-    sel.addEventListener('change', async () => {
-      const uid = sel.dataset.uid;
-      const val = sel.value;
-      await fetch('/api/zone/tag', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: uid, zone: val }),
-      });
-      // 更新 local state 後重新渲染
-      const hit = state.entries.find(x => x.user_id === uid);
-      if (hit) hit.zone = val;
-      render();
-    });
-  });
-}
-
-function zoneSelectorHtml(e) {
-  const opts = ['<option value="">（未分區）</option>', ...state.zones.map(z => \`<option value="\${esc(z.name)}"\${z.name === e.zone ? ' selected' : ''}>\${esc(z.name)}</option>\`)].join('');
-  return \`<select class="zone-sel" data-uid="\${esc(e.user_id)}">\${opts}</select>\`;
 }
 
 async function poll() {
