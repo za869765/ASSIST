@@ -501,7 +501,7 @@ function normalizeVerdict(s) {
   if (/(再一(份|杯|個|碗|份兒))/.test(t)) return '加';
   if (/(多(一|兩|三)?(份|杯|個|碗))/.test(t)) return '加';
   // 改單/覆蓋的同義詞：改、更改、改成、改為、換、換成、重新、修改、取代、覆蓋
-  if (/^(改|更改|改成|改為|改了|修改|換|換成|換為|重新|重點|取代|替換|覆蓋|不要剛剛|不要上面|以新|新的|以新為主|REPLACE|OVERWRITE|UPDATE)/.test(t)) return '改';
+  if (/^(改|更改|改成|改為|改了|修改|換|換成|換為|重新|重點|取代|替換|覆蓋|不要剛剛|不要上面|以新|新的|以新為主|REPLACE|OVERWRITE|UPDATE|CHANGE|MODIFY|EDIT)/.test(t)) return '改';
   if (/(取消前面|取消上面|取消剛剛|取消之前)/.test(t)) return '改';
   if (/^(收|OK|可以|好|照記|照寫|記下|記|收下|就這樣|照舊)/.test(t)) return '收';
   if (/^(問|再問|重問|再一次|重來|AGAIN|RETRY|問他|問一下|叫他|叫他講|請他)/.test(t)) return '問';
