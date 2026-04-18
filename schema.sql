@@ -136,6 +136,15 @@ CREATE TABLE IF NOT EXISTS item_no_fields (
   PRIMARY KEY (item, field)
 );
 
+-- 分區設定（全域；看板顯示未填分母、下拉選單來源）
+CREATE TABLE IF NOT EXISTS zones (
+  name         TEXT PRIMARY KEY,
+  capacity     INTEGER NOT NULL DEFAULT 1,    -- 0 = 不限
+  enabled      INTEGER NOT NULL DEFAULT 1,
+  sort_order   INTEGER NOT NULL DEFAULT 0,
+  created_at   TEXT DEFAULT (datetime('now'))
+);
+
 -- 同義詞對照（學習累積，給 Gemini 當 few-shot 參考）
 CREATE TABLE IF NOT EXISTS synonyms (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,

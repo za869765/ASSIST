@@ -99,7 +99,7 @@ export async function upsertEntry(DB, { taskId, userId, data, note, price, rawTe
 
 export async function listEntries(DB, taskId) {
   const r = await DB.prepare(
-    `SELECT e.user_id, e.data_json, e.note, e.price, m.line_display, m.real_name
+    `SELECT e.user_id, e.data_json, e.note, e.price, e.updated_at, m.line_display, m.real_name, m.zone
        FROM entries e
        LEFT JOIN members m ON m.user_id = e.user_id
       WHERE e.task_id = ?

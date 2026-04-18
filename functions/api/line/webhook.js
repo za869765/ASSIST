@@ -286,12 +286,31 @@ async function doCloseTask(env, picked, replyToken) {
   const aggText = buildAggregateText(picked.task_name, entries);
   const tpeExpire = new Date(expiresDate.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16).replace('T', ' ');
 
+  // 未分區名單（提醒管理員）
+  const unassigned = entries.filter(e => !e.zone).map(e => e.real_name || e.line_display || (e.user_id || '').slice(0, 6));
+  const unassignedLine = unassigned.length
+    ? `\n\n⚠️ 未分區（${unassigned.length} 人）：${unassigned.join('、')}\n→ /admin/zones 可手動分區`
+    : '';
+
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-    { type: 'text', text: `✅ 任務「${picked.task_name}」已結單\n\n${aggText}\n\n📎 完整明細下載：\n${dlUrl}\n⏰ 連結在 ${tpeExpire}（台北時間）前有效，可多人重複下載` },
+    { type: 'text', text: `✅ 任務「${picked.task_name}」已結單\n\n${aggText}${unassignedLine}\n\n📎 完整明細下載：\n${dlUrl}\n⏰ 連結在 ${tpeExpire}（台北時間）前有效，可多人重複下載` },
   ]);
 }
 
 async function collectEntry(env, task, userId, text, replyToken) {
+  // 管理員標「請假」：「新化請假」「北區不吃」→ 該區記 請假，不再追問
+  const leave = await tryZoneLeave(env, userId, text);
+  if (leave) {
+    await upsertEntry(env.DB, {
+      taskId: task.id, userId: leave.userId,
+      data: {}, note: '請假', price: null, rawText: text, additive: false,
+    });
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+      { type: 'text', text: `📝 已登記「${leave.zoneName}」請假` },
+    ]);
+    return;
+  }
+
   // 管理員代點：「幫南區點素食便當」「永康要一個排骨飯」等，把名字記成該區
   const proxy = await tryProxyZone(env, userId, text);
   if (proxy) {
@@ -539,7 +558,7 @@ function normalizeParsed(entries) {
     const name = e.real_name || e.line_display || (e.user_id ? e.user_id.slice(0, 6) : '');
     const item = data['品項'] || '';
     const rest = { ...data }; delete rest['品項'];
-    return { name, item, data, rest, note: e.note || '', price: e.price, updated: e.updated_at };
+    return { name, item, data, rest, note: e.note || '', price: e.price, updated: e.updated_at, zone: e.zone || '' };
   });
 }
 
@@ -588,7 +607,7 @@ function buildSheetRows(taskName, entries) {
   const restFields = [];
   parsed.forEach(p => { for (const k of Object.keys(p.rest)) if (!restFields.includes(k)) restFields.push(k); });
   rows.push(['■ 明細（依品項排序，發餐用）']);
-  rows.push(['品項', '姓名', ...restFields, '備註', '金額']);
+  rows.push(['品項', '姓名', '分組', ...restFields, '備註', '金額']);
   const sorted = [...parsed].sort((a, b) => {
     const ai = a.item || '~'; const bi = b.item || '~';
     if (ai !== bi) return ai.localeCompare(bi, 'zh-Hant');
@@ -598,6 +617,7 @@ function buildSheetRows(taskName, entries) {
     rows.push([
       p.item || '(未辨識)',
       p.name,
+      p.zone || '(未分區)',
       ...restFields.map(k => p.rest[k] == null ? '' : String(p.rest[k])),
       p.note || '',
       p.price != null ? String(p.price) : '',
@@ -854,26 +874,54 @@ async function handleDupPending(env, task, userId, text, parsed, replyToken) {
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
 }
 
+// 管理員標「請假」：偵測「新化請假」「北區不吃」「南區跳過」等
+// 回傳 { userId: 'zone:<名>', zoneName } 或 null
+async function tryZoneLeave(env, userId, text) {
+  const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (!adminIds.includes(userId)) return null;
+
+  const t = String(text || '').trim();
+  const m = t.match(/^(.{1,8}?)(?:\s*)(請假|休假|不吃|沒訂|跳過|不訂|沒點)$/);
+  if (!m) return null;
+
+  const zoneHint = m[1].replace(/區$/, '');
+  // 從 zones 表找：完全相符 或 含此關鍵字
+  const zonesRow = await env.DB.prepare(
+    `SELECT name FROM zones WHERE enabled = 1 ORDER BY length(name) DESC`
+  ).all();
+  const allZones = (zonesRow.results || []).map(r => r.name);
+  let zoneName = allZones.find(n => n === m[1]) || allZones.find(n => n === m[1] + '區');
+  if (!zoneName) zoneName = allZones.find(n => n.startsWith(zoneHint) || n.includes(zoneHint));
+  if (!zoneName) return null;
+
+  const synthId = `zone:${zoneName}`;
+  await env.DB.prepare(
+    `INSERT INTO members (user_id, real_name, zone, bound_at, last_seen_at)
+     VALUES (?, ?, ?, datetime('now'), datetime('now'))
+     ON CONFLICT(user_id) DO UPDATE SET zone = excluded.zone, last_seen_at = datetime('now')`
+  ).bind(synthId, zoneName, zoneName).run();
+  return { userId: synthId, zoneName };
+}
+
 // 管理員代點：偵測「幫南區點素食便當」「衛生局要一個排骨飯」等
 // 回傳 {userId, text} 或 null。userId 會被替換為 zone:<名稱>，text 則是移除代點用詞的點餐內容
 async function tryProxyZone(env, userId, text) {
   const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
   if (!adminIds.includes(userId)) return null;
 
-  // 台南常見行政區 + 常見局處單位（白名單加速匹配）
-  const KNOWN = [
-    '中西區','東區','南區','北區','安平區','安南區',
-    '永康','歸仁','新化','左鎮','玉井','楠西','南化','仁德','關廟','龍崎',
-    '官田','麻豆','佳里','西港','七股','將軍','學甲','北門',
-    '新營','後壁','白河','東山','六甲','下營','柳營','鹽水',
-    '善化','大內','山上','新市','安定',
-    '衛生局','檢驗中心','環保局','教育局','社會局','警察局','消防局','勞工局',
-  ];
+  // 以 zones 表為單一來源（管理員在 /admin/zones 維護）
   const zonesRow = await env.DB.prepare(
+    `SELECT name FROM zones WHERE enabled = 1`
+  ).all();
+  const enabledZones = (zonesRow.results || []).map(r => r.name).filter(Boolean);
+  // 加上 zones 表沒列但已在 members 用過的（向下相容）
+  const memZonesRow = await env.DB.prepare(
     `SELECT DISTINCT zone FROM members WHERE zone IS NOT NULL AND zone != ''`
   ).all();
-  const dbZones = (zonesRow.results || []).map(r => r.zone).filter(Boolean);
-  const all = [...new Set([...KNOWN, ...dbZones])].sort((a, b) => b.length - a.length);
+  const memZones = (memZonesRow.results || []).map(r => r.zone).filter(Boolean);
+  // 去「區」短別名也加入比對（「新化」要能匹到「新化區」）
+  const aliases = enabledZones.flatMap(z => z.endsWith('區') ? [z, z.slice(0, -1)] : [z]);
+  const all = [...new Set([...aliases, ...memZones])].sort((a, b) => b.length - a.length);
 
   let zoneName = null;
   let stripped = text;
@@ -901,12 +949,15 @@ async function tryProxyZone(env, userId, text) {
 
   if (!zoneName || zoneName.length < 1 || zoneName.length > 10) return null;
 
-  const synthId = `zone:${zoneName}`;
+  // 短別名 → 正規化為 zones 表中的完整名稱（「新化」→「新化區」）
+  const canonical = enabledZones.find(n => n === zoneName) || enabledZones.find(n => n === zoneName + '區') || zoneName;
+
+  const synthId = `zone:${canonical}`;
   await env.DB.prepare(
     `INSERT INTO members (user_id, real_name, zone, bound_at, last_seen_at)
      VALUES (?, ?, ?, datetime('now'), datetime('now'))
      ON CONFLICT(user_id) DO UPDATE SET last_seen_at = datetime('now')`
-  ).bind(synthId, zoneName, zoneName).run();
+  ).bind(synthId, canonical, canonical).run();
 
   return { userId: synthId, text: stripped || text };
 }
