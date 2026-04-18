@@ -53,6 +53,24 @@ async function handleEvent(ev, env) {
     const tasks = await findOpenTasks(env.DB, groupId);
     if (!tasks.length) return;
 
+    // 管理員若處於「多任務結算等待選擇」狀態，這則訊息直接當作任務名稱
+    if (admin) {
+      // 清除 2 分鐘前的過期紀錄
+      await env.DB.prepare(`DELETE FROM pending_close WHERE created_at < datetime('now','-2 minutes')`).run();
+      const pc = await env.DB.prepare(
+        `SELECT 1 FROM pending_close WHERE group_id = ? AND admin_id = ?`
+      ).bind(groupId, userId).first();
+      if (pc) {
+        const hit = matchTaskByHint(tasks, text.trim());
+        await env.DB.prepare(`DELETE FROM pending_close WHERE group_id = ? AND admin_id = ?`).bind(groupId, userId).run();
+        if (hit) {
+          await doCloseTask(env, hit, replyToken);
+          return;
+        }
+        // 沒匹配 → 當作取消，繼續走正常流程
+      }
+    }
+
     // 管理員直接講「結算 / 結單 / 收單」等（不用喚醒詞）→ 結單流程
     const closeShort = String(text || '').replace(/[?？!！。.\s]/g, '');
     if (admin && /^(結單|結算|結束|關閉|收單|結束統計|結單吧|關閉統計|收工|收了|打烊)(.*)?$/.test(closeShort)) {
@@ -61,12 +79,15 @@ async function handleEvent(ev, env) {
       const picked = hinted || (tasks.length === 1 ? tasks[0] : null);
       if (!picked) {
         const names = tasks.map(t => `「${t.task_name}」`).join('、');
+        await env.DB.prepare(
+          `INSERT INTO pending_close (group_id, admin_id, created_at) VALUES (?, ?, datetime('now'))
+           ON CONFLICT(group_id, admin_id) DO UPDATE SET created_at = datetime('now')`
+        ).bind(groupId, userId).run();
         await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
-          type: 'text', text: `目前有多個任務：${names}\n請指定要結算哪個，例：「結算 飲料」或「結算 便當」`,
+          type: 'text', text: `目前有多個任務：${names}\n要結算哪個?`,
         }]);
         return;
       }
-      // 轉由 close 流程處理（複用既有邏輯：用喚醒命令重入不划算，直接複製關鍵動作）
       await doCloseTask(env, picked, replyToken);
       return;
     }
@@ -192,7 +213,11 @@ async function handleEvent(ev, env) {
     const picked = hinted || (tasks.length === 1 ? tasks[0] : null);
     if (!picked) {
       const names = tasks.map(t => `「${t.task_name}」`).join('、');
-      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `目前有多個任務：${names}\n請指定要結算哪個，例：「結算 飲料」或「結算 便當」` }]);
+      await env.DB.prepare(
+        `INSERT INTO pending_close (group_id, admin_id, created_at) VALUES (?, ?, datetime('now'))
+         ON CONFLICT(group_id, admin_id) DO UPDATE SET created_at = datetime('now')`
+      ).bind(groupId, userId).run();
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `目前有多個任務：${names}\n要結算哪個?` }]);
       return;
     }
     await doCloseTask(env, picked, replyToken);

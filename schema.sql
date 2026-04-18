@@ -107,6 +107,14 @@ CREATE TABLE IF NOT EXISTS exports (
 );
 CREATE INDEX IF NOT EXISTS idx_exports_task ON exports(task_id);
 
+-- 管理員多任務結算待選（bot 問過「要結算哪個?」後，下一則訊息視為任務名稱）
+CREATE TABLE IF NOT EXISTS pending_close (
+  group_id     TEXT NOT NULL,
+  admin_id     TEXT NOT NULL,
+  created_at   TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (group_id, admin_id)
+);
+
 -- 污穢發言待管理員裁示（裁示前，該用戶後續發言會提醒管理員）
 CREATE TABLE IF NOT EXISTS pending_profanity (
   task_id      INTEGER NOT NULL,
