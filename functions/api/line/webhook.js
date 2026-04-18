@@ -622,7 +622,7 @@ async function handleDupPending(env, task, userId, text, parsed, replyToken) {
     if (nm) adminNames.push(nm);
   }
   const adminTag = adminNames.length ? adminNames.map(n => `@${n}`).join(' ') + ' ' : '';
-  const reply = `${adminTag}不好意思打擾一下～${who} 原本點的是「${oldItem}」，剛剛又提到「${newItem}」，麻煩您裁示一下是要「加點」還是「改單」呢？謝謝 🙏`;
+  const reply = `${adminTag}打擾一下～${who} 原本點的是「${oldItem}」，剛剛又提到「${newItem}」，麻煩您裁示一下是要「加點」還是「改單」呢？謝謝 🙏`;
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
 }
 
@@ -663,7 +663,7 @@ async function handleNonsense(env, task, userId, text, replyToken, teaseFromAI, 
   // 未點狀態：模糊/矛盾比較正常，第 1 次 AI 吐槽留空間；第 2 次起才 @ 管理員
   // 已點狀態：已經有有效紀錄，任何矛盾發言直接 @ 管理員（不再吐槽浪費時間）
   if (!hasExisting && count === 1) {
-    const tease = teaseFromAI || '不好意思～這個描述我沒辦法幫您點，麻煩再提供一次正確的品項，謝謝您 🙏';
+    const tease = teaseFromAI || '您這個描述我沒辦法幫您點，麻煩再提供一次正確的品項，謝謝您 🙏';
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: tease }]);
     return;
   }
