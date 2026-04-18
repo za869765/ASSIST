@@ -462,6 +462,17 @@ async function collectEntry(env, task, userId, text, replyToken) {
     await handleProfanity(env, task, userId, text, replyToken);
     return;
   }
+  // 便當類 + 只給葷/素 → 自動補全品項（比照 +1 行為）
+  if (parsed?.data) {
+    const taskIsBento = /便當|飯|自助餐|餐盒/.test(task.task_name || '');
+    if (taskIsBento && !parsed.data['品項']) {
+      const hs = parsed.data['葷素'];
+      if (hs === '葷') parsed.data['品項'] = '葷食便當';
+      else if (hs === '素') parsed.data['品項'] = '素食便當';
+      else if (/(^|[^一二三四五六七八九十百千])葷(?!素)/.test(text) && !/素/.test(text)) { parsed.data['品項'] = '葷食便當'; parsed.data['葷素'] = '葷'; }
+      else if (/素(?!食便當|食)/.test(text) && !/葷/.test(text)) { parsed.data['品項'] = '素食便當'; parsed.data['葷素'] = '素'; }
+    }
+  }
   if (parsed?.nonsense) {
     await handleNonsense(env, task, userId, text, replyToken, parsed.follow_up, !!existing);
     return;
@@ -540,15 +551,6 @@ async function collectEntry(env, task, userId, text, replyToken) {
     const hasAddWord = /(^|[\s，,。、])(加|加點|加上|再加|再來|多加|多點|還要|外加|追加|併|合併)/.test(text);
     if (hasReplaceWord && !hasAddWord) {
       additive = false; // 直接改
-      // 便當類 + 只給葷/素 → 自動補全品項
-      const taskIsBento = /便當|飯|自助餐|餐盒/.test(task.task_name || '');
-      if (taskIsBento && !parsed.data?.['品項']) {
-        const hs = parsed.data?.['葷素'];
-        if (hs === '葷') parsed.data['品項'] = '葷食便當';
-        else if (hs === '素') parsed.data['品項'] = '素食便當';
-        else if (/葷/.test(text) && !/素/.test(text)) { parsed.data['品項'] = '葷食便當'; parsed.data['葷素'] = '葷'; }
-        else if (/素/.test(text) && !/葷/.test(text)) { parsed.data['品項'] = '素食便當'; parsed.data['葷素'] = '素'; }
-      }
     } else if (hasAddWord && !hasReplaceWord) {
       additive = true;
     } else if (intent === 'add' && conf >= 80) {
