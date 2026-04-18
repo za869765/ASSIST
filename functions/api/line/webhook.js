@@ -536,10 +536,19 @@ async function collectEntry(env, task, userId, text, replyToken) {
     const intent = parsed.dup_intent;
     const conf = typeof parsed.dup_confidence === 'number' ? parsed.dup_confidence : 0;
     // 訊息含明確改/換字眼 → 直接改（不用兩階段）
-    const hasReplaceWord = /(^|[\s，,。、])(改|換|更改|改成|改為|換成|換為|修改|取代|替換|重點)/.test(text);
+    const hasReplaceWord = /(^|[\s，,。、])?(改|換|更改|改成|改為|換成|換為|修改|取代|替換)/.test(text);
     const hasAddWord = /(^|[\s，,。、])(加|加點|加上|再加|再來|多加|多點|還要|外加|追加|併|合併)/.test(text);
     if (hasReplaceWord && !hasAddWord) {
       additive = false; // 直接改
+      // 便當類 + 只給葷/素 → 自動補全品項
+      const taskIsBento = /便當|飯|自助餐|餐盒/.test(task.task_name || '');
+      if (taskIsBento && !parsed.data?.['品項']) {
+        const hs = parsed.data?.['葷素'];
+        if (hs === '葷') parsed.data['品項'] = '葷食便當';
+        else if (hs === '素') parsed.data['品項'] = '素食便當';
+        else if (/葷/.test(text) && !/素/.test(text)) { parsed.data['品項'] = '葷食便當'; parsed.data['葷素'] = '葷'; }
+        else if (/素/.test(text) && !/葷/.test(text)) { parsed.data['品項'] = '素食便當'; parsed.data['葷素'] = '素'; }
+      }
     } else if (hasAddWord && !hasReplaceWord) {
       additive = true;
     } else if (intent === 'add' && conf >= 80) {
@@ -584,9 +593,13 @@ async function collectEntry(env, task, userId, text, replyToken) {
   ).bind(userId).first();
   const name = (m?.real_name || m?.line_display || userId.slice(0, 6));
 
+  // 是否明確改/換字眼 → 肯定句收尾
+  const explicitReplace = /(^|[\s，,。、])?(改|換|更改|改成|改為|換成|換為|修改|取代|替換)/.test(text);
   let reply;
   if (existing && additive) {
     reply = `${name} 加點 ${parts}${price}${note}，是這樣嗎？`;
+  } else if (existing && !additive && explicitReplace) {
+    reply = `✅ 已幫您換成 ${parts}${price}${note}`;
   } else if (existing && !additive) {
     const tail = oldItemForReport ? `（原「${oldItemForReport}」已取消）` : '';
     reply = `${name} 改為 ${parts}${price}${note}${tail}，是這樣嗎？`;
