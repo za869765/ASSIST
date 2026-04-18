@@ -175,6 +175,13 @@ async function handleEvent(ev, env) {
     return;
   }
 
+  // 秘書 裁定 <名字> 收/問/略
+  const verdict = cmd.match(/^裁定\s+(\S+)\s*(收|問|略)$/);
+  if (verdict && groupId) {
+    await handleVerdict(env, groupId, verdict[1], verdict[2], replyToken);
+    return;
+  }
+
   // ─── 其他一律閒聊 ───
   const reply = await geminiChat(env.GEMINI_API_KEY, cmd);
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
@@ -193,8 +200,7 @@ async function collectEntry(env, task, userId, text, replyToken) {
 
   const parsed = await geminiExtract(env.GEMINI_API_KEY, task.task_name, text, known);
   if (parsed?.nonsense) {
-    const tease = parsed.follow_up || '別鬧啦，認真講～';
-    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: tease }]);
+    await handleNonsense(env, task, userId, text, replyToken, parsed.follow_up);
     return;
   }
   if (!parsed || !parsed.data || Object.keys(parsed.data).length === 0) {
@@ -224,6 +230,96 @@ async function collectEntry(env, task, userId, text, replyToken) {
   if (missing.length && followUp) {
     reply += `\n${followUp}`;
   }
+  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
+}
+
+async function handleVerdict(env, groupId, nameHint, action, replyToken) {
+  // 找該群組目前有 pending nonsense 的使用者（以名字/暱稱前綴比對）
+  const pending = await env.DB.prepare(
+    `SELECT n.task_id, n.user_id, n.last_text, m.real_name, m.line_display, t.task_name
+       FROM nonsense_strikes n
+       JOIN tasks t ON t.id = n.task_id
+       LEFT JOIN members m ON m.user_id = n.user_id
+      WHERE t.group_id = ? AND t.status = 'open' AND n.count >= 2
+      ORDER BY n.last_at DESC`
+  ).bind(groupId).all();
+  const list = pending.results || [];
+  const hit = list.find(r => {
+    const n = r.real_name || r.line_display || '';
+    return n.startsWith(nameHint) || n.includes(nameHint);
+  });
+  if (!hit) {
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `找不到待裁定的「${nameHint}」` }]);
+    return;
+  }
+  const who = hit.real_name || hit.line_display || hit.user_id.slice(0, 6);
+
+  if (action === '收') {
+    // 照字面收：把 last_text 當一次正常的 extract 輸入，強制記下
+    const known = {}; // 忽略 known，直接以這次文字為主
+    const parsed = await geminiExtract(env.GEMINI_API_KEY, hit.task_name, hit.last_text, known);
+    const data = (parsed && parsed.data && Object.keys(parsed.data).length) ? parsed.data : { 品項: hit.last_text };
+    await upsertEntry(env.DB, {
+      taskId: hit.task_id, userId: hit.user_id,
+      data, note: (parsed?.note || null), price: (parsed?.price || null), rawText: hit.last_text,
+    });
+    await env.DB.prepare(`DELETE FROM nonsense_strikes WHERE task_id = ? AND user_id = ?`).bind(hit.task_id, hit.user_id).run();
+    const parts = Object.values(data).filter(Boolean).join('/');
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `✓ ${who} ${parts}（管理員裁定收下）` }]);
+    return;
+  }
+  if (action === '問') {
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `${who}，認真講一下要什麼～` }]);
+    // 不清除 strikes，等他重答
+    return;
+  }
+  if (action === '略') {
+    // 記為「不吃」
+    await upsertEntry(env.DB, {
+      taskId: hit.task_id, userId: hit.user_id,
+      data: {}, note: '不吃', price: null, rawText: hit.last_text,
+    });
+    await env.DB.prepare(`DELETE FROM nonsense_strikes WHERE task_id = ? AND user_id = ?`).bind(hit.task_id, hit.user_id).run();
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `✓ ${who}：不吃（管理員裁定略過）` }]);
+    return;
+  }
+}
+
+async function handleNonsense(env, task, userId, text, replyToken, teaseFromAI) {
+  const row = await env.DB.prepare(
+    `SELECT count FROM nonsense_strikes WHERE task_id = ? AND user_id = ?`
+  ).bind(task.id, userId).first();
+  const count = (row?.count || 0) + 1;
+  await env.DB.prepare(
+    `INSERT INTO nonsense_strikes (task_id, user_id, count, last_text, last_at)
+     VALUES (?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(task_id, user_id) DO UPDATE SET
+       count = excluded.count, last_text = excluded.last_text, last_at = datetime('now')`
+  ).bind(task.id, userId, count, text).run();
+
+  const m = await env.DB.prepare(
+    `SELECT real_name, line_display FROM members WHERE user_id = ?`
+  ).bind(userId).first();
+  const who = m?.real_name || m?.line_display || userId.slice(0, 6);
+
+  if (count === 1) {
+    const tease = teaseFromAI || '別鬧啦，認真講～';
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: tease }]);
+    return;
+  }
+
+  // 第 2 次以上 → 社交壓力版，@ 管理員裁定
+  const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const adminNames = [];
+  for (const aid of adminIds) {
+    const a = await env.DB.prepare(
+      `SELECT real_name, line_display FROM members WHERE user_id = ?`
+    ).bind(aid).first();
+    const nm = a?.real_name || a?.line_display;
+    if (nm) adminNames.push(nm);
+  }
+  const adminTag = adminNames.length ? adminNames.map(n => `@${n}`).join(' ') + ' ' : '';
+  const reply = `${adminTag}${who} 最後一次點了「${text}」，確定要幫他點這個嗎？\n回「秘書 裁定 ${who} 收/問/略」決定`;
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
 }
 

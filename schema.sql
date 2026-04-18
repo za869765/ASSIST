@@ -71,6 +71,16 @@ CREATE TABLE IF NOT EXISTS conversations (
 );
 CREATE INDEX IF NOT EXISTS idx_conv_task ON conversations(task_id);
 
+-- 惡搞/矛盾訂單累積（第 2 次觸發管理員裁定）
+CREATE TABLE IF NOT EXISTS nonsense_strikes (
+  task_id      INTEGER NOT NULL,
+  user_id      TEXT NOT NULL,
+  count        INTEGER NOT NULL DEFAULT 0,
+  last_text    TEXT,
+  last_at      TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (task_id, user_id)
+);
+
 -- 同義詞對照（學習累積，給 Gemini 當 few-shot 參考）
 CREATE TABLE IF NOT EXISTS synonyms (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,

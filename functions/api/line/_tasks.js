@@ -84,7 +84,9 @@ export function summarizeEntries(entries) {
     const parts = Object.values(data).filter(Boolean).join(' / ');
     const price = e.price ? ` $${e.price}` : '';
     const note = e.note ? `（${e.note}）` : '';
-    return `${i + 1}. ${name}：${parts || '(未辨識)'}${price}${note}`;
+    const body = parts || (e.note === '不吃' ? '不吃' : '(未辨識)');
+    const noteShown = parts ? note : ''; // 不吃的情況 note 已經是主體，就不再括號
+    return `${i + 1}. ${name}：${body}${price}${noteShown}`;
   });
   const totalPrice = entries.reduce((s, e) => s + (e.price || 0), 0);
   return lines.join('\n') + (totalPrice ? `\n\n合計：$${totalPrice}` : '');
