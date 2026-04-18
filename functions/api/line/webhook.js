@@ -304,30 +304,32 @@ async function collectEntry(env, task, userId, text, replyToken) {
     return;
   }
 
-  // 已點過再講話：預設視為「改單」覆蓋；只有明確「加點字眼」才累加
-  // （已點的狀態通常是修正/改口/刪除，不是加點，不反問）
+  // 已點過再講話的處理：
+  //   1. 完全相同 → 重複確認，不動
+  //   2. 明確「加點」字眼（高信心）→ 自動累加
+  //   3. 其他（包含 replace 高信心）→ 先反問當事人「是要改還是加？」，避免誤刪舊紀錄
   let additive = false;
   let oldItemForReport = '';
   if (existing) {
-    const intent = parsed.dup_intent;
-    const conf = typeof parsed.dup_confidence === 'number' ? parsed.dup_confidence : 0;
-    additive = (intent === 'add' && conf >= 70);
-
-    // 若新解析內容跟舊的一模一樣 → 視為重複確認，不改單也不加點
     const oldData = JSON.parse(existing.data_json || '{}');
     const sameData = JSON.stringify(oldData) === JSON.stringify(parsed.data || {})
       && (existing.note || null) === (parsed.note || null)
       && (existing.price || null) === (parsed.price ?? null);
-    if (sameData && !additive) {
+    if (sameData) {
       const m = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
       const who = m?.real_name || m?.line_display || userId.slice(0, 6);
       const parts = Object.values(oldData).filter(Boolean).join('/');
       await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `${who} 您已經點過「${parts}」了，記錄維持原樣～` }]);
       return;
     }
-
-    if (!additive) {
-      oldItemForReport = Object.values(oldData).filter(Boolean).join('/');
+    const intent = parsed.dup_intent;
+    const conf = typeof parsed.dup_confidence === 'number' ? parsed.dup_confidence : 0;
+    if (intent === 'add' && conf >= 80) {
+      additive = true; // 明確加點字眼才自動累加
+    } else {
+      // 其他一律反問當事人是改還是加，避免把舊的吃掉
+      await askAddOrReplace(env, task, userId, text, parsed, oldData, replyToken);
+      return;
     }
   }
 
@@ -592,6 +594,26 @@ async function applyDupDecision(env, taskId, userId, pending, additive, replyTok
   const verb = additive ? '加點' : '改為';
   const tail = (!additive && oldItem) ? `（原「${oldItem}」已取消）` : '';
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `✓ ${who} ${verb} ${parts}${price}${tail}` }]);
+}
+
+// 反問當事人：要改還是再加一份
+async function askAddOrReplace(env, task, userId, text, parsed, oldData, replyToken) {
+  await env.DB.prepare(
+    `INSERT INTO pending_dups (task_id, user_id, new_text, new_data, new_note, new_price, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(task_id, user_id) DO UPDATE SET
+       new_text = excluded.new_text, new_data = excluded.new_data,
+       new_note = excluded.new_note, new_price = excluded.new_price,
+       created_at = datetime('now')`
+  ).bind(task.id, userId, text, JSON.stringify(parsed.data || {}), parsed.note || null, parsed.price ?? null).run();
+  const m = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
+  const who = m?.real_name || m?.line_display || userId.slice(0, 6);
+  const oldParts = Object.values(oldData).filter(Boolean).join('/');
+  const newParts = Object.values(parsed.data || {}).filter(Boolean).join('/') || text;
+  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+    type: 'text',
+    text: `${who} 您原本點的是「${oldParts}」，請問現在的「${newParts}」是要「改單」還是「再加一份」呢？\n回「加」=再加一份、「改」=改單，謝謝您 🙏`,
+  }]);
 }
 
 // 60~80%：反問當事人本人是否為 XXX（改單 / 加點）
