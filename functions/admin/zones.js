@@ -40,12 +40,13 @@ summary { cursor: pointer; padding: 6px 0; font-weight: 600; font-size: 14px; }
 </head>
 <body>
 <h1>分區設定 <a id="backBtn" class="back-btn" href="#">← 回點單看板</a></h1>
-<div class="hint">全域共用。點擊區名切換啟用（藍）/停用（灰），自動儲存。</div>
+<div class="hint">全域共用。點擊區名切換啟用（藍）/停用（灰），變更後按「儲存」生效。</div>
 
 <h2>① 區清單</h2>
 <div id="zones" class="zone-grid"></div>
 <div class="toolbar">
   <span class="msg" id="zoneMsg"></span>
+  <button id="saveBtn" class="primary" onclick="saveZones()" style="display:none">💾 儲存</button>
 </div>
 
 <h2>② 成員區對照</h2>
@@ -59,7 +60,17 @@ summary { cursor: pointer; padding: 6px 0; font-weight: 600; font-size: 14px; }
 
 <script>
 let ZONES = [];
+let ORIGINAL = '';
 let MEMBERS = [];
+
+function snapshot(zs) {
+  return JSON.stringify(zs.map(z => [z.name, z.enabled ? 1 : 0]));
+}
+
+function updateDirty() {
+  const btn = document.getElementById('saveBtn');
+  btn.style.display = snapshot(ZONES) === ORIGINAL ? 'none' : '';
+}
 
 async function load() {
   const [z, m] = await Promise.all([
@@ -67,9 +78,11 @@ async function load() {
     fetch('/api/members').then(r => r.json()),
   ]);
   ZONES = z.zones || [];
+  ORIGINAL = snapshot(ZONES);
   MEMBERS = m.members || [];
   renderZones();
   renderMembers();
+  updateDirty();
 }
 
 function zoneLabel(z) {
@@ -83,12 +96,12 @@ function renderZones() {
   box.innerHTML = ZONES.map((z, i) => \`
     <span class="zone-chip \${z.enabled ? 'on' : 'off'}" data-i="\${i}">\${esc(zoneLabel(z))}</span>\`).join('');
   box.querySelectorAll('.zone-chip').forEach(el => {
-    el.addEventListener('click', async () => {
+    el.addEventListener('click', () => {
       const i = +el.dataset.i;
       ZONES[i].enabled = ZONES[i].enabled ? 0 : 1;
       el.classList.toggle('on', !!ZONES[i].enabled);
       el.classList.toggle('off', !ZONES[i].enabled);
-      await saveZones();
+      updateDirty();
     });
   });
 }
@@ -99,7 +112,12 @@ async function saveZones() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ zones: ZONES }),
   });
-  if (r.ok) msg('已儲存 ✓'); else msg('儲存失敗', true);
+  if (r.ok) {
+    ORIGINAL = snapshot(ZONES);
+    updateDirty();
+    msg('已儲存 ✓');
+    renderMembers();
+  } else msg('儲存失敗', true);
 }
 
 function msg(t, err) {
