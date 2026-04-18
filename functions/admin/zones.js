@@ -1,5 +1,14 @@
-// 分區設定管理頁（全域）
-export async function onRequestGet() {
+// 分區設定管理頁（全域）— 需帶 ?uid=<LINE userId>，且必須是 ADMIN_USER_IDS 名單
+export async function onRequestGet({ request, env }) {
+  const url = new URL(request.url);
+  const uid = String(url.searchParams.get('uid') || '').trim();
+  const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (!uid || !adminIds.includes(uid)) {
+    return new Response(
+      `<!DOCTYPE html><meta charset="utf-8"><title>需要管理員連結</title><style>body{font-family:-apple-system,"PingFang TC",sans-serif;max-width:440px;margin:80px auto;padding:20px;text-align:center;color:#666;line-height:1.6}</style><h2>🔒 請從 LINE 進入</h2><p>請在 LINE 群組對小秘書說「<b>分區設定</b>」索取連結。</p>`,
+      { status: 403, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+    );
+  }
   const html = `<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -61,13 +70,15 @@ summary { cursor: pointer; padding: 6px 0; font-weight: 600; font-size: 14px; }
 </details>
 
 <script>
+const UID = ${JSON.stringify(uid)};
+const Q = '?uid=' + encodeURIComponent(UID);
 let ZONES = [];
 let MEMBERS = [];
 
 async function load() {
   const [z, m] = await Promise.all([
-    fetch('/api/zones').then(r => r.json()),
-    fetch('/api/members').then(r => r.json()),
+    fetch('/api/zones' + Q).then(r => r.json()),
+    fetch('/api/members' + Q).then(r => r.json()),
   ]);
   ZONES = z.zones || [];
   MEMBERS = m.members || [];
@@ -107,7 +118,7 @@ function addZone() {
 
 async function saveZones() {
   // 保留既有 sort_order（不要被 index 覆寫）
-  const r = await fetch('/api/zones', {
+  const r = await fetch('/api/zones' + Q, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ zones: ZONES }),
@@ -148,7 +159,7 @@ function renderMembers() {
 }
 
 async function tagMember(user_id, zone) {
-  const r = await fetch('/api/zone/tag', {
+  const r = await fetch('/api/zone/tag' + Q, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user_id, zone }),
