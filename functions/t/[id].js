@@ -107,9 +107,10 @@ li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 3px
 .price { color: #2db87a; font-variant-numeric: tabular-nums; text-align: right; font-size: 12px; }
 .zone-sel { padding: 1px 3px; font-size: 10px; border-radius: 3px; border: 1px solid #ccc4; background: #fff1; }
 .total { text-align: right; font-weight: 600; margin-top: 10px; font-size: 14px; }
-.tabs { display: flex; gap: 2px; margin: -2px 0 8px; border-bottom: 1px solid #ddd4; overflow-x: auto; }
-.tab { padding: 5px 10px; text-decoration: none; color: #888; border-bottom: 2px solid transparent; white-space: nowrap; font-size: 12px; }
-.tab.active { color: inherit; border-bottom-color: #2db87a; font-weight: 600; }
+.tabs { display: flex; gap: 6px; margin: 4px 0 12px; overflow-x: auto; }
+.tab { flex: 1; min-width: 0; padding: 14px 16px; text-decoration: none; color: #666; background: #e8e8e8; border: 2px solid transparent; border-radius: 10px; white-space: nowrap; font-size: 18px; font-weight: 600; text-align: center; }
+.tab.active { color: #fff; background: #2db87a; border-color: #2db87a; }
+@media (prefers-color-scheme: dark) { .tab { background: #3a3a3a; color: #aaa; } }
 .admin-toggle { float: right; font-size: 11px; color: #888; }
 </style>
 </head>
