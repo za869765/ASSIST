@@ -821,6 +821,19 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
     const looksLikeItem = tClean.length >= 2 && tClean.length <= 15
       && !/[。?？!！]/.test(tClean)
       && !parsed?.profanity;
+    // 菜單模式：很明顯跟餐點無關就不理會（無 follow_up、無食物動詞、沒沾到菜單名稱）
+    if (Array.isArray(menuItems) && menuItems.length && !looksLikeItem && !existing) {
+      const normText = String(text || '').replace(/\s+/g, '').toLowerCase();
+      const hasFoodVerb = /吃|喝|要|點|加|改|換|訂|來|給我|幫/.test(text);
+      const touchesMenu = menuItems.some(it => {
+        const n = String(it.name || '').replace(/\s+/g, '').toLowerCase();
+        return n && (normText.includes(n) || n.includes(normText));
+      });
+      if (!hasFoodVerb && !touchesMenu) {
+        console.log('[off-topic silent]', text);
+        return; // 不回覆，讓群組聊天不被 bot 打擾
+      }
+    }
     if (looksLikeItem) {
       parsed = parsed || {};
       parsed.data = { 品項: tClean };
