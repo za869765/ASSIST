@@ -176,6 +176,20 @@ async function handleEvent(ev, env) {
       await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `目前有多個任務：${names}\n請說「秘書 結單 飲料」之類指定要結哪個` }]);
       return;
     }
+    // 結單前：未回應的 pending_dups 預設視為「更改」，全部套用
+    const pendingRows = await env.DB.prepare(
+      `SELECT user_id, new_text, new_data, new_note, new_price FROM pending_dups WHERE task_id = ?`
+    ).bind(picked.id).all();
+    for (const p of (pendingRows.results || [])) {
+      await upsertEntry(env.DB, {
+        taskId: picked.id, userId: p.user_id,
+        data: JSON.parse(p.new_data || '{}'),
+        note: p.new_note, price: p.new_price, rawText: p.new_text,
+        additive: false,
+      });
+    }
+    await env.DB.prepare(`DELETE FROM pending_dups WHERE task_id = ?`).bind(picked.id).run();
+
     const entries = await listEntries(env.DB, picked.id);
     await closeTask(env.DB, picked.id);
 
@@ -612,7 +626,7 @@ async function askAddOrReplace(env, task, userId, text, parsed, oldData, replyTo
   const newParts = Object.values(parsed.data || {}).filter(Boolean).join('/') || text;
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
     type: 'text',
-    text: `${who} 您原本點的是「${oldParts}」，請問現在的「${newParts}」是要「改單」還是「再加一份」呢？\n回「加」=再加一份、「改」=改單，謝謝您 🙏`,
+    text: `${who} 您已經點了「${oldParts}」，剛剛的「${newParts}」(辨識後)，請問是要「更改」還是「加點」呢？\n回「加」或「改」，若沒回覆則預設為更改，謝謝您 🙏`,
   }]);
 }
 
