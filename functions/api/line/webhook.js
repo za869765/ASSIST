@@ -545,7 +545,7 @@ async function askSelfConfirm(env, task, userId, text, parsed, intent, replyToke
   const verb = intent === 'add' ? '加點' : '改單';
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
     type: 'text',
-    text: `${who} 你是要${verb}「${parts}」嗎？\n回「加」=加點、「改」=改單就好`,
+    text: `${who} 想跟您確認一下，是要${verb}「${parts}」嗎？\n回「加」=加點、「改」=改單就好～`,
   }]);
 }
 
@@ -574,7 +574,7 @@ async function handleDupPending(env, task, userId, text, parsed, replyToken) {
     if (nm) adminNames.push(nm);
   }
   const adminTag = adminNames.length ? adminNames.map(n => `@${n}`).join(' ') + ' ' : '';
-  const reply = `${adminTag}${who} 之前點「${oldItem}」，現在又講「${newItem}」，是要加點還是改單？`;
+  const reply = `${adminTag}${who} 原本點「${oldItem}」，剛剛又提到「${newItem}」～\n想幫您確認一下，是要加點還是改單呢？`;
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
 }
 
