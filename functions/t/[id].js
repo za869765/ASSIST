@@ -101,14 +101,14 @@ export async function onRequestGet({ params, request, env }) {
   --gold-glow:   rgba(201,169,97,.5);
   --wine:        #B08D7A;
   --jade:        #7FA88C;
-  --bg:          #0F0C08;
-  --bg-elev:     #1A1510;
-  --bg-card:     rgba(26,21,16,.6);
-  --line:        rgba(201,169,97,.22);
-  --line-soft:   rgba(201,169,97,.12);
-  --text:        #EDE4CE;
-  --text-muted:  rgba(237,228,206,.55);
-  --text-dim:    rgba(237,228,206,.35);
+  --bg:          #241E15;
+  --bg-elev:     #32291C;
+  --bg-card:     rgba(50,41,28,.7);
+  --line:        rgba(201,169,97,.38);
+  --line-soft:   rgba(201,169,97,.22);
+  --text:        #F5EEDB;
+  --text-muted:  rgba(245,238,219,.75);
+  --text-dim:    rgba(245,238,219,.55);
   --danger:      #C27070;
 
   --f-zh: 'Noto Serif TC', 'PingFang TC', 'Microsoft JhengHei', serif;
@@ -1379,69 +1379,6 @@ li:hover {
   100% { opacity: 0; transform: translate(-50%,-180%); }
 }
 
-/* ===== 10. 底部 Luxe Dock ===== */
-.luxe-toggle {
-  position: fixed;
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  right: 16px;
-  width: 52px; height: 52px;
-  border-radius: 50%;
-  border: 1px solid var(--gold);
-  background: var(--bg-elev);
-  color: var(--gold);
-  font-family: var(--f-en);
-  font-size: 20px;
-  cursor: pointer;
-  z-index: 9999;
-  box-shadow: 0 8px 24px rgba(0,0,0,.4), 0 0 20px rgba(201,169,97,.2);
-  backdrop-filter: blur(8px);
-  transition: all .25s;
-}
-.luxe-toggle:hover,
-.luxe-toggle:active {
-  transform: scale(1.08);
-  box-shadow: 0 10px 32px rgba(201,169,97,.45);
-}
-
-.theme-switcher {
-  position: fixed;
-  bottom: calc(78px + env(safe-area-inset-bottom, 0px));
-  right: 16px;
-  z-index: 9999;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  padding: 14px;
-  background: rgba(15,12,8,.92);
-  border: 1px solid var(--gold);
-  border-radius: 4px;
-  backdrop-filter: blur(12px);
-  box-shadow: 0 12px 40px rgba(0,0,0,.5);
-  animation: switcherFade .3s ease-out;
-}
-@keyframes switcherFade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-.theme-switcher.hidden { display: none; }
-.theme-btn {
-  width: 40px; height: 40px;
-  border-radius: 50%;
-  border: 1px solid rgba(255,255,255,.2);
-  background: rgba(0,0,0,.4);
-  color: #fff;
-  font-size: 15px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all .2s;
-  position: relative;
-}
-.theme-btn:hover { transform: scale(1.1); }
-.theme-btn.active {
-  border-color: var(--gold);
-  box-shadow: 0 0 0 2px rgba(201,169,97,.4), 0 0 16px rgba(201,169,97,.35);
-  transform: scale(1.08);
-}
-
 /* ===== 11. 手機精細調整（≤390px）===== */
 @media (max-width: 390px) {
   body { padding: 12px 14px calc(88px + var(--safe-bottom)); }
@@ -1466,9 +1403,6 @@ li:hover {
   .success-check { width: 64px; height: 64px; font-size: 34px; }
   .success-item { font-size: 22px; }
   .success-price { font-size: 28px; }
-  .luxe-toggle { width: 48px; height: 48px; bottom: 14px; right: 14px; }
-  .theme-switcher { bottom: 70px; right: 14px; padding: 12px; }
-  .theme-btn { width: 36px; height: 36px; font-size: 14px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1480,17 +1414,17 @@ li:hover {
 
 /* ===== 12. 12 色 Luxe 變體（原 JS 套 body.luxe.t-* 時切換）===== */
 /* 注意：此設計預設「就是尊榮黑金」，body.luxe class 加上去後才啟用 12 色變體色票 */
-body.luxe.t-green  { --gold:#7FA88C; --wine:#B8D4B8; --jade:#A8C8A8; --bg:#0A1F14; --bg-elev:#0F2A1C; --text:#DDF2E0; }
-body.luxe.t-purple { --gold:#B49DD4; --wine:#C8A8D4; --jade:#B5A8D4; --bg:#1C1830; --bg-elev:#24203E; --text:#E8DDF2; }
-body.luxe.t-red    { --gold:#D4928D; --wine:#E8B8A8; --jade:#E0A59C; --bg:#2A0F0F; --bg-elev:#3A1818; --text:#F5E0DC; }
-body.luxe.t-blue   { --gold:#8FB0D4; --wine:#A8C4D4; --jade:#9BB8D4; --bg:#0C1A2E; --bg-elev:#142338; --text:#DDE8F5; }
-body.luxe.t-orange { --gold:#D4A369; --wine:#E8B886; --jade:#E0A870; --bg:#2A1608; --bg-elev:#3A200D; --text:#F5E5D0; }
-body.luxe.t-starry { --gold:#C8D4E8; --wine:#C8CFE8; --jade:#A8B8E0; --bg:#050B1A; --bg-elev:#0C1628; --text:#DDE3F2; }
-body.luxe.t-fairy  { --gold:#D4A8CC; --wine:#E8B8D4; --jade:#A8D4E8; --bg:#1F0F24; --bg-elev:#2E1736; --text:#F2DDED; }
-body.luxe.t-royal  { --gold:#D4A555; --wine:#C48A6E; --jade:#B8935C; --bg:#1A0810; --bg-elev:#2A111F; --text:#F5E5C4; }
-body.luxe.t-aurora { --gold:#A8D4BC; --wine:#B8A8D4; --jade:#88C4D4; --bg:#0A1628; --bg-elev:#12253C; --text:#DDF2E8; }
-body.luxe.t-sakura { --gold:#D4A5B0; --wine:#E8B8C0; --jade:#E0B8C4; --bg:#1F0F18; --bg-elev:#2E1824; --text:#F5DDE3; }
-body.luxe.t-cyber  { --gold:#A8D4E8; --wine:#D49BD4; --jade:#B8E098; --bg:#050010; --bg-elev:#0F0524; --text:#D4E8E0; }
+body.luxe.t-green  { --gold:#8FBC9C; --wine:#BCDCBC; --jade:#B0D0B0; --bg:#1A3826; --bg-elev:#234830; --text:#E5F4E8; }
+body.luxe.t-purple { --gold:#BEA8DC; --wine:#D0B4DC; --jade:#BEB4DC; --bg:#2E2845; --bg-elev:#3A3454; --text:#EEE4F5; }
+body.luxe.t-red    { --gold:#DCA09B; --wine:#ECBCB0; --jade:#E4AFA4; --bg:#3E2020; --bg-elev:#4E2C2C; --text:#F7E4E0; }
+body.luxe.t-blue   { --gold:#9CBCDC; --wine:#B0C8DC; --jade:#A4BCDC; --bg:#1C3048; --bg-elev:#26405C; --text:#E4ECF7; }
+body.luxe.t-orange { --gold:#DCAC72; --wine:#ECBE8C; --jade:#E4B078; --bg:#3A2414; --bg-elev:#4A301E; --text:#F7E8D5; }
+body.luxe.t-starry { --gold:#CCDCEC; --wine:#CCD4EC; --jade:#B0BCE4; --bg:#121C36; --bg-elev:#1D2A48; --text:#E4EAF5; }
+body.luxe.t-fairy  { --gold:#DCB0D0; --wine:#ECBCD8; --jade:#B0D8EC; --bg:#30203A; --bg-elev:#3E2C4C; --text:#F4E2EE; }
+body.luxe.t-royal  { --gold:#DCAC5C; --wine:#CC9272; --jade:#C09B64; --bg:#30202A; --bg-elev:#3E2C38; --text:#F7E8CA; }
+body.luxe.t-aurora { --gold:#B0DCC4; --wine:#BCB0DC; --jade:#90CCDC; --bg:#1A2C44; --bg-elev:#243C58; --text:#E4F4EC; }
+body.luxe.t-sakura { --gold:#DCAEB8; --wine:#ECBCC4; --jade:#E4BCC8; --bg:#35202A; --bg-elev:#442C38; --text:#F7E2E8; }
+body.luxe.t-cyber  { --gold:#B0DCEC; --wine:#DCA4DC; --jade:#BCE4A0; --bg:#10142E; --bg-elev:#1C204A; --text:#DCECE4; }
 body.luxe.t-green  html, body.luxe.t-green  { background: var(--bg); }
 body.luxe.t-purple html, body.luxe.t-purple { background: var(--bg); }
 body.luxe.t-red    html, body.luxe.t-red    { background: var(--bg); }
@@ -1536,7 +1470,7 @@ body.luxe.t-cyber  html, body.luxe.t-cyber  { background: var(--bg); }
 
 /* 所有內容相對粒子提高一層 */
 h1, .meta, .admin-row, .tabs, .menu-card, #board,
-.luxe-toggle, .theme-switcher, .admin-banner { position: relative; z-index: 1; }
+.admin-banner { position: relative; z-index: 1; }
 </style>
 </head>
 <body>
@@ -1603,55 +1537,38 @@ ${closed ? '' : `<div id="editPriceBanner" class="admin-banner" style="display:n
 
 <div id="board"></div>
 
-<div class="particles" id="luxeParticles" style="display:none"></div>
-
-<button id="luxeToggle" class="luxe-toggle" title="切換主題">✦</button>
-<div class="theme-switcher hidden" id="themeSwitcher">
-  <button class="theme-btn active" data-t="" title="黑金" style="background:linear-gradient(135deg,#C9A961,#B08D7A)"></button>
-  <button class="theme-btn" data-t="t-green" title="綠意" style="background:linear-gradient(135deg,#7FA88C,#B8D4B8)"></button>
-  <button class="theme-btn" data-t="t-purple" title="紫夜" style="background:linear-gradient(135deg,#B49DD4,#C8A8D4)"></button>
-  <button class="theme-btn" data-t="t-red" title="緋紅" style="background:linear-gradient(135deg,#D4928D,#E8B8A8)"></button>
-  <button class="theme-btn" data-t="t-blue" title="青藍" style="background:linear-gradient(135deg,#8FB0D4,#A8C4D4)"></button>
-  <button class="theme-btn" data-t="t-orange" title="琥珀" style="background:linear-gradient(135deg,#D4A369,#E8B886)"></button>
-  <button class="theme-btn" data-t="t-starry" title="星夜" style="background:linear-gradient(135deg,#050B1A,#C8D4E8)"></button>
-  <button class="theme-btn" data-t="t-fairy" title="童話" style="background:linear-gradient(135deg,#D4A8CC,#E8B8D4)"></button>
-  <button class="theme-btn" data-t="t-royal" title="宮廷" style="background:linear-gradient(135deg,#1A0810,#D4A555)"></button>
-  <button class="theme-btn" data-t="t-aurora" title="極光" style="background:linear-gradient(135deg,#A8D4BC,#B8A8D4,#88C4D4)"></button>
-  <button class="theme-btn" data-t="t-sakura" title="櫻花" style="background:linear-gradient(135deg,#D4A5B0,#E8B8C0)"></button>
-  <button class="theme-btn" data-t="t-cyber" title="賽博" style="background:linear-gradient(135deg,#A8D4E8,#D49BD4)"></button>
-</div>
+<div class="particles" id="luxeParticles" aria-hidden="true"></div>
 
 <script>
 const INITIAL = ${JSON.stringify(initData)};
 let state = INITIAL;
 
 // LUXE 主題切換（localStorage 記憶：開關 + 6 色）
-const LS_LUXE = 'ui:luxe';
-const LS_THEME = 'ui:luxe-theme';
-const THEMES = ['', 't-green', 't-purple', 't-red', 't-blue', 't-orange', 't-starry', 't-fairy', 't-royal', 't-aurora', 't-sakura', 't-cyber'];
+const THEMES = ['t-green', 't-purple', 't-red', 't-blue', 't-orange', 't-starry', 't-fairy', 't-royal', 't-aurora', 't-sakura', 't-cyber'];
 const THEME_PARTICLES = {
-  '': null, // 黑金用金色圓點
-  't-green': ['🌿','🍃','🌱','☘️'],
-  't-purple': ['✨','⭐','💫','🌟'],
-  't-red': ['❤️','🔥','💖','🌹'],
-  't-blue': ['💧','❄️','🫧','💎'],
-  't-orange': ['🍂','🍁','🔶','🧡'],
-  't-starry': ['⭐','✨','🌟','🌙','💫'],
-  't-fairy': ['🧚','🦄','💫','🌸','✨','🍭'],
-  't-royal': ['👑','💎','🏰','⚜️','🥂'],
-  't-aurora': ['🌈','✨','💠','🌌'],
-  't-sakura': ['🌸','🌸','🌺','🍃','🌸'],
-  't-cyber': ['⚡','◆','▲','◈','⚙️','💠'],
+  't-green':  ['◆','◇','❖'],
+  't-purple': ['✦','✧','⟡'],
+  't-red':    ['◆','❂','❦'],
+  't-blue':   ['◇','❖','⟐'],
+  't-orange': ['◆','❋','✦'],
+  't-starry': ['✦','✧','⋆','✯'],
+  't-fairy':  ['✦','❋','✧','❀'],
+  't-royal':  ['❖','✦','⟡','◆'],
+  't-aurora': ['✧','✦','◇'],
+  't-sakura': ['❀','✿','❁'],
+  't-cyber':  ['◆','▲','◈','⬢'],
 };
+// 以 task.id 做 hash：同一任務永遠同主題；不同任務各自不同
+function pickThemeFor(key) {
+  let h = 0;
+  const s = String(key || 'default');
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return THEMES[Math.abs(h) % THEMES.length];
+}
 function applyTheme(name) {
-  THEMES.forEach(t => t && document.body.classList.remove(t));
+  THEMES.forEach(t => document.body.classList.remove(t));
   if (name) document.body.classList.add(name);
-  document.querySelectorAll('.theme-btn').forEach(b => {
-    b.classList.toggle('active', (b.dataset.t || '') === (name || ''));
-  });
-  localStorage.setItem(LS_THEME, name || '');
-  // 把粒子換成主題 emoji（或還原成金色圓點）
-  const emojis = THEME_PARTICLES[name || ''];
+  const emojis = THEME_PARTICLES[name];
   document.querySelectorAll('#luxeParticles .particle').forEach((p, i) => {
     if (emojis) {
       p.classList.add('particle-emoji');
@@ -1662,40 +1579,25 @@ function applyTheme(name) {
     }
   });
 }
-function applyLuxe(on) {
-  document.body.classList.toggle('luxe', on);
+function initLuxe() {
+  document.body.classList.add('luxe');
   const p = document.getElementById('luxeParticles');
-  if (p) {
-    p.style.display = on ? '' : 'none';
-    if (on && !p.dataset.ready) {
-      p.dataset.ready = '1';
-      const count = window.matchMedia('(max-width: 480px)').matches ? 12 : 30;
-      for (let i = 0; i < count; i++) {
-        const el = document.createElement('div');
-        el.className = 'particle';
-        el.style.left = Math.random() * 100 + '%';
-        el.style.top = Math.random() * 100 + '%';
-        el.style.animationDelay = (Math.random() * 20) + 's';
-        el.style.animationDuration = (15 + Math.random() * 20) + 's';
-        p.appendChild(el);
-      }
+  if (p && !p.dataset.ready) {
+    p.dataset.ready = '1';
+    const count = window.matchMedia('(max-width: 480px)').matches ? 12 : 30;
+    for (let i = 0; i < count; i++) {
+      const el = document.createElement('div');
+      el.className = 'particle';
+      el.style.left = Math.random() * 100 + '%';
+      el.style.top = Math.random() * 100 + '%';
+      el.style.animationDelay = (Math.random() * 20) + 's';
+      el.style.animationDuration = (15 + Math.random() * 20) + 's';
+      p.appendChild(el);
     }
   }
-  const btn = document.getElementById('luxeToggle');
-  if (btn) btn.textContent = on ? '◈' : '✦';
-  const sw = document.getElementById('themeSwitcher');
-  if (sw) sw.classList.toggle('hidden', !on);
-  if (on) applyTheme(localStorage.getItem(LS_THEME) || '');
+  applyTheme(pickThemeFor(INITIAL?.task?.id));
 }
-applyLuxe(localStorage.getItem(LS_LUXE) === '1');
-document.getElementById('luxeToggle')?.addEventListener('click', () => {
-  const on = !document.body.classList.contains('luxe');
-  localStorage.setItem(LS_LUXE, on ? '1' : '0');
-  applyLuxe(on);
-});
-document.querySelectorAll('.theme-btn').forEach(b => {
-  b.addEventListener('click', () => applyTheme(b.dataset.t || ''));
-});
+initLuxe();
 
 function showToast(msg) {
   const t = document.createElement('div');
