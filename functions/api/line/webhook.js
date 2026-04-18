@@ -1093,6 +1093,23 @@ async function tryProxyZone(env, userId, text) {
     }
   }
 
+  if (!zoneName) {
+    // 模式 3：<區名>+1 或 <區名>+1素 / <區名>素 / <區名>一個… 等極簡語法
+    for (const z of all) {
+      if (!text.startsWith(z)) continue;
+      const after = text.slice(z.length).trim();
+      // 允許：「+1」「＋1」「1」「素」「葷」「一個」「一份」等簡短輸入
+      if (/^([+＋]?\s*\d*\s*)?(素|葷|素食|葷食|一個|一份|一杯|一碗|.+)?$/.test(after) && after.length <= 20) {
+        const canon = canonicalize(z);
+        if (canon) {
+          zoneName = canon;
+          stripped = after || '+1';
+          break;
+        }
+      }
+    }
+  }
+
   if (!zoneName) return null;
 
   const targetId = await resolveZoneTargetId(env, zoneName);
