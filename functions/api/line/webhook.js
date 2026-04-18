@@ -717,7 +717,7 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
       const hint = leaveTasks.length
         ? `（${leaveTasks.join('、')}原本請假不合理，已清掉）`
         : '';
-      reply += `\n@${name} 另外「${pending.join('、')}」要什麼呢？${hint}（若不需要請回「${pending[0]}不用」）`;
+      reply += `\n@${name} 另外「${pending.join('、')}」要什麼呢？${hint}`;
     }
   }
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
