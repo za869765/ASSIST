@@ -346,8 +346,12 @@ async function collectEntry(env, task, userId, text, replyToken) {
   const parts = Object.values(parsed.data).filter(Boolean).join('/');
   const price = parsed.price ? ` $${parsed.price}` : '';
   const note = parsed.note ? `（${parsed.note}）` : '';
-  const missing = Array.isArray(parsed.missing) ? parsed.missing : [];
-  const followUp = parsed.follow_up || '';
+  // 過濾 missing：若 data 已含該欄位（或同義詞），就不算缺
+  const dataKeys = new Set(Object.keys(parsed.data || {}));
+  const synonyms = { '甜度': ['糖度'], '冰塊': ['冰量', '冰度'], '份量': ['大小', '飯量'] };
+  const hasField = (k) => dataKeys.has(k) || (synonyms[k] || []).some(s => dataKeys.has(s));
+  const missing = (Array.isArray(parsed.missing) ? parsed.missing : []).filter(k => !hasField(k));
+  const followUp = missing.length ? (parsed.follow_up || '') : '';
 
   const m = await env.DB.prepare(
     `SELECT real_name, line_display FROM members WHERE user_id = ?`
