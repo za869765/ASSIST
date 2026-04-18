@@ -112,6 +112,10 @@ li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 3px
 .tab.active { color: #fff; background: #2db87a; border-color: #2db87a; }
 @media (prefers-color-scheme: dark) { .tab { background: #3a3a3a; color: #aaa; } }
 .admin-toggle { float: right; font-size: 11px; color: #888; }
+.admin-banner { background: #fff3e0; color: #b04a1a; border: 1px dashed #f0a058; border-radius: 6px; padding: 4px 8px; margin: 4px 0; font-size: 12px; }
+.del-btn { margin-left: 6px; padding: 2px 6px; font-size: 12px; line-height: 1; border: 1px solid #d4543a; background: #fff; color: #d4543a; border-radius: 4px; cursor: pointer; }
+.del-btn:hover { background: #d4543a; color: #fff; }
+.del-btn:active { transform: scale(.94); }
 .menu-card { margin: 8px 0 10px; padding: 8px 10px; border: 1px dashed #ccc6; border-radius: 8px; background: #fff1; }
 .menu-card summary { cursor: pointer; font-weight: 600; font-size: 13px; color: #2e7fe6; user-select: none; }
 .menu-card .menu-thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
@@ -189,7 +193,7 @@ li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 3px
 </head>
 <body>
 ${tabs}
-<h1>${esc(task.task_name)} <span class="pill ${closed ? 'closed' : 'open'}">${statusLabel}</span><a class="admin-toggle" href="/admin/zones" target="_blank">🔧 管理員窗口</a></h1>
+<h1>${esc(task.task_name)} <span class="pill ${closed ? 'closed' : 'open'}">${statusLabel}</span><a class="admin-toggle" href="/admin/zones" target="_blank">🔧 管理員窗口</a>${closed ? '' : `<a class="admin-toggle" href="?admin=1" style="margin-right:8px">🗑 刪除模式</a>`}</h1>
 <div class="meta">開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}・<span id="statLine">—</span>${closed ? '' : '・每 5 秒自動更新'}</div>
 
 ${closed ? '' : `<details class="menu-card" id="menuCard">
@@ -227,11 +231,18 @@ ${closed ? '' : `<details class="menu-card" id="menuCard">
     <div class="recommend-result" id="recommendResult"></div>
   </div>
 </details>`}
+${closed ? '' : `<div id="adminBanner" class="admin-banner" style="display:none">🔧 管理員模式：web 紀錄可刪除（× 按鈕）。<a href="?" style="color:#b04a1a">離開</a></div>`}
 <div id="board"></div>
 
 <script>
 const INITIAL = ${JSON.stringify(initData)};
 let state = INITIAL;
+const IS_ADMIN = new URLSearchParams(location.search).get('admin') === '1';
+if (IS_ADMIN) {
+  document.body.classList.add('is-admin');
+  const banner = document.getElementById('adminBanner');
+  if (banner) banner.style.display = '';
+}
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -286,7 +297,9 @@ function render() {
       const price = e.price ? \`$\${e.price}\` : '';
       const noteShown = e.note && entryBody(e) !== '(未辨識)' ? \`（\${esc(e.note)}）\` : '';
       const idLine = isUnassigned ? \`<div class="uid-row">\${esc(e.user_id)}</div>\` : '';
-      return \`<li><span class="who">\${esc(e.name)}\${idLine}</span><span class="body">\${entryBodyHtml(e)}\${noteShown}</span><span class="price">\${esc(price)}</span></li>\`;
+      const isWeb = String(e.user_id || '').startsWith('web:');
+      const delBtn = IS_ADMIN ? \`<button class="del-btn" data-uid="\${esc(e.user_id)}" data-real="\${isWeb ? '0' : '1'}" title="刪除此筆">×</button>\` : '';
+      return \`<li><span class="who">\${esc(e.name)}\${idLine}</span><span class="body">\${entryBodyHtml(e)}\${noteShown}</span><span class="price">\${esc(price)}\${delBtn}</span></li>\`;
     }).join('') + '</ul>');
   }
 
@@ -308,6 +321,27 @@ async function poll() {
 }
 
 render();
+
+document.getElementById('board').addEventListener('click', async (ev) => {
+  const b = ev.target.closest('.del-btn'); if (!b) return;
+  const uid = b.dataset.uid; if (!uid) return;
+  const entry = (state.entries || []).find(e => e.user_id === uid);
+  const desc = entry ? (entry.name + ' / ' + (entry.data?.['品項'] || '(未辨識)')) : uid;
+  const isReal = b.dataset.real === '1';
+  const msg = (isReal ? '⚠️ 這是 LINE 真人紀錄，確定刪除？\\n' : '刪除這筆嗎？\\n') + desc;
+  if (!confirm(msg)) return;
+  b.disabled = true; b.textContent = '…';
+  try {
+    const r = await fetch('/api/t/${task.id}/quick-entry', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: uid }),
+    });
+    const j = await r.json();
+    if (!r.ok) { alert('刪除失敗：' + (j.error || r.status)); b.disabled = false; b.textContent = '×'; return; }
+    await poll();
+  } catch (e) { alert('錯誤：' + e.message); b.disabled = false; b.textContent = '×'; }
+});
+
 ${closed ? '' : 'setInterval(async () => { await poll(); if (typeof loadMenu === "function") loadMenu(); }, 5000);'}
 
 ${closed ? '' : `

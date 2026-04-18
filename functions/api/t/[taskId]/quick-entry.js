@@ -99,3 +99,23 @@ export async function onRequestPost({ env, params, request }) {
 
   return json({ ok: true });
 }
+
+// 管理員刪除：只允許刪看板建立的 entry（user_id 前綴 web:<taskId>:）
+// 不動 LINE 真人資料
+export async function onRequestDelete({ env, params, request }) {
+  const taskId = +params.taskId;
+  if (!taskId) return json({ error: 'bad taskId' }, 400);
+  const body = await request.json().catch(() => ({}));
+  const userId = String(body.userId || '').trim();
+  if (!userId) return json({ error: 'missing userId' }, 400);
+  const res = await env.DB.prepare(
+    `DELETE FROM entries WHERE task_id = ? AND user_id = ?`
+  ).bind(taskId, userId).run();
+  // 只清掉影子 member（web: 開頭的）；真人 member 保留
+  if (userId.startsWith('web:')) {
+    await env.DB.prepare(
+      `DELETE FROM members WHERE user_id = ?`
+    ).bind(userId).run();
+  }
+  return json({ ok: true, changes: res.meta?.changes ?? 0 });
+}
