@@ -633,9 +633,15 @@ async function askAddOrReplace(env, task, userId, text, parsed, oldData, replyTo
   const who = m?.real_name || m?.line_display || userId.slice(0, 6);
   const oldParts = Object.values(oldData).filter(Boolean).join('/');
   const newParts = Object.values(parsed.data || {}).filter(Boolean).join('/') || text;
+  // 若 AI 有偵測到 missing 欄位，附上追問
+  const dataKeys = new Set(Object.keys(parsed.data || {}));
+  const syn = { '甜度': ['糖度'], '冰塊': ['冰量', '冰度'], '份量': ['大小', '飯量'] };
+  const missing = (Array.isArray(parsed.missing) ? parsed.missing : [])
+    .filter(k => !(dataKeys.has(k) || (syn[k] || []).some(s => dataKeys.has(s))));
+  const followUp = (missing.length && parsed.follow_up) ? `\n另外，${parsed.follow_up}` : '';
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
     type: 'text',
-    text: `${who} 您已經點了「${oldParts}」，剛剛的「${newParts}」，請問是要「更改」還是「加點」呢？\n請回覆「加」或「改」，謝謝您 🙏`,
+    text: `${who} 您已經點了「${oldParts}」，剛剛的「${newParts}」，請問是要「更改」還是「加點」呢？\n請回覆，謝謝您 🙏${followUp}`,
   }]);
 }
 
