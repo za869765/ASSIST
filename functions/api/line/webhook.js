@@ -614,7 +614,8 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
     console.error('[extract error]', parsed._error);
     return; // 靜默，不打擾群組
   }
-  if (parsed?.profanity) {
+  // 只有「AI 標髒話 + 完全沒抽到任何合法欄位」才真的觸發裁示；否則當正常點餐
+  if (parsed?.profanity && (!parsed.data || Object.keys(parsed.data).length === 0)) {
     await handleProfanity(env, task, userId, text, replyToken);
     return;
   }
