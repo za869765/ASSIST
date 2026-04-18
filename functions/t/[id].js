@@ -98,7 +98,13 @@ h1 { margin: 0 0 4px; font-size: 19px; font-weight: 800; background: linear-grad
 .pill.open { background: linear-gradient(135deg, #2db87a 0%, #5ad4a3 100%); color: white; box-shadow: 0 2px 6px rgba(45,184,122,.4); animation: pillPulse 2.2s ease-in-out infinite; }
 .pill.closed { background: #888; color: white; }
 @keyframes pillPulse { 0%,100% { box-shadow: 0 2px 6px rgba(45,184,122,.4); } 50% { box-shadow: 0 2px 12px rgba(45,184,122,.75); } }
-h2.zone { font-size: 12px; font-weight: 700; margin: 10px 0 4px; padding: 4px 8px; border-radius: 6px; color: #2db87a; background: linear-gradient(90deg, #e8f7ef 0%, transparent 80%); border-left: 3px solid #2db87a; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+h2.zone { font-size: 12px; font-weight: 700; margin: 10px 0 4px; padding: 6px 10px; border-radius: 8px; color: #2db87a; background: linear-gradient(90deg, #e8f7ef 0%, transparent 80%); border-left: 3px solid #2db87a; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; transition: all .3s; animation: zoneFadeIn .5s ease-out backwards; }
+h2.zone:hover { transform: translateX(3px); box-shadow: 0 2px 12px rgba(45,184,122,.2); }
+@keyframes zoneFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce), (max-width: 480px) {
+  h2.zone { animation: none; }
+  h2.zone:hover { transform: none; }
+}
 h2.zone.none { color: #d4543a; background: linear-gradient(90deg, #ffe8e2 0%, transparent 80%); border-left-color: #d4543a; animation: zoneAlert 1.8s ease-in-out infinite; }
 h2.zone.empty { color: #aaa; font-weight: 500; background: #f8f8f8; border-left-color: #ddd; }
 h2.zone small { color: #888; font-weight: normal; font-size: 11px; }
@@ -109,7 +115,14 @@ h2.zone small { color: #888; font-weight: normal; font-size: 11px; }
   h2.zone.empty { background: #222; }
 }
 ul { list-style: none; padding: 0; margin: 0 0 4px; }
-li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 6px 8px; border-bottom: 1px solid #eee2; align-items: center; border-radius: 4px; transition: background .15s; }
+li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 6px 8px; border-bottom: 1px solid #eee2; align-items: center; border-radius: 6px; transition: all .25s cubic-bezier(.23,1,.32,1); animation: liSlide .4s ease-out backwards; }
+li:hover { background: rgba(45,184,122,.08); transform: translateX(4px); box-shadow: 0 2px 8px rgba(45,184,122,.15); }
+body.luxe li:hover { background: rgba(212,175,55,.12); transform: translateX(4px) scale(1.01); box-shadow: 0 4px 16px rgba(212,175,55,.3); }
+@keyframes liSlide { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+@media (prefers-reduced-motion: reduce), (max-width: 480px) {
+  li { animation: none; }
+  li:hover { transform: none; }
+}
 li:hover { background: #fff8; }
 @media (prefers-color-scheme: dark) { li:hover { background: #2226; } }
 .uid-row { font-family: monospace; font-size: 9px; color: #bbb; word-break: break-all; font-weight: 400; }
@@ -168,8 +181,20 @@ li:hover { background: #fff8; }
   .menu-card .items-list span { padding: 8px 12px; font-size: 14px; }
   .menu-card .items-list .item-chip .item-pick { font-size: 15px; }
 }
-.order-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 998; display: flex; align-items: center; justify-content: center; }
-.order-modal .box { background: #fff; border-radius: 12px; padding: 20px 20px 18px; max-width: 420px; width: 94vw; max-height: 92vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,.3); }
+.order-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(8px); z-index: 998; display: flex; align-items: center; justify-content: center; animation: modalFade .25s ease-out; }
+@keyframes modalFade { from { opacity: 0; backdrop-filter: blur(0); } to { opacity: 1; backdrop-filter: blur(8px); } }
+.order-modal .box { background: #fff; border-radius: 18px; padding: 24px 22px 20px; max-width: 440px; width: 94vw; max-height: 92vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.35), 0 0 60px rgba(212,175,55,.15); animation: modalPop .4s cubic-bezier(.34,1.56,.64,1); position: relative; overflow-x: hidden; }
+.order-modal .box::before { content:''; position:absolute; top:-50%; right:-50%; width:200%; height:200%; background: radial-gradient(circle, rgba(45,184,122,.08) 0%, transparent 60%); animation: boxShimmer 6s linear infinite; pointer-events:none; }
+@keyframes boxShimmer { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+@keyframes modalPop { 0% { opacity: 0; transform: scale(.85) translateY(20px); } 60% { transform: scale(1.02) translateY(-4px); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
+.order-modal > * { position: relative; z-index: 1; }
+.order-modal.closing { animation: modalFadeOut .2s ease-in forwards; }
+.order-modal.closing .box { animation: modalPopOut .25s ease-in forwards; }
+@keyframes modalFadeOut { to { opacity: 0; } }
+@keyframes modalPopOut { to { opacity: 0; transform: scale(.9) translateY(10px); } }
+.in-office-tag { display: inline-block; background: linear-gradient(135deg, #fef3c7, #fde68a); color: #78350f; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; margin-left: 6px; vertical-align: middle; animation: tagPulse 2.5s ease-in-out infinite; box-shadow: 0 2px 6px rgba(251,191,36,.3); }
+body.luxe .in-office-tag { background: linear-gradient(135deg, var(--gold), var(--rose)); color: var(--luxe-bg); box-shadow: 0 0 12px rgba(212,175,55,.5); }
+@keyframes tagPulse { 0%,100% { transform: scale(1); box-shadow: 0 2px 6px rgba(251,191,36,.3); } 50% { transform: scale(1.06); box-shadow: 0 4px 12px rgba(251,191,36,.6); } }
 .order-modal h3 { margin: 0 0 14px; font-size: 17px; line-height: 1.3; }
 .order-modal label { display: block; font-size: 13px; color: #555; margin: 12px 0 5px; font-weight: 600; }
 .order-modal select, .order-modal input { width: 100%; padding: 12px 10px; font-size: 15px; border: 1px solid #bbb; border-radius: 8px; box-sizing: border-box; }
@@ -511,9 +536,12 @@ function render() {
       : (!isUnassigned && g.zone.capacity === 0 ? \`<small>\${g.list.length} 人（不限）</small>\` : '');
     const headerClass = isUnassigned ? 'zone none' : (g.list.length === 0 ? 'zone empty' : 'zone');
     const emptyTag = (!isUnassigned && g.list.length === 0) ? ' <span style="color:#bbb;font-style:italic;font-weight:400;">(未填)</span>' : '';
+    const IN_OFFICE_ZONES = ['楠西區', '南化區', '左鎮區', '新市區'];
+    const inOfficeTag = IN_OFFICE_ZONES.includes(g.zone.name)
+      ? ' <span class="in-office-tag" title="該所人員駐點衛生局">🏢 在局</span>' : '';
     const so = +g.zone.sort_order;
     const codeHtml = (so >= 100 && so < 1000) ? \`<span class="zone-code">\${String(so).padStart(4, '0')}</span>\` : '';
-    parts.push(\`<h2 class="\${headerClass}"><span>\${codeHtml}\${esc(g.zone.name)}\${isUnassigned ? ' ⚠️' : ''}\${emptyTag}</span>\${capNote}</h2>\`);
+    parts.push(\`<h2 class="\${headerClass}"><span>\${codeHtml}\${esc(g.zone.name)}\${inOfficeTag}\${isUnassigned ? ' ⚠️' : ''}\${emptyTag}</span>\${capNote}</h2>\`);
     if (g.list.length === 0) continue;
     parts.push('<ul>' + g.list.map(e => {
       const price = e.price ? \`$\${e.price}\` : '';
@@ -880,7 +908,7 @@ function openCustomModal() {
     '</div>';
   document.body.appendChild(d);
   setTimeout(() => d.querySelector('#cmName')?.focus(), 50);
-  const close = () => d.remove();
+  const close = () => { d.classList.add('closing'); setTimeout(() => d.remove(), 200); };
   d.addEventListener('click', (ev) => { if (ev.target === d) close(); });
   d.querySelector('#cmCancel').addEventListener('click', close);
   d.querySelector('#cmOk').addEventListener('click', () => {
@@ -930,7 +958,7 @@ function openOrderModal(itemName, price, isCustom) {
     '<div class="row-btns"><button id="omCancel">取消</button><button class="primary" id="omOk">送出</button></div>' +
     '</div>';
   document.body.appendChild(d);
-  const close = () => d.remove();
+  const close = () => { d.classList.add('closing'); setTimeout(() => d.remove(), 200); };
   d.addEventListener('click', (e) => { if (e.target === d) close(); });
   // 選項按鈕：點擊切換 active（同組只能選一個）
   d.querySelectorAll('.opt-grid[data-group]').forEach(grid => {
