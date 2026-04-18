@@ -100,19 +100,66 @@ async function handleEvent(ev, env) {
       return;
     }
 
-    // 「某區請假/不吃/沒訂」→ 套用到所有開啟中的任務
-    const leaveMatch = text.trim().match(/^(.{1,8}?)\s*(請假|休假|不吃|沒訂|跳過|不訂|沒點)$/);
-    if (leaveMatch && admin) {
-      const leave = await tryZoneLeave(env, userId, text);
+    // 本人裸「請假/不吃」→ 套用到自己
+    const bareLeave = text.trim().match(/^(請假|休假|不吃|沒訂|跳過|不訂|沒點|我請假|我不吃|我沒訂)[\s!?！？。.~～]*$/);
+    if (bareLeave) {
+      const m = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
+      const selfName = m?.real_name || m?.line_display || userId.slice(0, 6);
+      for (const t of tasks) {
+        await upsertEntry(env.DB, {
+          taskId: t.id, userId, data: {}, note: '請假', price: null, rawText: text, additive: false,
+        });
+      }
+      // 順手清掉這人 pending_profanity（避免後續被誤擋）
+      await env.DB.prepare(`DELETE FROM pending_profanity WHERE user_id = ?`).bind(userId).run();
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+        type: 'text', text: `📝 已登記「${selfName}」請假（${tasks.map(t => t.task_name).join('、')}）`,
+      }]);
+      return;
+    }
+
+    // 「某區請假/不吃/沒訂」或「某人請假」或「某區 某人 請假」→ 套用到所有開啟中的任務
+    const leaveMatch = text.trim().match(/^(.{1,20}?)\s*(請假|休假|不吃|沒訂|跳過|不訂|沒點)$/);
+    if (leaveMatch) {
+      // 先試區名（admin only），再試人名（任何人都能「倖妤請假」）
+      let leave = admin ? await tryZoneLeave(env, userId, text) : null;
+      let leaveLabel = leave?.zoneName;
+      let leaveTargetId = leave?.userId;
+      if (!leave) {
+        // 嘗試人名（或「區 名字」）比對 members
+        let prefix = leaveMatch[1].trim();
+        // 如果前綴是「<zone> <name>」，剝掉 zone
+        const zoneRow = await env.DB.prepare(
+          `SELECT name FROM zones WHERE enabled = 1 ORDER BY length(name) DESC`
+        ).all();
+        for (const z of (zoneRow.results || [])) {
+          if (prefix.startsWith(z.name)) { prefix = prefix.slice(z.name.length).trim(); break; }
+        }
+        if (prefix) {
+          const person = await env.DB.prepare(
+            `SELECT user_id, real_name, line_display, zone FROM members
+             WHERE user_id NOT LIKE 'zone:%' AND (real_name = ? OR line_display = ?)
+             ORDER BY last_seen_at DESC LIMIT 1`
+          ).bind(prefix, prefix).first();
+          // 本人自報請假：允許非 admin
+          const isSelf = person?.user_id === userId;
+          if (person && (admin || isSelf)) {
+            leaveTargetId = person.user_id;
+            leaveLabel = person.real_name || person.line_display || prefix;
+            leave = { userId: leaveTargetId, zoneName: leaveLabel };
+          }
+        }
+      }
       if (leave) {
         for (const t of tasks) {
           await upsertEntry(env.DB, {
-            taskId: t.id, userId: leave.userId,
+            taskId: t.id, userId: leaveTargetId,
             data: {}, note: '請假', price: null, rawText: text, additive: false,
           });
         }
+        await env.DB.prepare(`DELETE FROM pending_profanity WHERE user_id = ?`).bind(leaveTargetId).run();
         await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
-          type: 'text', text: `📝 已登記「${leave.zoneName}」請假（${tasks.map(t => t.task_name).join('、')}）`,
+          type: 'text', text: `📝 已登記「${leaveLabel}」請假（${tasks.map(t => t.task_name).join('、')}）`,
         }]);
         return;
       }
@@ -678,8 +725,9 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
     rawText: text,
     additive,
   });
-  // 成功收單 → 清零否認/亂點計數
+  // 成功收單 → 清零否認/亂點/誤判髒話計數
   await env.DB.prepare(`DELETE FROM nonsense_strikes WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
+  await env.DB.prepare(`DELETE FROM pending_profanity WHERE user_id = ?`).bind(userId).run();
   // 學習：若使用者填了「不適用」欄位，記到 item_no_fields（品項層級，跨任務保留）
   await learnNoFields(env.DB, parsed.data);
 
