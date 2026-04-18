@@ -278,8 +278,12 @@ async function collectEntry(env, task, userId, text, replyToken) {
     console.error('[extract error]', parsed._error);
     return; // 靜默，不打擾群組
   }
+  if (parsed?.profanity) {
+    await handleProfanity(env, task, userId, text, replyToken);
+    return;
+  }
   if (parsed?.nonsense) {
-    await handleNonsense(env, task, userId, text, replyToken, parsed.follow_up);
+    await handleNonsense(env, task, userId, text, replyToken, parsed.follow_up, !!existing);
     return;
   }
   // 取消訂單（只想刪舊、沒點新的）
@@ -622,7 +626,24 @@ async function handleDupPending(env, task, userId, text, parsed, replyToken) {
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
 }
 
-async function handleNonsense(env, task, userId, text, replyToken, teaseFromAI) {
+async function handleProfanity(env, task, userId, text, replyToken) {
+  const m = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
+  const who = m?.real_name || m?.line_display || userId.slice(0, 6);
+  const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const adminNames = [];
+  for (const aid of adminIds) {
+    const a = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(aid).first();
+    const nm = a?.real_name || a?.line_display;
+    if (nm) adminNames.push(nm);
+  }
+  const adminTag = adminNames.length ? adminNames.map(n => `@${n}`).join(' ') + ' ' : '';
+  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+    type: 'text',
+    text: `${adminTag}${who} 似乎講了不太適合的字眼，麻煩您處理一下，謝謝 🙏`,
+  }]);
+}
+
+async function handleNonsense(env, task, userId, text, replyToken, teaseFromAI, hasExisting) {
   const row = await env.DB.prepare(
     `SELECT count FROM nonsense_strikes WHERE task_id = ? AND user_id = ?`
   ).bind(task.id, userId).first();
@@ -639,13 +660,14 @@ async function handleNonsense(env, task, userId, text, replyToken, teaseFromAI) 
   ).bind(userId).first();
   const who = m?.real_name || m?.line_display || userId.slice(0, 6);
 
-  if (count === 1) {
+  // 未點狀態：模糊/矛盾比較正常，第 1 次 AI 吐槽留空間；第 2 次起才 @ 管理員
+  // 已點狀態：已經有有效紀錄，任何矛盾發言直接 @ 管理員（不再吐槽浪費時間）
+  if (!hasExisting && count === 1) {
     const tease = teaseFromAI || '別鬧啦，認真講～';
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: tease }]);
     return;
   }
 
-  // 第 2 次以上 → 社交壓力版，@ 管理員裁定
   const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
   const adminNames = [];
   for (const aid of adminIds) {
@@ -656,7 +678,10 @@ async function handleNonsense(env, task, userId, text, replyToken, teaseFromAI) 
     if (nm) adminNames.push(nm);
   }
   const adminTag = adminNames.length ? adminNames.map(n => `@${n}`).join(' ') + ' ' : '';
-  const reply = `${adminTag}${who} 最後一次點了「${text}」，確定要幫他點這個嗎？`;
+  const context = hasExisting
+    ? `${who} 已有紀錄，剛剛又講「${text}」，似乎在開玩笑或矛盾`
+    : `${who} 最後一次點了「${text}」，內容不太合理`;
+  const reply = `${adminTag}${context}，麻煩您協助裁示一下，謝謝 🙏`;
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
 }
 
