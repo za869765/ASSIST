@@ -118,6 +118,29 @@ async function handleEvent(ev, env) {
       }
     }
 
+    // 「飲料不用 / 便當不用」→ 針對該任務記請假（可 admin 代點區 或 本人）
+    const skipMatch = text.trim().match(/^(.{1,10}?)\s*(不用了?|不要了?|免了?|跳過|不需要)$/);
+    if (skipMatch) {
+      const hint = skipMatch[1].trim();
+      const pickedTask = matchTaskByHint(tasks, hint);
+      if (pickedTask) {
+        let uid = userId;
+        let who = '';
+        if (admin) {
+          const proxy = await tryProxyZone(env, userId, hint);
+          if (proxy && !proxy.multi) { uid = proxy.userId; who = `「${hint}」`; }
+        }
+        await upsertEntry(env.DB, {
+          taskId: pickedTask.id, userId: uid,
+          data: {}, note: '請假', price: null, rawText: text, additive: false,
+        });
+        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+          type: 'text', text: `📝 已登記${who}「${pickedTask.task_name}」請假`,
+        }]);
+        return;
+      }
+    }
+
     let target = tasks[0];
     if (tasks.length > 1) {
       // 若此人正在任一任務中有 pending_dup 且訊息是加/改裁示 → 優先導向該任務
@@ -689,7 +712,7 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
       const hint = leaveTasks.length
         ? `（${leaveTasks.join('、')}原本請假不合理，已清掉）`
         : '';
-      reply += `\n@${name} 另外「${pending.join('、')}」要什麼呢？${hint}（若不需要請回「${pending[0]}請假」）`;
+      reply += `\n@${name} 另外「${pending.join('、')}」要什麼呢？${hint}（若不需要請回「${pending[0]}不用」）`;
     }
   }
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
