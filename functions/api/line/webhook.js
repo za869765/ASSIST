@@ -521,7 +521,9 @@ async function collectEntry(env, task, userId, text, replyToken) {
   if (!parsed || !parsed.data || Object.keys(parsed.data).length === 0) {
     // 抽不到東西 → 若 AI 有追問話術就回，否則靜默略過（避免閒聊被亂回）
     if (parsed?.follow_up) {
-      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: parsed.follow_up }]);
+      const mInfo = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
+      const askName = mInfo?.real_name || mInfo?.line_display || userId.slice(0, 6);
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `@${askName} ${parsed.follow_up}` }]);
     }
     return;
   }
@@ -613,7 +615,7 @@ async function collectEntry(env, task, userId, text, replyToken) {
     reply = `${name} ${parts}${price}${note}`;
   }
   if (missing.length && followUp) {
-    reply += `\n${followUp}`;
+    reply += `\n@${name} ${followUp}`;
   }
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
 }
