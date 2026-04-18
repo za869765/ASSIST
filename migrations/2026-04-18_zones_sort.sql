@@ -1,0 +1,41 @@
+-- 2026-04-18：依台南市官方區碼（0501-0538，缺 0536）重排 sort_order
+UPDATE zones SET sort_order = 501 WHERE name = '新營區';
+UPDATE zones SET sort_order = 502 WHERE name = '鹽水區';
+UPDATE zones SET sort_order = 503 WHERE name = '白河區';
+UPDATE zones SET sort_order = 504 WHERE name = '麻豆區';
+UPDATE zones SET sort_order = 505 WHERE name = '佳里區';
+UPDATE zones SET sort_order = 506 WHERE name = '新化區';
+UPDATE zones SET sort_order = 507 WHERE name = '善化區';
+UPDATE zones SET sort_order = 508 WHERE name = '學甲區';
+UPDATE zones SET sort_order = 509 WHERE name = '柳營區';
+UPDATE zones SET sort_order = 510 WHERE name = '後壁區';
+UPDATE zones SET sort_order = 511 WHERE name = '東山區';
+UPDATE zones SET sort_order = 512 WHERE name = '下營區';
+UPDATE zones SET sort_order = 513 WHERE name = '六甲區';
+UPDATE zones SET sort_order = 514 WHERE name = '官田區';
+UPDATE zones SET sort_order = 515 WHERE name = '大內區';
+UPDATE zones SET sort_order = 516 WHERE name = '西港區';
+UPDATE zones SET sort_order = 517 WHERE name = '七股區';
+UPDATE zones SET sort_order = 518 WHERE name = '將軍區';
+UPDATE zones SET sort_order = 519 WHERE name = '北門區';
+UPDATE zones SET sort_order = 520 WHERE name = '新市區';
+UPDATE zones SET sort_order = 521 WHERE name = '安定區';
+UPDATE zones SET sort_order = 522 WHERE name = '山上區';
+UPDATE zones SET sort_order = 523 WHERE name = '玉井區';
+UPDATE zones SET sort_order = 524 WHERE name = '楠西區';
+UPDATE zones SET sort_order = 525 WHERE name = '南化區';
+UPDATE zones SET sort_order = 526 WHERE name = '左鎮區';
+UPDATE zones SET sort_order = 527 WHERE name = '仁德區';
+UPDATE zones SET sort_order = 528 WHERE name = '歸仁區';
+UPDATE zones SET sort_order = 529 WHERE name = '關廟區';
+UPDATE zones SET sort_order = 530 WHERE name = '龍崎區';
+UPDATE zones SET sort_order = 531 WHERE name = '永康區';
+UPDATE zones SET sort_order = 532 WHERE name = '東區';
+UPDATE zones SET sort_order = 533 WHERE name = '南區';
+UPDATE zones SET sort_order = 534 WHERE name = '中西區';
+UPDATE zones SET sort_order = 535 WHERE name = '北區';
+-- 0536 官方跳號
+UPDATE zones SET sort_order = 537 WHERE name = '安南區';
+UPDATE zones SET sort_order = 538 WHERE name = '安平區';
+-- 單位放最後
+UPDATE zones SET sort_order = 9999 WHERE name = '衛生局';
