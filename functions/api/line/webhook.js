@@ -314,9 +314,30 @@ async function collectEntry(env, task, userId, text, replyToken) {
   // 管理員代點：「幫南區點素食便當」「永康要一個排骨飯」等，把名字記成該區
   const proxy = await tryProxyZone(env, userId, text);
   if (proxy?.multi) {
+    // 多區自動拆分：依每個區名在文字中的位置切成片段，各自當成該區的點餐內容
+    const zones = proxy.multi;
+    const positions = zones
+      .map(z => ({ zone: z, start: text.indexOf(z), end: text.indexOf(z) + z.length }))
+      .filter(p => p.start >= 0)
+      .sort((a, b) => a.start - b.start);
+    const stripLead = (s) => s.replace(/^[\s跟和與,，、；的,]+/, '').trim();
+    const prefix = stripLead(text.slice(0, positions[0].start));
+    const segments = positions.map((p, i) => {
+      const nextStart = i + 1 < positions.length ? positions[i + 1].start : text.length;
+      return stripLead(text.slice(p.end, nextStart));
+    });
+    // 選一段當 fallback（當某區片段太短 → 表示「各一個…」的共用語意，拿最長那段補上）
+    const candidates = [prefix, ...segments].filter(s => s.length >= 2);
+    const main = candidates.reduce((a, b) => (b.length > a.length ? b : a), '');
+    const finalSegs = segments.map(s => (s.length >= 2 ? s : main));
+
+    const replies = [];
+    for (let i = 0; i < positions.length; i++) {
+      const r = await processProxyOrder(env, task, positions[i].zone, finalSegs[i] || main || text);
+      replies.push(r);
+    }
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
-      type: 'text',
-      text: `偵測到多區（${proxy.multi.join('、')}），請分開一句一區代點，例：\n「${proxy.multi[0]}點素食便當」\n「${proxy.multi[1]}點排骨飯」`,
+      type: 'text', text: replies.join('\n'),
     }]);
     return;
   }
@@ -989,6 +1010,36 @@ async function tryProxyZone(env, userId, text) {
   ).bind(synthId, zoneName, zoneName).run();
 
   return { userId: synthId, text: stripped || text };
+}
+
+// 多區代點用：直接處理單一區的一筆點餐（不走 replyToken，回傳一行確認字串）
+async function processProxyOrder(env, task, zoneName, orderText) {
+  const synthId = `zone:${zoneName}`;
+  await env.DB.prepare(
+    `INSERT INTO members (user_id, real_name, zone, bound_at, last_seen_at)
+     VALUES (?, ?, ?, datetime('now'), datetime('now'))
+     ON CONFLICT(user_id) DO UPDATE SET last_seen_at = datetime('now')`
+  ).bind(synthId, zoneName, zoneName).run();
+
+  const noFieldsRows = await env.DB.prepare(`SELECT item, field FROM item_no_fields`).all();
+  const itemNoFields = {};
+  for (const r of (noFieldsRows.results || [])) {
+    if (!itemNoFields[r.item]) itemNoFields[r.item] = [];
+    itemNoFields[r.item].push(r.field);
+  }
+  const parsed = await geminiExtract(env.GEMINI_API_KEY, task.task_name, orderText, {}, itemNoFields);
+  if (!parsed || !parsed.data || Object.keys(parsed.data).length === 0) {
+    return `⚠️ ${zoneName}：無法辨識「${orderText}」`;
+  }
+  await upsertEntry(env.DB, {
+    taskId: task.id, userId: synthId,
+    data: parsed.data, note: parsed.note, price: parsed.price,
+    rawText: orderText, additive: false,
+  });
+  const parts = Object.values(parsed.data).filter(Boolean).join('/');
+  const price = parsed.price ? ` $${parsed.price}` : '';
+  const note = parsed.note ? `（${parsed.note}）` : '';
+  return `✅ ${zoneName}：${parts}${price}${note}`;
 }
 
 // 硬規則污穢字偵測：體液/排泄物/性器官/中文粗話等
