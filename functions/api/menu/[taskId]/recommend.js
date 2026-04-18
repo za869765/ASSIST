@@ -135,7 +135,7 @@ export async function onRequestGet({ env, params, request }) {
         reason: String(p.reason || '').trim(),
         price: priceByName.has(name) ? priceByName.get(name) : null,
       };
-    }).filter(p => p.name) : [];
+    }).filter(p => p.name).sort((a, b) => (a.price ?? 99999) - (b.price ?? 99999)) : [];
     const result = { picks, note: String(parsed?.note || '').trim(), dir, label: directive };
     await env.DB.prepare(
       `INSERT INTO menu_recommend (key, task_id, dir, result, created_at) VALUES (?, ?, ?, ?, datetime('now'))

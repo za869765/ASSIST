@@ -127,6 +127,8 @@ li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 3px
 .menu-card .items-list .cat-row > b { display: inline-block; margin-right: 6px; padding: 1px 6px; background: #2db87a; color: white; border-radius: 10px; font-size: 11px; font-weight: 600; }
 .menu-card .items-list span { display: inline-block; padding: 1px 6px; margin: 1px; background: #eef; border-radius: 10px; }
 .menu-card .items-list span b { font-weight: 700; margin-left: 2px; }
+.menu-card .items-list .price-edit { color: #2db87a; cursor: pointer; text-decoration: underline dotted; margin-left: 2px; font-variant-numeric: tabular-nums; }
+.menu-card .items-list .price-edit:hover { color: #249864; text-decoration: underline; }
 .menu-summary { margin-top: 6px; padding: 6px 8px; background: #fff3e0; border-radius: 6px; font-size: 12px; color: #b04a1a; }
 .menu-summary:empty { display: none; }
 .recommend-bar { margin-top: 8px; padding-top: 6px; border-top: 1px dashed #ccc6; }
@@ -313,15 +315,36 @@ async function loadMenu() {
       return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
     });
     const sections = sortedCats.map(cat => {
-      const its = byCat.get(cat).map(it => {
+      const sorted = byCat.get(cat).slice().sort((a,b) => (a.price ?? 99999) - (b.price ?? 99999));
+      const its = sorted.map(it => {
         const cnt = orderCount.get(norm(it.name)) || 0;
-        const price = it.price ? \` $\${it.price}\` : '';
+        const priceLabel = it.price != null ? \`$\${it.price}\` : '—';
         const hot = cnt > 0 ? \` <b style="color:#d4543a">×\${cnt}</b>\` : '';
-        return \`<span>\${esc(it.name)}\${price}\${hot}</span>\`;
+        return \`<span>\${esc(it.name)} <a class="price-edit" data-name="\${esc(it.name)}" title="點擊修改價格">\${priceLabel}</a>\${hot}</span>\`;
       }).join('');
       return \`<div class="cat-row"><b>\${esc(cat)}</b>\${its}</div>\`;
     }).join('');
     document.getElementById('menuItems').innerHTML = sections;
+    // 綁定價格編輯
+    document.querySelectorAll('.price-edit').forEach(el => {
+      el.addEventListener('click', async () => {
+        const name = el.dataset.name;
+        const current = el.textContent.replace(/[^\\d]/g, '') || '';
+        const raw = prompt('修改「' + name + '」的價格（留空=未知，僅數字）：', current);
+        if (raw === null) return;
+        const val = raw.trim() === '' ? null : +raw.trim();
+        if (val != null && (isNaN(val) || val < 0)) { alert('價格不合法'); return; }
+        try {
+          const r = await fetch('/api/menu/' + TASK_ID, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, price: val }),
+          });
+          if (!r.ok) { const j = await r.json().catch(() => ({})); alert('更新失敗：' + (j.error || r.status)); return; }
+          loadMenu();
+        } catch (e) { alert('錯誤：' + e.message); }
+      });
+    });
     // 目前點餐熱度摘要
     const top = [...orderCount.entries()]
       .sort((a,b) => b[1] - a[1]).slice(0, 5)

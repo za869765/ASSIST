@@ -99,6 +99,29 @@ export async function onRequestPost({ env, params, request }) {
   return json({ id, itemCount: items.length, items, aggItems: finalItems });
 }
 
+// PATCH：修改單一品項價格（菜單過期時手動調整）/ body: { name, price }
+export async function onRequestPatch({ env, params, request }) {
+  const taskId = +params.taskId;
+  if (!taskId) return json({ error: 'bad taskId' }, 400);
+  const body = await request.json().catch(() => ({}));
+  const targetName = String(body.name || '').trim();
+  const newPrice = body.price == null || body.price === '' ? null : +body.price;
+  if (!targetName) return json({ error: 'no name' }, 400);
+  if (newPrice != null && (isNaN(newPrice) || newPrice < 0 || newPrice > 100000)) {
+    return json({ error: 'bad price' }, 400);
+  }
+  const task = await env.DB.prepare(`SELECT menu_json FROM tasks WHERE id = ?`).bind(taskId).first();
+  if (!task?.menu_json) return json({ error: 'no menu' }, 400);
+  const items = JSON.parse(task.menu_json);
+  const idx = items.findIndex(it => String(it.name || '').trim() === targetName);
+  if (idx < 0) return json({ error: 'item not found' }, 404);
+  items[idx] = { ...items[idx], price: newPrice };
+  await env.DB.prepare(`UPDATE tasks SET menu_json = ? WHERE id = ?`).bind(JSON.stringify(items), taskId).run();
+  // 清掉舊的推薦快取（價格變了推薦也可能變）
+  try { await env.DB.prepare(`DELETE FROM menu_recommend WHERE task_id = ?`).bind(taskId).run(); } catch {}
+  return json({ ok: true, items });
+}
+
 export async function onRequestDelete({ env, params, request }) {
   const taskId = +params.taskId;
   const body = await request.json().catch(() => ({}));
