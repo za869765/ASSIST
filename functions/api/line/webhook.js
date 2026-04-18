@@ -664,23 +664,32 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
   if (missing.length && followUp) {
     reply += `\n@${name} ${followUp}`;
   }
-  // 同群組其他開啟中任務：若該人尚未點 / 仍是請假（可能是 group-leave 同步留下的） → 提醒
+  // 同群組其他開啟中任務：若該人在其他任務仍掛請假 → 不合理，清掉並提醒要什麼
   if (groupId) {
     const siblings = await env.DB.prepare(
       `SELECT id, task_name FROM tasks WHERE group_id = ? AND status = 'open' AND id != ?`
     ).bind(groupId, task.id).all();
-    const reminders = [];
+    const leaveTasks = [];
+    const blankTasks = [];
     for (const sib of (siblings.results || [])) {
       const row = await env.DB.prepare(
         `SELECT data_json, note FROM entries WHERE task_id = ? AND user_id = ?`
       ).bind(sib.id, userId).first();
-      const hasRealOrder = row && row.data_json && row.data_json !== '{}' && row.note !== '請假';
-      if (!hasRealOrder) {
-        reminders.push(sib.task_name);
+      if (!row) { blankTasks.push(sib.task_name); continue; }
+      const isLeave = row.note === '請假' && (!row.data_json || row.data_json === '{}');
+      if (isLeave) {
+        await env.DB.prepare(`DELETE FROM entries WHERE task_id = ? AND user_id = ?`).bind(sib.id, userId).run();
+        leaveTasks.push(sib.task_name);
+      } else if (!row.data_json || row.data_json === '{}') {
+        blankTasks.push(sib.task_name);
       }
     }
-    if (reminders.length) {
-      reply += `\n@${name} 另外「${reminders.join('、')}」要什麼呢？（若不需要請回「${reminders[0]}不用」或「${reminders[0]}請假」）`;
+    const pending = [...leaveTasks, ...blankTasks];
+    if (pending.length) {
+      const hint = leaveTasks.length
+        ? `（${leaveTasks.join('、')}原本請假不合理，已清掉）`
+        : '';
+      reply += `\n@${name} 另外「${pending.join('、')}」要什麼呢？${hint}（若不需要請回「${pending[0]}請假」）`;
     }
   }
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
