@@ -228,6 +228,13 @@ async function handleEvent(ev, env) {
 }
 
 async function collectEntry(env, task, userId, text, replyToken) {
+  // 管理員代點：「幫南區點素食便當」「永康要一個排骨飯」等，把名字記成該區
+  const proxy = await tryProxyZone(env, userId, text);
+  if (proxy) {
+    userId = proxy.userId;
+    text = proxy.text;
+  }
+
   // 若此人在此任務有待確認的 pending_dup，且這次訊息能辨識成「加/改」→ 直接處理
   const pending = await env.DB.prepare(
     `SELECT new_text, new_data, new_note, new_price FROM pending_dups WHERE task_id = ? AND user_id = ?`
@@ -759,6 +766,63 @@ async function handleDupPending(env, task, userId, text, parsed, replyToken) {
   const adminTag = adminNames.length ? adminNames.map(n => `@${n}`).join(' ') + ' ' : '';
   const reply = `${adminTag}打擾一下～${who} 原本點的是「${oldItem}」，剛剛又提到「${newItem}」，麻煩您裁示一下是要「加點」還是「改單」呢？謝謝 🙏`;
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
+}
+
+// 管理員代點：偵測「幫南區點素食便當」「衛生局要一個排骨飯」等
+// 回傳 {userId, text} 或 null。userId 會被替換為 zone:<名稱>，text 則是移除代點用詞的點餐內容
+async function tryProxyZone(env, userId, text) {
+  const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (!adminIds.includes(userId)) return null;
+
+  // 台南常見行政區 + 常見局處單位（白名單加速匹配）
+  const KNOWN = [
+    '中西區','東區','南區','北區','安平區','安南區',
+    '永康','歸仁','新化','左鎮','玉井','楠西','南化','仁德','關廟','龍崎',
+    '官田','麻豆','佳里','西港','七股','將軍','學甲','北門',
+    '新營','後壁','白河','東山','六甲','下營','柳營','鹽水',
+    '善化','大內','山上','新市','安定',
+    '衛生局','檢驗中心','環保局','教育局','社會局','警察局','消防局','勞工局',
+  ];
+  const zonesRow = await env.DB.prepare(
+    `SELECT DISTINCT zone FROM members WHERE zone IS NOT NULL AND zone != ''`
+  ).all();
+  const dbZones = (zonesRow.results || []).map(r => r.zone).filter(Boolean);
+  const all = [...new Set([...KNOWN, ...dbZones])].sort((a, b) => b.length - a.length);
+
+  let zoneName = null;
+  let stripped = text;
+
+  // 模式 1：幫/替/代/把/為 + <任意名稱> + 點/要/...
+  const m1 = text.match(/(?:幫|替|代|把|為)\s*([^\s，,。\.]+?)(?=\s*(?:點|要|來|需要|一個|一份|一杯|一碗|想|吃|喝))/);
+  if (m1) {
+    zoneName = m1[1].trim();
+    stripped = text.replace(m1[0], '').trim();
+  } else {
+    // 模式 2：直接出現已知名稱 + 點/要
+    for (const z of all) {
+      const idx = text.indexOf(z);
+      if (idx < 0) continue;
+      const after = text.slice(idx + z.length);
+      const before = text.slice(0, idx);
+      if (/^\s*(?:點|要|來|需要|一個|一份|一杯|一碗|的)/.test(after)
+          || /(?:幫|替|代|把|為)\s*$/.test(before)) {
+        zoneName = z;
+        stripped = (before + after.replace(/^\s*(?:點|要|來|需要|的)/, '')).replace(/^(?:幫|替|代|把|為)\s*/, '').trim();
+        break;
+      }
+    }
+  }
+
+  if (!zoneName || zoneName.length < 1 || zoneName.length > 10) return null;
+
+  const synthId = `zone:${zoneName}`;
+  await env.DB.prepare(
+    `INSERT INTO members (user_id, real_name, zone, bound_at, last_seen_at)
+     VALUES (?, ?, ?, datetime('now'), datetime('now'))
+     ON CONFLICT(user_id) DO UPDATE SET last_seen_at = datetime('now')`
+  ).bind(synthId, zoneName, zoneName).run();
+
+  return { userId: synthId, text: stripped || text };
 }
 
 // 硬規則污穢字偵測：體液/排泄物/性器官/中文粗話等
