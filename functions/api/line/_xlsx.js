@@ -131,19 +131,20 @@ export function buildXLSX(sheetName, rows) {
 <fill><patternFill patternType="solid"><fgColor rgb="FFCCFBF1"/><bgColor indexed="64"/></patternFill></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FFFEF3C7"/><bgColor indexed="64"/></patternFill></fill>
 </fills>
-<borders count="2">
+<borders count="3">
 <border/>
-<border><left style="thin"><color rgb="FFB8B8B8"/></left><right style="thin"><color rgb="FFB8B8B8"/></right><top style="thin"><color rgb="FFB8B8B8"/></top><bottom style="thin"><color rgb="FFB8B8B8"/></bottom></border>
+<border><left style="thin"><color rgb="FF94A3B8"/></left><right style="thin"><color rgb="FF94A3B8"/></right><top style="thin"><color rgb="FF94A3B8"/></top><bottom style="thin"><color rgb="FF94A3B8"/></bottom></border>
+<border><left style="medium"><color rgb="FFB8860B"/></left><right style="medium"><color rgb="FFB8860B"/></right><top style="medium"><color rgb="FFB8860B"/></top><bottom style="medium"><color rgb="FFB8860B"/></bottom></border>
 </borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
 <cellXfs count="7">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
-<xf numFmtId="49" fontId="1" fillId="2" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
-<xf numFmtId="49" fontId="2" fillId="3" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf>
-<xf numFmtId="49" fontId="3" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
-<xf numFmtId="49" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
-<xf numFmtId="49" fontId="4" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="49" fontId="1" fillId="2" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="49" fontId="2" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" indent="1"/></xf>
+<xf numFmtId="49" fontId="3" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="49" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+<xf numFmtId="49" fontId="4" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
 </cellXfs>
 </styleSheet>`;
 
@@ -173,7 +174,12 @@ export function buildXLSX(sheetName, rows) {
       if (w > (colMax[i] || 0)) colMax[i] = w;
     }
   }
-  const cols = colMax.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${Math.min(50, Math.max(8, w * 1.1 + 2))}" customWidth="1"/>`).join('');
+  // A4 直式：總寬控制在 ~78（A4 可用寬 ≒ 78 字元），等比縮放
+  const rawWidths = colMax.map(w => Math.min(38, Math.max(8, w * 1.1 + 2)));
+  const totalWidth = rawWidths.reduce((a, b) => a + b, 0);
+  const A4_WIDTH = 78;
+  const scale = totalWidth > A4_WIDTH ? (A4_WIDTH / totalWidth) : 1;
+  const cols = rawWidths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${(w * scale).toFixed(1)}" customWidth="1"/>`).join('');
 
   let prevStyle = 0;
   const sheetRowsArr = rows.map((row, rIdx) => {
@@ -191,9 +197,15 @@ export function buildXLSX(sheetName, rows) {
   const sheetRows = sheetRowsArr.join('');
 
   // 凍結第 1 列（title）方便滾動
+  const sheetPr = `<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>`;
   const frozen = `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`;
+  const sheetFormat = `<sheetFormatPr defaultRowHeight="18" x14ac:dyDescent="0.25"/>`;
+  // A4 直式、等比縮到一頁寬、水平置中、邊界適中
+  const pageMargins = `<pageMargins left="0.4" right="0.4" top="0.55" bottom="0.55" header="0.3" footer="0.3"/>`;
+  const printOptions = `<printOptions horizontalCentered="1"/>`;
+  const pageSetup = `<pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/>`;
   const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${frozen}<cols>${cols}</cols><sheetData>${sheetRows}</sheetData></worksheet>`;
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac">${sheetPr}${frozen}${sheetFormat}<cols>${cols}</cols><sheetData>${sheetRows}</sheetData>${printOptions}${pageMargins}${pageSetup}</worksheet>`;
 
   return zipStore([
     { name: '[Content_Types].xml', data: enc.encode(contentTypes) },
