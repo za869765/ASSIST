@@ -28,7 +28,7 @@ export async function onRequestGet({ params, request, env }) {
        LEFT JOIN members m ON m.user_id = e.user_id
       WHERE e.task_id = ?
       ORDER BY e.updated_at ASC`
-  ).bind(id).all();
+  ).bind(task.id).all();
   const rows = entries.results || [];
 
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({
