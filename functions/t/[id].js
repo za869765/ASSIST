@@ -303,12 +303,25 @@ body.luxe.t-purple { --gold:#a78bfa; --rose:#d8b4fe; --teal:#c4b5fd; --luxe-bg:#
 body.luxe.t-red    { --gold:#ef4444; --rose:#fca5a5; --teal:#f87171; --luxe-bg:#450a0a; --luxe-card:#7f1d1d; --luxe-text:#fecaca; }
 body.luxe.t-blue   { --gold:#3b82f6; --rose:#60a5fa; --teal:#93c5fd; --luxe-bg:#0c2340; --luxe-card:#1e3a5f; --luxe-text:#dbeafe; }
 body.luxe.t-orange { --gold:#f97316; --rose:#fb923c; --teal:#fdba74; --luxe-bg:#431407; --luxe-card:#7c2d12; --luxe-text:#fed7aa; }
+body.luxe.t-starry { --gold:#e0e7ff; --rose:#c7d2fe; --teal:#a5b4fc; --luxe-bg:#020617; --luxe-card:#0f172a; --luxe-text:#e0e7ff; }
+body.luxe.t-fairy  { --gold:#f9a8d4; --rose:#fbcfe8; --teal:#a5f3fc; --luxe-bg:#4a0e4e; --luxe-card:#6b1d6f; --luxe-text:#fce7f3; }
+body.luxe.t-royal  { --gold:#fbbf24; --rose:#e0b978; --teal:#c9a35f; --luxe-bg:#3f0d1f; --luxe-card:#5b1431; --luxe-text:#fef3c7; }
+body.luxe.t-aurora { --gold:#86efac; --rose:#c4b5fd; --teal:#67e8f9; --luxe-bg:#052e3f; --luxe-card:#0c3b54; --luxe-text:#d1fae5; }
+body.luxe.t-sakura { --gold:#fbbfc4; --rose:#fda4af; --teal:#fecdd3; --luxe-bg:#3f1d2e; --luxe-card:#5b2641; --luxe-text:#fff1f2; }
+body.luxe.t-cyber  { --gold:#22d3ee; --rose:#f472b6; --teal:#a3e635; --luxe-bg:#050014; --luxe-card:#14002e; --luxe-text:#a3e635; }
 body.luxe { background: linear-gradient(135deg, var(--luxe-bg) 0%, #1a0f2e 100%); color: var(--luxe-text); min-height: 100vh; position: relative; transition: background .4s; }
 body.luxe.t-green  { background: linear-gradient(135deg, var(--luxe-bg) 0%, #0a4030 100%); }
 body.luxe.t-purple { background: linear-gradient(135deg, var(--luxe-bg) 0%, #3b2a6e 100%); }
 body.luxe.t-red    { background: linear-gradient(135deg, var(--luxe-bg) 0%, #991b1b 100%); }
 body.luxe.t-blue   { background: linear-gradient(135deg, var(--luxe-bg) 0%, #1e3a5f 100%); }
 body.luxe.t-orange { background: linear-gradient(135deg, var(--luxe-bg) 0%, #9a3412 100%); }
+body.luxe.t-starry { background: radial-gradient(ellipse at top, #1e293b 0%, #020617 60%, #000 100%); }
+body.luxe.t-fairy  { background: linear-gradient(135deg, #4a0e4e 0%, #8b3a9b 50%, #f472b6 100%); }
+body.luxe.t-royal  { background: linear-gradient(135deg, #3f0d1f 0%, #7f1d3d 50%, #4b1818 100%); }
+body.luxe.t-aurora { background: linear-gradient(180deg, #052e3f 0%, #065f46 35%, #4c1d95 70%, #831843 100%); animation: auroraShift 20s ease-in-out infinite; background-size: 100% 200%; }
+@keyframes auroraShift { 0%,100% { background-position: 0% 0%; } 50% { background-position: 0% 100%; } }
+body.luxe.t-sakura { background: linear-gradient(135deg, #3f1d2e 0%, #831843 50%, #fb7185 100%); }
+body.luxe.t-cyber  { background: linear-gradient(135deg, #050014 0%, #14002e 40%, #3b0764 100%); }
 body.luxe .particles { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
 body.luxe .particle { position: absolute; width: 4px; height: 4px; background: var(--gold); border-radius: 50%; opacity: .3; animation: luxeFloat 20s infinite; }
 /* 主題專屬 emoji 粒子：JS 會把 particle 變成 .particle-emoji，並 setText emoji */
@@ -321,6 +334,14 @@ body.luxe.t-red::after    { background: radial-gradient(circle at 50% 50%, rgba(
 @keyframes redPulse { 0%,100% { opacity: .4; } 50% { opacity: .8; } }
 body.luxe.t-blue::after   { background: linear-gradient(180deg, transparent 0%, rgba(59,130,246,.08) 50%, rgba(30,58,95,.3) 100%), radial-gradient(ellipse at 50% 100%, rgba(147,197,253,.15), transparent 60%); }
 body.luxe.t-orange::after { background: linear-gradient(180deg, rgba(251,146,60,.1) 0%, transparent 40%, rgba(124,45,18,.4) 100%), radial-gradient(ellipse at 50% 20%, rgba(253,186,116,.18), transparent 60%); }
+body.luxe.t-starry::after { background: radial-gradient(1px 1px at 20% 30%, #fff, transparent 2px), radial-gradient(1px 1px at 60% 70%, #fff, transparent 2px), radial-gradient(2px 2px at 80% 20%, #fff, transparent 3px), radial-gradient(1px 1px at 40% 85%, #fff, transparent 2px), radial-gradient(2px 2px at 10% 60%, #fff, transparent 3px); background-size: 600px 600px; opacity: .6; animation: starTwinkle 5s ease-in-out infinite; }
+@keyframes starTwinkle { 0%,100% { opacity: .5; } 50% { opacity: .9; } }
+body.luxe.t-fairy::after  { background: radial-gradient(circle at 25% 30%, rgba(249,168,212,.25), transparent 50%), radial-gradient(circle at 75% 70%, rgba(165,243,252,.2), transparent 50%), radial-gradient(circle at 50% 50%, rgba(216,180,254,.15), transparent 60%); }
+body.luxe.t-royal::after  { background: radial-gradient(ellipse at 50% 0%, rgba(251,191,36,.15), transparent 60%), repeating-linear-gradient(45deg, transparent 0 40px, rgba(251,191,36,.03) 40px 42px); }
+body.luxe.t-aurora::after { background: radial-gradient(ellipse at 30% 40%, rgba(134,239,172,.18), transparent 55%), radial-gradient(ellipse at 70% 60%, rgba(196,181,253,.18), transparent 55%), radial-gradient(ellipse at 50% 80%, rgba(244,114,182,.12), transparent 55%); }
+body.luxe.t-sakura::after { background: radial-gradient(ellipse at 50% 0%, rgba(253,164,175,.2), transparent 55%), radial-gradient(ellipse at 50% 100%, rgba(251,191,196,.15), transparent 55%); }
+body.luxe.t-cyber::after  { background: linear-gradient(transparent 98%, rgba(34,211,238,.15) 100%), linear-gradient(90deg, transparent 98%, rgba(244,114,182,.1) 100%); background-size: 100% 4px, 4px 100%; animation: cyberScan 3s linear infinite; }
+@keyframes cyberScan { to { background-position: 0 100%, 100% 0; } }
 @keyframes luxeFloat { 0% { transform: translateY(0) translateX(0); opacity: 0; } 10%,90% { opacity: .3; } 100% { transform: translateY(-100vh) translateX(80px); opacity: 0; } }
 body.luxe main, body.luxe #board, body.luxe .tabs, body.luxe h1, body.luxe .meta, body.luxe .menu-card, body.luxe .admin-banner { position: relative; z-index: 1; }
 body.luxe h1 { font-size: 2rem; font-weight: 800; background: linear-gradient(135deg, var(--gold), var(--rose), var(--teal)); -webkit-background-clip: text; background-clip: text; color: transparent; letter-spacing: 2px; animation: luxeTitleShine 3s ease-in-out infinite; }
@@ -472,12 +493,18 @@ ${closed ? '' : `<div id="adminBanner" class="admin-banner" style="display:none"
 <div class="particles" id="luxeParticles" style="display:none"></div>
 <button id="luxeToggle" class="luxe-toggle" title="切換 LUXE 主題">✨</button>
 <div class="theme-switcher hidden" id="themeSwitcher">
-  <button class="theme-btn active" data-t="" title="黑金" style="background:linear-gradient(135deg,#d4af37,#e8a8c8)">✨</button>
-  <button class="theme-btn" data-t="t-green" title="綠色清新" style="background:linear-gradient(135deg,#10b981,#6ee7b7)">🌿</button>
+  <button class="theme-btn active" data-t="" title="黑金雍容" style="background:linear-gradient(135deg,#d4af37,#e8a8c8)">✨</button>
+  <button class="theme-btn" data-t="t-green" title="綠意清新" style="background:linear-gradient(135deg,#10b981,#6ee7b7)">🌿</button>
   <button class="theme-btn" data-t="t-purple" title="紫色神秘" style="background:linear-gradient(135deg,#a78bfa,#d8b4fe)">💜</button>
   <button class="theme-btn" data-t="t-red" title="紅色熱烈" style="background:linear-gradient(135deg,#ef4444,#fca5a5)">❤️</button>
   <button class="theme-btn" data-t="t-blue" title="藍色冷調" style="background:linear-gradient(135deg,#3b82f6,#93c5fd)">💙</button>
   <button class="theme-btn" data-t="t-orange" title="橙色溫暖" style="background:linear-gradient(135deg,#f97316,#fdba74)">🧡</button>
+  <button class="theme-btn" data-t="t-starry" title="星空夜晚" style="background:linear-gradient(135deg,#020617,#e0e7ff)">🌌</button>
+  <button class="theme-btn" data-t="t-fairy" title="童話夢境" style="background:linear-gradient(135deg,#f472b6,#a5f3fc)">🧚</button>
+  <button class="theme-btn" data-t="t-royal" title="宮廷雍榮" style="background:linear-gradient(135deg,#7f1d3d,#fbbf24)">👑</button>
+  <button class="theme-btn" data-t="t-aurora" title="極光幻彩" style="background:linear-gradient(135deg,#065f46,#4c1d95,#831843)">🌈</button>
+  <button class="theme-btn" data-t="t-sakura" title="櫻花物語" style="background:linear-gradient(135deg,#fda4af,#fbbfc4)">🌸</button>
+  <button class="theme-btn" data-t="t-cyber" title="賽博龐克" style="background:linear-gradient(135deg,#22d3ee,#f472b6)">🤖</button>
 </div>
 
 <script>
@@ -487,7 +514,7 @@ let state = INITIAL;
 // LUXE 主題切換（localStorage 記憶：開關 + 6 色）
 const LS_LUXE = 'ui:luxe';
 const LS_THEME = 'ui:luxe-theme';
-const THEMES = ['', 't-green', 't-purple', 't-red', 't-blue', 't-orange'];
+const THEMES = ['', 't-green', 't-purple', 't-red', 't-blue', 't-orange', 't-starry', 't-fairy', 't-royal', 't-aurora', 't-sakura', 't-cyber'];
 const THEME_PARTICLES = {
   '': null, // 黑金用金色圓點
   't-green': ['🌿','🍃','🌱','☘️'],
@@ -495,6 +522,12 @@ const THEME_PARTICLES = {
   't-red': ['❤️','🔥','💖','🌹'],
   't-blue': ['💧','❄️','🫧','💎'],
   't-orange': ['🍂','🍁','🔶','🧡'],
+  't-starry': ['⭐','✨','🌟','🌙','💫'],
+  't-fairy': ['🧚','🦄','💫','🌸','✨','🍭'],
+  't-royal': ['👑','💎','🏰','⚜️','🥂'],
+  't-aurora': ['🌈','✨','💠','🌌'],
+  't-sakura': ['🌸','🌸','🌺','🍃','🌸'],
+  't-cyber': ['⚡','◆','▲','◈','⚙️','💠'],
 };
 function applyTheme(name) {
   THEMES.forEach(t => t && document.body.classList.remove(t));
