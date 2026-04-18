@@ -535,7 +535,14 @@ async function collectEntry(env, task, userId, text, replyToken) {
     }
     const intent = parsed.dup_intent;
     const conf = typeof parsed.dup_confidence === 'number' ? parsed.dup_confidence : 0;
-    if (intent === 'add' && conf >= 80) {
+    // 訊息含明確改/換字眼 → 直接改（不用兩階段）
+    const hasReplaceWord = /(^|[\s，,。、])(改|換|更改|改成|改為|換成|換為|修改|取代|替換|重點)/.test(text);
+    const hasAddWord = /(^|[\s，,。、])(加|加點|加上|再加|再來|多加|多點|還要|外加|追加|併|合併)/.test(text);
+    if (hasReplaceWord && !hasAddWord) {
+      additive = false; // 直接改
+    } else if (hasAddWord && !hasReplaceWord) {
+      additive = true;
+    } else if (intent === 'add' && conf >= 80) {
       additive = true; // 明確加點字眼才自動累加
     } else {
       // 其他一律反問當事人是改還是加，避免把舊的吃掉
