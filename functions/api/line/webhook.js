@@ -1181,7 +1181,7 @@ export function buildSheetRows(taskName, entries) {
   });
 
   const rows = [];
-  rows.push([`任務：${taskName}　總筆數：${parsed.length}　匯出：${new Date().toISOString().replace('T', ' ').slice(0, 19)}`]);
+  rows.push([`任務：${taskName}　總筆數：${parsed.length}`]);
   rows.push([]);
 
   // ① 訂購彙總
