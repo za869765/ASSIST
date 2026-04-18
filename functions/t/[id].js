@@ -125,8 +125,18 @@ li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 3px
 .menu-card .items-list { margin-top: 6px; font-size: 11px; color: #666; max-height: 110px; overflow-y: auto; }
 .menu-card .items-list span { display: inline-block; padding: 1px 6px; margin: 1px; background: #eef; border-radius: 10px; }
 @media (prefers-color-scheme: dark) { .menu-card .items-list span { background: #333; } }
-.menu-lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: flex; align-items: center; justify-content: center; z-index: 999; cursor: zoom-out; }
-.menu-lightbox img { max-width: 95vw; max-height: 95vh; }
+.menu-lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.9); display: flex; align-items: center; justify-content: center; z-index: 999; flex-direction: column; }
+.menu-lightbox .stage { flex: 1; width: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: pan-y; }
+.menu-lightbox img { max-width: 95vw; max-height: 88vh; user-select: none; -webkit-user-drag: none; }
+.menu-lightbox .nav { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,.2); color: white; border: 0; width: 48px; height: 48px; border-radius: 50%; font-size: 28px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
+.menu-lightbox .nav.prev { left: 12px; } .menu-lightbox .nav.next { right: 12px; }
+.menu-lightbox .nav:hover { background: rgba(255,255,255,.35); }
+.menu-lightbox .nav:disabled { opacity: .25; cursor: default; }
+.menu-lightbox .close { position: absolute; top: 10px; right: 14px; background: rgba(255,255,255,.2); color: white; border: 0; width: 38px; height: 38px; border-radius: 50%; font-size: 20px; cursor: pointer; }
+.menu-lightbox .counter { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); color: #fff; background: rgba(0,0,0,.4); padding: 4px 12px; border-radius: 12px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.menu-lightbox .strip { display: flex; gap: 6px; padding: 8px; overflow-x: auto; max-width: 100vw; background: rgba(0,0,0,.4); }
+.menu-lightbox .strip img { width: 54px; height: 54px; object-fit: cover; border-radius: 4px; border: 2px solid transparent; cursor: pointer; max-width: none; max-height: none; opacity: .6; }
+.menu-lightbox .strip img.active { border-color: #2db87a; opacity: 1; }
 </style>
 </head>
 <body>
@@ -240,7 +250,8 @@ async function loadMenu() {
         <img src="\${esc(p.url)}" alt="menu">
         <button title="刪除" data-del="\${esc(p.id)}">×</button>
       </div>\`).join('');
-    thumbs.querySelectorAll('img').forEach(img => img.addEventListener('click', () => openLightbox(img.src)));
+    const photoUrls = (j.photos || []).map(p => p.url);
+    thumbs.querySelectorAll('img').forEach((img, idx) => img.addEventListener('click', () => openLightbox(photoUrls, idx)));
     thumbs.querySelectorAll('button[data-del]').forEach(b => b.addEventListener('click', (e) => {
       e.stopPropagation(); deletePhoto(b.dataset.del);
     }));
@@ -285,11 +296,57 @@ async function deletePhoto(id) {
   } catch (e) { alert('刪除失敗：' + e.message); }
 }
 
-function openLightbox(src) {
+function openLightbox(urls, startIdx) {
+  if (!Array.isArray(urls) || !urls.length) return;
+  let idx = Math.max(0, Math.min(startIdx | 0, urls.length - 1));
   const d = document.createElement('div'); d.className = 'menu-lightbox';
-  d.innerHTML = '<img src="' + src + '">';
-  d.addEventListener('click', () => d.remove());
+  d.innerHTML =
+    '<button class="close" title="關閉">×</button>' +
+    '<div class="counter"></div>' +
+    '<button class="nav prev" title="上一張">‹</button>' +
+    '<div class="stage"><img></div>' +
+    '<button class="nav next" title="下一張">›</button>' +
+    '<div class="strip">' + urls.map((u, i) => '<img data-i="' + i + '" src="' + esc(u) + '">').join('') + '</div>';
+  const stage = d.querySelector('.stage img');
+  const counter = d.querySelector('.counter');
+  const prev = d.querySelector('.nav.prev');
+  const next = d.querySelector('.nav.next');
+  const strip = d.querySelector('.strip');
+  function update() {
+    stage.src = urls[idx];
+    counter.textContent = (idx + 1) + ' / ' + urls.length;
+    prev.disabled = idx === 0;
+    next.disabled = idx === urls.length - 1;
+    strip.querySelectorAll('img').forEach((t, i) => t.classList.toggle('active', i === idx));
+    const active = strip.querySelector('img.active');
+    if (active) active.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  }
+  function go(n) { idx = (idx + n + urls.length) % urls.length; update(); }
+  prev.addEventListener('click', (e) => { e.stopPropagation(); go(-1); });
+  next.addEventListener('click', (e) => { e.stopPropagation(); go(1); });
+  strip.querySelectorAll('img').forEach(t => t.addEventListener('click', (e) => { e.stopPropagation(); idx = +t.dataset.i; update(); }));
+  d.querySelector('.close').addEventListener('click', close);
+  function close() { d.remove(); window.removeEventListener('keydown', onKey); }
+  function onKey(e) {
+    if (e.key === 'Escape') close();
+    else if (e.key === 'ArrowLeft') go(-1);
+    else if (e.key === 'ArrowRight') go(1);
+  }
+  window.addEventListener('keydown', onKey);
+  // 背景（stage 外）點擊關閉
+  d.addEventListener('click', (e) => { if (e.target === d) close(); });
+  // 觸控滑動切換
+  let sx = 0, sy = 0, moved = false;
+  stage.parentElement.addEventListener('touchstart', (e) => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; moved = false; }, { passive: true });
+  stage.parentElement.addEventListener('touchmove', (e) => { if (Math.abs(e.touches[0].clientX - sx) > 10) moved = true; }, { passive: true });
+  stage.parentElement.addEventListener('touchend', (e) => {
+    if (!moved) return;
+    const dx = (e.changedTouches[0].clientX - sx);
+    const dy = (e.changedTouches[0].clientY - sy);
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) go(dx < 0 ? 1 : -1);
+  });
   document.body.appendChild(d);
+  update();
 }
 
 document.getElementById('menuFile').addEventListener('change', (e) => {
