@@ -311,6 +311,16 @@ body.luxe.t-blue   { background: linear-gradient(135deg, var(--luxe-bg) 0%, #1e3
 body.luxe.t-orange { background: linear-gradient(135deg, var(--luxe-bg) 0%, #9a3412 100%); }
 body.luxe .particles { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
 body.luxe .particle { position: absolute; width: 4px; height: 4px; background: var(--gold); border-radius: 50%; opacity: .3; animation: luxeFloat 20s infinite; }
+/* 主題專屬 emoji 粒子：JS 會把 particle 變成 .particle-emoji，並 setText emoji */
+body.luxe .particle.particle-emoji { width: auto; height: auto; background: transparent; border-radius: 0; opacity: .65; font-size: 20px; line-height: 1; text-shadow: 0 0 12px rgba(255,255,255,.35); filter: drop-shadow(0 0 6px rgba(0,0,0,.3)); }
+/* 主題專屬背景疊加層（氛圍感） */
+body.luxe::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .6; transition: opacity .5s; background: radial-gradient(ellipse at 20% 10%, rgba(212,175,55,.08), transparent 60%), radial-gradient(ellipse at 80% 90%, rgba(232,168,200,.06), transparent 60%); }
+body.luxe.t-green::after  { background: radial-gradient(ellipse at 30% 20%, rgba(110,231,183,.12), transparent 55%), radial-gradient(ellipse at 70% 80%, rgba(16,185,129,.1), transparent 55%); }
+body.luxe.t-purple::after { background: radial-gradient(circle at 50% 30%, rgba(216,180,254,.15), transparent 60%), radial-gradient(circle at 20% 80%, rgba(167,139,250,.12), transparent 50%), radial-gradient(circle at 80% 50%, rgba(196,181,253,.08), transparent 40%); }
+body.luxe.t-red::after    { background: radial-gradient(circle at 50% 50%, rgba(239,68,68,.18), transparent 55%); animation: redPulse 4s ease-in-out infinite; }
+@keyframes redPulse { 0%,100% { opacity: .4; } 50% { opacity: .8; } }
+body.luxe.t-blue::after   { background: linear-gradient(180deg, transparent 0%, rgba(59,130,246,.08) 50%, rgba(30,58,95,.3) 100%), radial-gradient(ellipse at 50% 100%, rgba(147,197,253,.15), transparent 60%); }
+body.luxe.t-orange::after { background: linear-gradient(180deg, rgba(251,146,60,.1) 0%, transparent 40%, rgba(124,45,18,.4) 100%), radial-gradient(ellipse at 50% 20%, rgba(253,186,116,.18), transparent 60%); }
 @keyframes luxeFloat { 0% { transform: translateY(0) translateX(0); opacity: 0; } 10%,90% { opacity: .3; } 100% { transform: translateY(-100vh) translateX(80px); opacity: 0; } }
 body.luxe main, body.luxe #board, body.luxe .tabs, body.luxe h1, body.luxe .meta, body.luxe .menu-card, body.luxe .admin-banner { position: relative; z-index: 1; }
 body.luxe h1 { font-size: 2rem; font-weight: 800; background: linear-gradient(135deg, var(--gold), var(--rose), var(--teal)); -webkit-background-clip: text; background-clip: text; color: transparent; letter-spacing: 2px; animation: luxeTitleShine 3s ease-in-out infinite; }
@@ -478,6 +488,14 @@ let state = INITIAL;
 const LS_LUXE = 'ui:luxe';
 const LS_THEME = 'ui:luxe-theme';
 const THEMES = ['', 't-green', 't-purple', 't-red', 't-blue', 't-orange'];
+const THEME_PARTICLES = {
+  '': null, // 黑金用金色圓點
+  't-green': ['🌿','🍃','🌱','☘️'],
+  't-purple': ['✨','⭐','💫','🌟'],
+  't-red': ['❤️','🔥','💖','🌹'],
+  't-blue': ['💧','❄️','🫧','💎'],
+  't-orange': ['🍂','🍁','🔶','🧡'],
+};
 function applyTheme(name) {
   THEMES.forEach(t => t && document.body.classList.remove(t));
   if (name) document.body.classList.add(name);
@@ -485,6 +503,17 @@ function applyTheme(name) {
     b.classList.toggle('active', (b.dataset.t || '') === (name || ''));
   });
   localStorage.setItem(LS_THEME, name || '');
+  // 把粒子換成主題 emoji（或還原成金色圓點）
+  const emojis = THEME_PARTICLES[name || ''];
+  document.querySelectorAll('#luxeParticles .particle').forEach((p, i) => {
+    if (emojis) {
+      p.classList.add('particle-emoji');
+      p.textContent = emojis[i % emojis.length];
+    } else {
+      p.classList.remove('particle-emoji');
+      p.textContent = '';
+    }
+  });
 }
 function applyLuxe(on) {
   document.body.classList.toggle('luxe', on);
