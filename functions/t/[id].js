@@ -425,13 +425,20 @@ document.getElementById('menuFile').addEventListener('change', (e) => {
   if (files.length) uploadFiles(files);
 });
 
+const recommendedSet = new Set(); // 跨 direction 累計已推薦過的品項，避免重複
 async function fetchRecommend(btn, dir) {
   const result = document.getElementById('recommendResult');
   btn.classList.add('busy'); const orig = btn.textContent; btn.textContent = '思考中…';
   try {
-    const r = await fetch('/api/menu/' + TASK_ID + '/recommend?dir=' + encodeURIComponent(dir));
+    const exclude = [...recommendedSet].slice(-30).join(',');
+    const r = await fetch('/api/menu/' + TASK_ID + '/recommend?dir=' + encodeURIComponent(dir)
+      + (exclude ? '&exclude=' + encodeURIComponent(exclude) : ''));
     const j = await r.json();
-    if (!r.ok) { result.innerHTML = '<span style="color:#d4543a">' + esc(j.error || '失敗') + '</span>'; return; }
+    if (!r.ok) {
+      result.innerHTML = '<span style="color:#d4543a">' + esc(j.note || j.error || '失敗') + '</span>';
+      return;
+    }
+    for (const p of (j.picks || [])) recommendedSet.add(p.name);
     const picks = (j.picks || []).map(p =>
       '<span class="pick"><b>' + esc(p.name) + '</b>' + (p.reason ? ' — ' + esc(p.reason) : '') + '</span>'
     ).join('');

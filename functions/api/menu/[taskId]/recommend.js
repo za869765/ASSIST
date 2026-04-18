@@ -31,6 +31,8 @@ export async function onRequestGet({ env, params, request }) {
   const dir = url.searchParams.get('dir') || 'light';
   const directive = DIRECTIONS[dir];
   if (!directive) return json({ error: 'bad dir', allowed: Object.keys(DIRECTIONS) }, 400);
+  const excludeRaw = url.searchParams.get('exclude') || '';
+  const excludeList = excludeRaw.split(',').map(s => s.trim()).filter(Boolean).slice(0, 30);
 
   const task = await env.DB.prepare(
     `SELECT id, task_name, menu_json FROM tasks WHERE id = ?`
@@ -53,8 +55,9 @@ export async function onRequestGet({ env, params, request }) {
     } catch {}
   }
 
-  // 快取鍵：菜單內容 + 方向（分布不納入，避免每點一單都失效；分布只是給 AI 參考提高輸出品質）
-  const key = await sha1Hex(task.menu_json + '|' + dir);
+  // 快取鍵：菜單內容 + 方向 + 排除清單（排除清單變動會得到不同結果）
+  const excludeKey = [...excludeList].sort().join(',');
+  const key = await sha1Hex(task.menu_json + '|' + dir + '|' + excludeKey);
   await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS menu_recommend (key TEXT PRIMARY KEY, task_id INTEGER, dir TEXT, result TEXT, created_at TEXT)`
   ).run();
@@ -68,18 +71,40 @@ export async function onRequestGet({ env, params, request }) {
     }
   }
 
+  // 防刷：每個 task 每小時最多 30 次實際呼叫 Gemini（cache hit 不計）
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS menu_recommend_log (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER, ip TEXT, created_at TEXT)`
+  ).run();
+  const hitRow = await env.DB.prepare(
+    `SELECT COUNT(*) AS c FROM menu_recommend_log WHERE task_id = ? AND created_at > datetime('now','-1 hour')`
+  ).bind(taskId).first();
+  if ((hitRow?.c || 0) >= 30) {
+    return json({ error: 'rate limited', note: '推薦次數過多，請稍後再試（每小時上限 30 次）' }, 429);
+  }
+  // 額外限制：單一 IP 每 10 分鐘最多 10 次
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  const ipHit = await env.DB.prepare(
+    `SELECT COUNT(*) AS c FROM menu_recommend_log WHERE task_id = ? AND ip = ? AND created_at > datetime('now','-10 minutes')`
+  ).bind(taskId, ip).first();
+  if ((ipHit?.c || 0) >= 10) {
+    return json({ error: 'rate limited', note: '您點太快了，請稍後再試' }, 429);
+  }
+
   if (!env.GEMINI_API_KEY) return json({ error: 'no gemini key' }, 500);
+  const excludeBlock = excludeList.length
+    ? `\n已推薦過請避免再挑：${JSON.stringify(excludeList)}`
+    : '';
   const prompt = `你是餐廳推薦助手。以下菜單請依「${directive}」方向挑 1–3 個最合適的品項，給簡短推薦理由（每項 15 字內）。
 
 菜單：${JSON.stringify(menu)}
-目前大家點了：${JSON.stringify(orderMap)}
+目前大家點了：${JSON.stringify(orderMap)}${excludeBlock}
 
 回傳 JSON 格式：
 {"picks":[{"name":"品項全名","reason":"推薦理由"}],"note":"20 字內整體提醒（選填）"}
 
 規則：
 - picks 的 name 必須出自菜單（完整照抄）
-- 找不到符合條件就回 {"picks":[],"note":"菜單上沒有符合的選項"}
+- 絕對不要挑「已推薦過」清單內的品項；若剩餘菜單都不符合條件，回 {"picks":[],"note":"菜單已沒有其他符合的選項"}
 - 不要加 markdown、不要多餘文字`;
 
   const body = {
@@ -110,6 +135,9 @@ export async function onRequestGet({ env, params, request }) {
       `INSERT INTO menu_recommend (key, task_id, dir, result, created_at) VALUES (?, ?, ?, ?, datetime('now'))
        ON CONFLICT(key) DO UPDATE SET result = excluded.result, created_at = excluded.created_at`
     ).bind(key, taskId, dir, JSON.stringify(result)).run();
+    await env.DB.prepare(
+      `INSERT INTO menu_recommend_log (task_id, ip, created_at) VALUES (?, ?, datetime('now'))`
+    ).bind(taskId, ip).run();
     return json(result);
   } catch (e) {
     console.error('[recommend]', e);
