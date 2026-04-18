@@ -71,6 +71,14 @@ async function handleEvent(ev, env) {
       }
     }
 
+    // 管理員直接問「進度」等（不用喚醒詞）
+    const progShort = String(text || '').replace(/[?？!！。.\s]/g, '');
+    if (admin && /^(進度|目前|狀態|現況|收到幾筆|幾筆了)(.*)?$/.test(progShort)) {
+      const hintText = progShort.replace(/^(進度|目前|狀態|現況|收到幾筆|幾筆了)/, '').trim();
+      await doProgressReport(env, tasks, hintText, replyToken);
+      return;
+    }
+
     // 管理員直接講「結算 / 結單 / 收單」等（不用喚醒詞）→ 結單流程
     const closeShort = String(text || '').replace(/[?？!！。.\s]/g, '');
     if (admin && /^(結單|結算|結束|關閉|收單|結束統計|結單吧|關閉統計|收工|收了|打烊)(.*)?$/.test(closeShort)) {
@@ -180,26 +188,7 @@ async function handleEvent(ev, env) {
       await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '目前沒有進行中的任務' }]);
       return;
     }
-    const hinted = taskNameRaw ? matchTaskByHint(tasks, taskNameRaw) : null;
-    const picked = hinted || (tasks.length === 1 ? tasks[0] : null);
-    if (!picked) {
-      // 多任務且沒指名 → 全部摘要
-      const base = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
-      const blocks = [];
-      for (const t of tasks) {
-        const entries = await listEntries(env.DB, t.id);
-        const url = `${base}/t/${t.url_slug || t.id}`;
-        blocks.push(`📊「${t.task_name}」(${entries.length} 筆) ${url}\n${summarizeEntries(entries)}`);
-      }
-      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: blocks.join('\n\n———\n\n') }]);
-      return;
-    }
-    const entries = await listEntries(env.DB, picked.id);
-    const baseP = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
-    const urlP = `${baseP}/t/${picked.url_slug || picked.id}`;
-    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-      { type: 'text', text: `📊 任務「${picked.task_name}」目前 ${entries.length} 筆\n即時看板：${urlP}\n\n${summarizeEntries(entries)}` },
-    ]);
+    await doProgressReport(env, tasks, taskNameRaw || '', replyToken);
     return;
   }
 
@@ -237,6 +226,27 @@ async function handleEvent(ev, env) {
   // ─── 其他一律閒聊 ───
   const reply = await geminiChat(env.GEMINI_API_KEY, cmd);
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
+}
+
+async function doProgressReport(env, tasks, hintText, replyToken) {
+  const base = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
+  const hinted = hintText ? matchTaskByHint(tasks, hintText) : null;
+  const picked = hinted || (tasks.length === 1 ? tasks[0] : null);
+  if (!picked) {
+    const blocks = [];
+    for (const t of tasks) {
+      const entries = await listEntries(env.DB, t.id);
+      const url = `${base}/t/${t.url_slug || t.id}`;
+      blocks.push(`📊「${t.task_name}」(${entries.length} 筆) ${url}\n${summarizeEntries(entries)}`);
+    }
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: blocks.join('\n\n———\n\n') }]);
+    return;
+  }
+  const entries = await listEntries(env.DB, picked.id);
+  const url = `${base}/t/${picked.url_slug || picked.id}`;
+  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+    { type: 'text', text: `📊 任務「${picked.task_name}」目前 ${entries.length} 筆\n即時看板：${url}\n\n${summarizeEntries(entries)}` },
+  ]);
 }
 
 async function doCloseTask(env, picked, replyToken) {
