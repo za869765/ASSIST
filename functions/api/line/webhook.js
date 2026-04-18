@@ -100,6 +100,24 @@ async function handleEvent(ev, env) {
       return;
     }
 
+    // 「某區請假/不吃/沒訂」→ 套用到所有開啟中的任務
+    const leaveMatch = text.trim().match(/^(.{1,8}?)\s*(請假|休假|不吃|沒訂|跳過|不訂|沒點)$/);
+    if (leaveMatch && admin) {
+      const leave = await tryZoneLeave(env, userId, text);
+      if (leave) {
+        for (const t of tasks) {
+          await upsertEntry(env.DB, {
+            taskId: t.id, userId: leave.userId,
+            data: {}, note: '請假', price: null, rawText: text, additive: false,
+          });
+        }
+        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+          type: 'text', text: `📝 已登記「${leave.zoneName}」請假（${tasks.map(t => t.task_name).join('、')}）`,
+        }]);
+        return;
+      }
+    }
+
     let target = tasks[0];
     if (tasks.length > 1) {
       // 若此人正在任一任務中有 pending_dup 且訊息是加/改裁示 → 優先導向該任務

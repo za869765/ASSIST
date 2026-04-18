@@ -129,7 +129,14 @@ function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;',
 
 function entryBody(e) {
   const parts = Object.values(e.data || {}).filter(Boolean).join(' / ');
-  return parts || (e.note === '不吃' ? '不吃' : '(未辨識)');
+  if (parts) return parts;
+  if (e.note === '請假' || e.note === '不吃') return e.note;
+  return '(未辨識)';
+}
+function entryBodyHtml(e) {
+  const txt = entryBody(e);
+  if (txt === '請假' || txt === '不吃') return \`<span style="color:#d4543a;font-weight:600">\${txt}</span>\`;
+  return esc(txt);
 }
 
 function render() {
@@ -166,7 +173,7 @@ function render() {
       const price = e.price ? \`$\${e.price}\` : '';
       const noteShown = e.note && entryBody(e) !== '(未辨識)' ? \`（\${esc(e.note)}）\` : '';
       const idLine = isUnassigned ? \`<div class="uid-row">\${esc(e.user_id)}</div>\` : '';
-      return \`<li><span class="who">\${esc(e.name)}\${idLine}</span><span class="body">\${esc(entryBody(e))}\${noteShown}</span><span class="price">\${esc(price)}</span></li>\`;
+      return \`<li><span class="who">\${esc(e.name)}\${idLine}</span><span class="body">\${entryBodyHtml(e)}\${noteShown}</span><span class="price">\${esc(price)}</span></li>\`;
     }).join('') + '</ul>');
   }
 
