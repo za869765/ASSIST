@@ -141,7 +141,7 @@ async function handleEvent(ev, env) {
         target = picked;
       }
     }
-    await collectEntry(env, target, userId, text, replyToken);
+    await collectEntry(env, target, userId, text, replyToken, groupId);
     return;
   }
 
@@ -337,7 +337,7 @@ async function doCloseTask(env, picked, replyToken) {
   ]);
 }
 
-async function collectEntry(env, task, userId, text, replyToken) {
+async function collectEntry(env, task, userId, text, replyToken, groupId) {
   // 管理員標「請假」：「新化請假」「北區不吃」→ 該區記 請假，不再追問
   const leave = await tryZoneLeave(env, userId, text);
   if (leave) {
@@ -663,6 +663,25 @@ async function collectEntry(env, task, userId, text, replyToken) {
   }
   if (missing.length && followUp) {
     reply += `\n@${name} ${followUp}`;
+  }
+  // 同群組其他開啟中任務：若該人尚未點 / 仍是請假（可能是 group-leave 同步留下的） → 提醒
+  if (groupId) {
+    const siblings = await env.DB.prepare(
+      `SELECT id, task_name FROM tasks WHERE group_id = ? AND status = 'open' AND id != ?`
+    ).bind(groupId, task.id).all();
+    const reminders = [];
+    for (const sib of (siblings.results || [])) {
+      const row = await env.DB.prepare(
+        `SELECT data_json, note FROM entries WHERE task_id = ? AND user_id = ?`
+      ).bind(sib.id, userId).first();
+      const hasRealOrder = row && row.data_json && row.data_json !== '{}' && row.note !== '請假';
+      if (!hasRealOrder) {
+        reminders.push(sib.task_name);
+      }
+    }
+    if (reminders.length) {
+      reply += `\n@${name} 另外「${reminders.join('、')}」要什麼呢？（若不需要請回「${reminders[0]}不用」或「${reminders[0]}請假」）`;
+    }
   }
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
 }
