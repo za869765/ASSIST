@@ -54,23 +54,15 @@ async function handleEvent(ev, env) {
     let target = tasks[0];
     if (tasks.length > 1) {
       const names = tasks.map(t => t.task_name);
-      const { task_name, confidence } = await geminiClassifyTask(env.GEMINI_API_KEY, names, text);
-      console.log('[classify]', { text, names, task_name, confidence });
-      if (!task_name) {
-        // DEBUG: 暫時回覆，讓我們看到分類結果
-        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-          { type: 'text', text: `[debug] 分類「${text}」→ null (${confidence})，未歸屬任何任務` },
-        ]);
+      const { task_name } = await geminiClassifyTask(env.GEMINI_API_KEY, names, text);
+      const picked = task_name ? matchTaskByHint(tasks, task_name) : null;
+      if (picked) {
+        await collectEntry(env, picked, userId, text, replyToken);
         return;
       }
-      const picked = matchTaskByHint(tasks, task_name);
-      if (!picked) {
-        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-          { type: 'text', text: `[debug] 分類回「${task_name}」但找不到對應任務（現有：${names.join('、')}）` },
-        ]);
-        return;
-      }
-      target = picked;
+      // fallback：分類器沒決定 → 對每個任務都試著抽欄位，取第一個有抽到的
+      await collectEntryMulti(env, tasks, userId, text, replyToken);
+      return;
     }
     await collectEntry(env, target, userId, text, replyToken);
     return;
@@ -191,6 +183,38 @@ async function handleEvent(ev, env) {
 
   // ─── 其他一律閒聊 ───
   const reply = await geminiChat(env.GEMINI_API_KEY, cmd);
+  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
+}
+
+async function collectEntryMulti(env, tasks, userId, text, replyToken) {
+  // 並行對每個任務試抽欄位
+  const results = await Promise.all(tasks.map(async (t) => {
+    const existing = await env.DB.prepare(
+      `SELECT data_json, note, price FROM entries WHERE task_id = ? AND user_id = ?`
+    ).bind(t.id, userId).first();
+    const known = existing ? {
+      ...JSON.parse(existing.data_json || '{}'),
+      ...(existing.note ? { 備註: existing.note } : {}),
+      ...(existing.price ? { 價格: existing.price } : {}),
+    } : {};
+    const parsed = await geminiExtract(env.GEMINI_API_KEY, t.task_name, text, known);
+    const got = parsed && parsed.data && Object.keys(parsed.data).length > 0;
+    return { task: t, parsed, got };
+  }));
+  const winner = results.find(r => r.got);
+  if (!winner) return; // 都抽不到 → 靜默
+  const { task, parsed } = winner;
+  await upsertEntry(env.DB, {
+    taskId: task.id, userId,
+    data: parsed.data, note: parsed.note, price: parsed.price, rawText: text,
+  });
+  const parts = Object.values(parsed.data).filter(Boolean).join(' / ');
+  const price = parsed.price ? ` $${parsed.price}` : '';
+  const note = parsed.note ? `（${parsed.note}）` : '';
+  const missing = Array.isArray(parsed.missing) ? parsed.missing : [];
+  const followUp = parsed.follow_up || '';
+  let reply = `✓ 已記錄到「${task.task_name}」：${parts}${price}${note}`;
+  if (missing.length && followUp) reply += `\n${followUp}`;
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
 }
 
