@@ -738,9 +738,9 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
       }
     }
   }
-  // 便當類 + 只給葷/素 → 自動補全品項（比照 +1 行為）
-  if (parsed?.data) {
-    const taskIsBento = /便當|飯|自助餐|餐盒|簡餐|套餐|早午餐|午餐|晚餐|午晚餐|主食|正餐/.test(task.task_name || '');
+  // 便當類 + 只給葷/素 → 自動補全品項（比照 +1 行為）— 僅無菜單模式
+  if (parsed?.data && !(Array.isArray(menuItems) && menuItems.length)) {
+    const taskIsBento = /便當|飯|自助餐|餐盒|盒餐|簡餐|套餐|早午餐|午餐|晚餐|午晚餐|主食|主餐|正餐|團膳|商業午餐|輕食|熱食|麵食|麵線|拉麵|烏龍麵|粥品|火鍋|鍋物|韓式|日式|西式|排餐|漢堡|義大利麵|壽司|三明治|咖哩|燴飯|炒飯|滷味|鹽酥/.test(task.task_name || '');
     if (taskIsBento && !parsed.data['品項']) {
       const hs = parsed.data['葷素'];
       if (hs === '葷') parsed.data['品項'] = '葷食便當';
@@ -903,7 +903,7 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
     // 訊息含明確改/換字眼 → 直接改（不用兩階段）
     const hasReplaceWord = /(^|[\s，,。、])?(改|換|更改|改成|改為|換成|換為|修改|取代|替換)/.test(text);
     const hasAddWord = /(^|[\s，,。、])(加|加點|加上|再加|再來|多加|多點|還要|外加|追加|併|合併)/.test(text);
-    const taskIsBentoLike = /便當|飯|自助餐|餐盒|簡餐|套餐|早午餐|午餐|晚餐|午晚餐|主食|正餐/.test(task.task_name || '');
+    const taskIsBentoLike = /便當|飯|自助餐|餐盒|盒餐|簡餐|套餐|早午餐|午餐|晚餐|午晚餐|主食|主餐|正餐|團膳|商業午餐|輕食|熱食|麵食|麵線|拉麵|烏龍麵|粥品|火鍋|鍋物|韓式|日式|西式|排餐|漢堡|義大利麵|壽司|三明治|咖哩|燴飯|炒飯|滷味|鹽酥/.test(task.task_name || '');
     if (hasReplaceWord && !hasAddWord) {
       additive = false; // 直接改
     } else if (hasAddWord && !hasReplaceWord) {
@@ -955,7 +955,7 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
   const name = (m?.real_name || m?.line_display || userId.slice(0, 6));
 
   // 是否明確改/換字眼 → 肯定句收尾
-  const isBentoTask = /便當|飯|自助餐|餐盒|簡餐|套餐|早午餐|午餐|晚餐|午晚餐|主食|正餐/.test(task.task_name || '');
+  const isBentoTask = /便當|飯|自助餐|餐盒|盒餐|簡餐|套餐|早午餐|午餐|晚餐|午晚餐|主食|主餐|正餐|團膳|商業午餐|輕食|熱食|麵食|麵線|拉麵|烏龍麵|粥品|火鍋|鍋物|韓式|日式|西式|排餐|漢堡|義大利麵|壽司|三明治|咖哩|燴飯|炒飯|滷味|鹽酥/.test(task.task_name || '');
   const explicitReplace = /(^|[\s，,。、])?(改|換|更改|改成|改為|換成|換為|修改|取代|替換)/.test(text) || (isBentoTask && existing && !additive);
   const explicitAdd = /(^|[\s，,。、])?(加|加點|加上|再加|再來|多加|多點|還要|外加|追加)/.test(text);
   // 品項能代表葷素時，就省略「葷素」欄位避免重複
