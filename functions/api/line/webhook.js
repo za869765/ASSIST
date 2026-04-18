@@ -293,7 +293,7 @@ async function collectEntry(env, task, userId, text, replyToken) {
     const oldItem = Object.values(JSON.parse(existing.data_json || '{}')).filter(Boolean).join('/') || '(未辨識)';
     const m = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
     const who = m?.real_name || m?.line_display || userId.slice(0, 6);
-    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `🗑️ 已取消 ${who} 的「${oldItem}」` }]);
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `🗑️ 已取消 ${who} 的「${oldItem}」，是這樣嗎？` }]);
     return;
   }
   if (!parsed || !parsed.data || Object.keys(parsed.data).length === 0) {
