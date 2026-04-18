@@ -110,8 +110,8 @@ export function buildXLSX(sheetName, rows) {
 <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 </Relationships>`;
   // 樣式索引：
-  //   1=預設(text)  2=標題(18pt 白字,深金底)  3=區塊標題(12pt 白字,深藍底)
-  //   4=表頭(粗體,淺青底,邊框)                5=資料列(邊框)
+  //   1=預設(text)  2=標題(18pt 白字,深金底,置中)  3=區塊標題(12pt 白字,深藍底,置中)
+  //   4=表頭(粗體,淺青底,邊框)                     5=資料列(邊框)
   //   6=合計列(粗體,淺金底,邊框)
   const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
@@ -141,7 +141,7 @@ export function buildXLSX(sheetName, rows) {
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
 <xf numFmtId="49" fontId="1" fillId="2" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
-<xf numFmtId="49" fontId="2" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" indent="1"/></xf>
+<xf numFmtId="49" fontId="2" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
 <xf numFmtId="49" fontId="3" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
 <xf numFmtId="49" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
 <xf numFmtId="49" fontId="4" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
@@ -181,13 +181,24 @@ export function buildXLSX(sheetName, rows) {
   const scale = totalWidth > A4_WIDTH ? (A4_WIDTH / totalWidth) : 1;
   const cols = rawWidths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${(w * scale).toFixed(1)}" customWidth="1"/>`).join('');
 
+  // 最大欄數：用來把「主標題 / ■ 區塊標題」跨欄合併到滿版
+  const maxCols = rows.reduce((m, r) => Math.max(m, r.length), 1);
+  const lastColLetter = colLetter(maxCols);
+
+  const merges = [];
   let prevStyle = 0;
   const sheetRowsArr = rows.map((row, rIdx) => {
     const style = classify(row, rIdx, prevStyle);
     prevStyle = style;
     const r = rIdx + 1;
     const rowAttrs = style === 2 ? ` ht="28" customHeight="1"` : (style === 3 ? ` ht="22" customHeight="1"` : '');
-    const cells = row.map((v, cIdx) => {
+    // 標題（style=2）與 ■ 區塊標題（style=3）：補空白 cell 讓整列套色、並登記跨欄合併置中
+    let padded = row;
+    if ((style === 2 || style === 3) && row.length < maxCols) {
+      padded = row.concat(Array(maxCols - row.length).fill(''));
+      merges.push(`A${r}:${lastColLetter}${r}`);
+    }
+    const cells = padded.map((v, cIdx) => {
       const ref = `${colLetter(cIdx + 1)}${r}`;
       const text = xmlEscape(v == null ? '' : String(v));
       return `<c r="${ref}" t="inlineStr" s="${style}"><is><t xml:space="preserve">${text}</t></is></c>`;
@@ -195,6 +206,9 @@ export function buildXLSX(sheetName, rows) {
     return `<row r="${r}"${rowAttrs}>${cells}</row>`;
   });
   const sheetRows = sheetRowsArr.join('');
+  const mergeCellsXml = merges.length
+    ? `<mergeCells count="${merges.length}">${merges.map(m => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>`
+    : '';
 
   // 凍結第 1 列（title）方便滾動
   const sheetPr = `<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>`;
@@ -205,7 +219,7 @@ export function buildXLSX(sheetName, rows) {
   const printOptions = `<printOptions horizontalCentered="1"/>`;
   const pageSetup = `<pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/>`;
   const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac">${sheetPr}${frozen}${sheetFormat}<cols>${cols}</cols><sheetData>${sheetRows}</sheetData>${printOptions}${pageMargins}${pageSetup}</worksheet>`;
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac">${sheetPr}${frozen}${sheetFormat}<cols>${cols}</cols><sheetData>${sheetRows}</sheetData>${mergeCellsXml}${printOptions}${pageMargins}${pageSetup}</worksheet>`;
 
   return zipStore([
     { name: '[Content_Types].xml', data: enc.encode(contentTypes) },

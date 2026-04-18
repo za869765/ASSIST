@@ -1196,10 +1196,17 @@ export function buildSheetRows(taskName, entries) {
   rows.push([]);
 
   // ② 明細：依品項排序（相同品項排一起），方便發餐
+  //  - 姓名已有獨立欄位 → 排除 rest 裡同名的 '姓名'（避免整欄重複）
+  //  - 分組資訊對店家發餐無用 → 不列入，順便讓上下欄數對齊（品項/姓名/備註/金額）
   const restFields = [];
-  parsed.forEach(p => { for (const k of Object.keys(p.rest)) if (!restFields.includes(k)) restFields.push(k); });
+  parsed.forEach(p => {
+    for (const k of Object.keys(p.rest)) {
+      if (k === '姓名') continue;
+      if (!restFields.includes(k)) restFields.push(k);
+    }
+  });
   rows.push(['■ 明細（依品項排序，發餐用）']);
-  rows.push(['品項', '姓名', '分組', ...restFields, '備註', '金額']);
+  rows.push(['品項', '姓名', ...restFields, '備註', '金額']);
   const sorted = [...parsed].sort((a, b) => {
     const ai = a.item || '~'; const bi = b.item || '~';
     if (ai !== bi) return ai.localeCompare(bi, 'zh-Hant');
@@ -1209,7 +1216,6 @@ export function buildSheetRows(taskName, entries) {
     rows.push([
       p.item || '(未辨識)',
       p.name,
-      p.zone || '(未分區)',
       ...restFields.map(k => p.rest[k] == null ? '' : String(p.rest[k])),
       p.note || '',
       p.price != null ? String(p.price) : '',
