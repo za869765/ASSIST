@@ -101,7 +101,7 @@ async function handleEvent(ev, env) {
     }
 
     // 本人裸「請假/不吃」→ 套用到自己
-    const bareLeave = text.trim().match(/^(請假|休假|不吃|沒訂|跳過|不訂|沒點|我請假|我不吃|我沒訂)[\s!?！？。.~～]*$/);
+    const bareLeave = text.trim().match(/^(?:今天|今日|本日)?\s*(請假|休假|不吃|沒訂|跳過|不訂|沒點|不出席|不參加|缺席|沒辦法出席|不能出席|我請假|我不吃|我沒訂|我不出席)[\s!?！？。.~～]*$/);
     if (bareLeave) {
       const m = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
       const selfName = m?.real_name || m?.line_display || userId.slice(0, 6);
@@ -119,7 +119,7 @@ async function handleEvent(ev, env) {
     }
 
     // 「某區請假/不吃/沒訂」或「某人請假」或「某區 某人 請假」→ 套用到所有開啟中的任務
-    const leaveMatch = text.trim().match(/^(.{1,20}?)\s*(請假|休假|不吃|沒訂|跳過|不訂|沒點)$/);
+    const leaveMatch = text.trim().match(/^(.{1,20}?)\s*(請假|休假|不吃|沒訂|跳過|不訂|沒點|不出席|不參加|缺席|不能出席|沒辦法出席)$/);
     if (leaveMatch) {
       // 先試區名（admin only），再試人名（任何人都能「倖妤請假」）
       let leave = admin ? await tryZoneLeave(env, userId, text) : null;
