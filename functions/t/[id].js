@@ -133,6 +133,19 @@ li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 3px
 .menu-card .items-list .item-chip { cursor: pointer; transition: background .15s, transform .08s; border: 1px solid transparent; user-select: none; }
 .menu-card .items-list .item-chip:hover { background: #c8e5cf; }
 .menu-card .items-list .item-chip:active { transform: scale(.96); background: #9fd4ad; }
+.menu-card .items-list .item-chip.rec-hit {
+  background: linear-gradient(135deg, #fff3c4 0%, #ffd580 50%, #ffb347 100%);
+  border-color: #ff8c00; color: #7a2e00;
+  box-shadow: 0 0 0 3px #ffb347, 0 0 18px 4px rgba(255,140,0,.55);
+  animation: recPop .5s cubic-bezier(.34,1.56,.64,1) 1, recGlow 1.4s ease-in-out infinite;
+  position: relative; z-index: 1;
+}
+.menu-card .items-list .item-chip.rec-hit::before { content: '⭐'; position: absolute; top: -8px; right: -6px; font-size: 16px; animation: recSpin 2s linear infinite; }
+.menu-card .items-list .item-chip.rec-hit .item-pick { color: #b04a1a; text-shadow: 0 1px 0 #fff8; }
+.menu-card .items-list .item-chip.rec-hit .price-edit { color: #b04a1a; }
+@keyframes recPop { 0% { transform: scale(.6); opacity: 0; } 60% { transform: scale(1.25); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes recGlow { 0%,100% { box-shadow: 0 0 0 3px #ffb347, 0 0 14px 3px rgba(255,140,0,.45); } 50% { box-shadow: 0 0 0 4px #ff8c00, 0 0 28px 10px rgba(255,140,0,.75); } }
+@keyframes recSpin { from { transform: rotate(0) scale(1); } 50% { transform: rotate(180deg) scale(1.3); } to { transform: rotate(360deg) scale(1); } }
 .menu-card .items-list .item-chip .item-pick { color: #1e8a5c; font-weight: 700; font-size: 14px; }
 @media (max-width: 480px) {
   .menu-card .items-list span { padding: 8px 12px; font-size: 14px; }
@@ -162,7 +175,8 @@ li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 3px
 .menu-summary { margin-top: 6px; padding: 6px 8px; background: #fff3e0; border-radius: 6px; font-size: 12px; color: #b04a1a; }
 .menu-summary:empty { display: none; }
 .recommend-bar { margin-top: 10px; padding: 8px 8px 10px; border-top: 1px dashed #ccc6; background: linear-gradient(180deg, #fff8e1 0%, #fff 70%); border-radius: 0 0 8px 8px; }
-.recommend-bar::before { content: '🤖 AI 推薦 — 按下方口味挑品項'; display: block; font-size: 12px; font-weight: 700; color: #b04a1a; margin-bottom: 6px; letter-spacing: .5px; }
+.recommend-bar::before { content: '🤖 AI 推薦 — 按下方口味挑品項 ↓'; display: block; font-size: 13px; font-weight: 800; color: #b04a1a; margin-bottom: 6px; letter-spacing: .5px; animation: recTitleWave 2.4s ease-in-out infinite; }
+@keyframes recTitleWave { 0%,100% { transform: translateY(0); } 50% { transform: translateY(2px); } }
 .recommend-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
 .recommend-buttons button { padding: 8px 12px; font-size: 14px; font-weight: 600; border: 2px solid #2db87a; background: #fff; color: #2db87a; border-radius: 16px; cursor: pointer; box-shadow: 0 1px 3px rgba(45,184,122,.15); transition: transform .08s, background .15s; }
 .recommend-buttons button:hover { background: #2db87a; color: white; transform: translateY(-1px); box-shadow: 0 2px 6px rgba(45,184,122,.35); }
@@ -402,7 +416,21 @@ async function loadMenu() {
       }).join('');
       return \`<div class="cat-row"><b>\${esc(cat)}</b>\${its}</div>\`;
     }).join('');
-    document.getElementById('menuItems').innerHTML = sections;
+    // 無菜單 fallback：直接給 葷食便當 / 素食便當 兩個預設 chip
+    const hasItems = (j.items || []).length > 0;
+    const recBar = document.querySelector('.recommend-bar');
+    if (!hasItems && !IS_DRINK_TASK) {
+      document.getElementById('menuItems').innerHTML =
+        '<div class="cat-row"><b>便當</b>' +
+        '<span class="item-chip" data-name="葷食便當" data-price=""><b class="item-pick">葷食便當</b></span>' +
+        '<span class="item-chip" data-name="素食便當" data-price=""><b class="item-pick">素食便當</b></span>' +
+        '</div>' +
+        '<div style="margin-top:6px;font-size:11px;color:#888">（尚未上傳菜單；可直接點上面快速下單）</div>';
+      if (recBar) recBar.style.display = 'none';
+    } else {
+      document.getElementById('menuItems').innerHTML = sections;
+      if (recBar) recBar.style.display = hasItems ? '' : 'none';
+    }
     // 綁定價格編輯
     document.querySelectorAll('.price-edit').forEach(el => {
       el.addEventListener('click', async () => {
@@ -564,6 +592,24 @@ function primeRecommendedSet() {
 }
 primeRecommendedSet();
 
+function highlightChips(names) {
+  const norm = (s) => String(s || '').replace(/\\s+/g, '').toLowerCase();
+  const targets = new Set((names || []).map(norm));
+  const chips = document.querySelectorAll('.item-chip');
+  let first = null;
+  chips.forEach(c => {
+    const hit = targets.has(norm(c.dataset.name));
+    c.classList.remove('rec-hit');
+    if (hit) {
+      // 強制重啟動畫：先 reflow 再加 class
+      void c.offsetWidth;
+      c.classList.add('rec-hit');
+      if (!first) first = c;
+    }
+  });
+  if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 function renderRecommend(dir, j, fromCache) {
   const result = document.getElementById('recommendResult');
   const picks = (j.picks || []).map(p => {
@@ -573,6 +619,7 @@ function renderRecommend(dir, j, fromCache) {
   const note = j.note ? '<div class="note">' + esc(j.note) + '</div>' : '';
   const tag = fromCache ? ' (本地快取)' : (j.cached ? ' (伺服快取)' : '');
   result.innerHTML = '<div style="margin:4px 0;font-size:11px;color:#2db87a">' + esc(j.label || dir) + tag + '</div>' + (picks || '<span style="color:#888">沒有推薦</span>') + note;
+  highlightChips((j.picks || []).map(p => p.name));
 }
 
 async function fetchRecommend(btn, dir) {
