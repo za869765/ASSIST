@@ -236,19 +236,18 @@ async function collectEntry(env, task, userId, text, replyToken) {
 
   const parsed = await geminiExtract(env.GEMINI_API_KEY, task.task_name, text, known);
   if (parsed?._error) {
-    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-      { type: 'text', text: `[debug extract 失敗] ${parsed._error}` },
-    ]);
-    return;
+    console.error('[extract error]', parsed._error);
+    return; // 靜默，不打擾群組
   }
   if (parsed?.nonsense) {
     await handleNonsense(env, task, userId, text, replyToken, parsed.follow_up);
     return;
   }
   if (!parsed || !parsed.data || Object.keys(parsed.data).length === 0) {
-    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-      { type: 'text', text: `[debug] 抽不到東西。parsed=${JSON.stringify(parsed).slice(0, 300)}` },
-    ]);
+    // 抽不到東西 → 若 AI 有追問話術就回，否則靜默略過（避免閒聊被亂回）
+    if (parsed?.follow_up) {
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: parsed.follow_up }]);
+    }
     return;
   }
 
