@@ -481,6 +481,11 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
   }
 
   // 管理員代點：「幫南區點素食便當」「永康要一個排骨飯」等，把名字記成該區
+  // 先剝掉 admin 代點常用的動作詞前綴（幫/替/代/請/幫忙），避免擋到名字比對
+  if (admin) {
+    const stripped = text.replace(/^\s*(幫忙|幫|替|代|請)\s*/u, '');
+    if (stripped !== text && stripped.trim().length >= 2) text = stripped;
+  }
   const proxy = await tryProxyZone(env, userId, text);
   if (proxy?.multi) {
     // 多區自動拆分：依每個區名在文字中的位置切成片段，各自當成該區的點餐內容
