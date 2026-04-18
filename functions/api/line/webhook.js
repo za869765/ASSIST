@@ -928,38 +928,21 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
       const mInfo = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
       const askName = mInfo?.real_name || mInfo?.line_display || userId.slice(0, 6);
       if (cands.length === 1) {
-        // 唯一對應：柔性修正到菜單名稱
+        // 唯一對應：柔性修正到菜單名稱，直接幫點
         parsed.data.品項 = cands[0].name;
         if (cands[0].price && parsed.price == null) parsed.price = cands[0].price;
-      } else if (cands.length > 10) {
-        const menuMsgs = await maybeMenuMessages(env, task);
-        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-          { type: 'text', text: `@${askName} 「${itemName}」能對到 ${cands.length} 個菜單品項，請講詳細一點～` },
-          ...menuMsgs,
-        ].slice(0, 5));
-        return;
-      } else if (cands.length >= 2) {
-        const list = cands.map((c, i) => `${i + 1}. ${c.name}${c.price ? ` $${c.price}` : ''}`).join('\n');
-        // 記下候選清單，5 分鐘內若使用者回「1/2/3」就能對到
-        await env.DB.prepare(
-          `INSERT INTO pending_menu_pick (task_id, user_id, candidates, created_at) VALUES (?, ?, ?, datetime('now'))
-           ON CONFLICT(task_id, user_id) DO UPDATE SET candidates = excluded.candidates, created_at = excluded.created_at`
-        ).bind(task.id, userId, JSON.stringify(cands)).run();
-        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
-          type: 'text', text: `@${askName} 「${itemName}」有多個候選，請挑一個（回覆編號）：\n${list}`,
-        }]);
-        return;
       } else {
-        // 文字帶有明顯「非點餐」意圖（刪除/取消/管理/閒聊）→ 靜默，不要打擾
+        // 非點餐關鍵字 → 靜默
         const offTopic = /刪除|刪\b|取消|管理|裁定|謝謝|感恩|辛苦|再見|掰掰|晚安|早安|午安|收到|了解|ok$|好的$|好喔|好啊/i.test(text);
         if (offTopic) {
           console.log('[off-topic silent on menu miss]', text);
           return;
         }
+        // 配對不到 / 多候選 → 一律請使用者自己上看板點
         const base = env.PUBLIC_BASE_URL || env.PUBLIC_HOST || 'https://assist-gcl.pages.dev';
         const boardUrl = `${base}/t/${task.url_slug || task.id}`;
         await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-          { type: 'text', text: `@${askName} 「${itemName}」不在菜單上，請到看板點選：\n${boardUrl}` },
+          { type: 'text', text: `@${askName} 「${itemName}」無法直接對到菜單，請到看板點選：\n${boardUrl}` },
         ]);
         return;
       }
