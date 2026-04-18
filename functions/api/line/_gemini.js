@@ -120,8 +120,10 @@ export async function geminiExtract(apiKey, taskName, userText, knownData = {}) 
 判斷 missing：對此任務「應該要有」但使用者沒講、也無法從品項推斷的欄位（排除份數/杯數/數量）。
 follow_up：若 missing 非空，提一句簡短的追問（繁中、口語、一行內），例：「甜度冰塊要什麼？」「葷的還是素的？」；若 missing 為空則 null。
 
+若使用者訊息自相矛盾或明顯惡搞（例：「排骨飯不加排骨」「珍奶不要奶」「素食便當加牛肉」），設 nonsense=true、data={}、follow_up 用口語吐槽一句請他認真講，例：「別鬧啦，正經點！」「認真講啦～要什麼？」
+
 嚴格回傳 JSON：
-{"data":{...合併後...},"note":null|string,"price":null|number,"missing":string[],"follow_up":null|string,"confidence":"high"|"mid"|"low"}`;
+{"data":{...合併後...},"note":null|string,"price":null|number,"missing":string[],"follow_up":null|string,"confidence":"high"|"mid"|"low","nonsense":boolean}`;
   const r = await fetch(`${ENDPOINT}?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

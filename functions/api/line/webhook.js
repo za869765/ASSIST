@@ -192,6 +192,11 @@ async function collectEntry(env, task, userId, text, replyToken) {
   } : {};
 
   const parsed = await geminiExtract(env.GEMINI_API_KEY, task.task_name, text, known);
+  if (parsed?.nonsense) {
+    const tease = parsed.follow_up || '別鬧啦，認真講～';
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: tease }]);
+    return;
+  }
   if (!parsed || !parsed.data || Object.keys(parsed.data).length === 0) {
     return; // 抽不到東西就靜默
   }
