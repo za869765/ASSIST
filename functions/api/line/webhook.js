@@ -100,6 +100,27 @@ async function handleEvent(ev, env) {
       return;
     }
 
+    // 管理員「菜單」→ PO 菜單照（每分鐘最多 1 次）
+    if (admin && /^菜單[\s!?！？。.~～]*$/.test(text.trim())) {
+      const all = [];
+      for (const t of tasks) {
+        if (!t.menu_json) continue;
+        const msgs = await maybeMenuMessages(env, t);
+        all.push(...msgs);
+        if (all.length >= 5) break;
+      }
+      if (all.length) {
+        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, all.slice(0, 5));
+      } else {
+        const any = tasks.some(t => t.menu_json);
+        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+          type: 'text',
+          text: any ? '📷 菜單剛 PO 過，請稍候（每分鐘最多 1 次）' : '📷 目前沒有菜單照片',
+        }]);
+      }
+      return;
+    }
+
     // 本人裸「請假/不吃」→ 套用到自己
     const bareLeave = text.trim().match(/^(?:今天|今日|本日)?\s*(請假|休假|不吃|沒訂|跳過|不訂|沒點|不出席|不參加|缺席|沒辦法出席|不能出席|我請假|我不吃|我沒訂|我不出席)[\s!?！？。.~～]*$/);
     if (bareLeave) {
@@ -792,9 +813,49 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
       if (parsed?.follow_up) {
         const mInfo = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
         const askName = mInfo?.real_name || mInfo?.line_display || userId.slice(0, 6);
-        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `@${askName} ${parsed.follow_up}` }]);
+        const menuMsgs = await maybeMenuMessages(env, task);
+        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+          { type: 'text', text: `@${askName} ${parsed.follow_up}` },
+          ...menuMsgs,
+        ].slice(0, 5));
       }
       return;
+    }
+  }
+
+  // 菜單模式：非白名單品項需模糊比對；多候選/未命中 → 追問，不寫入（admin 發送者 bypass）
+  if (!isAdminUser && Array.isArray(menuItems) && menuItems.length && parsed?.data?.品項) {
+    const DEFAULT_PASSES = new Set(['葷食便當', '素食便當']);
+    const itemName = String(parsed.data.品項).trim();
+    if (!DEFAULT_PASSES.has(itemName)) {
+      const cands = matchMenuCandidates(menuItems, itemName);
+      const mInfo = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
+      const askName = mInfo?.real_name || mInfo?.line_display || userId.slice(0, 6);
+      if (cands.length === 1) {
+        // 唯一對應：柔性修正到菜單名稱
+        parsed.data.品項 = cands[0].name;
+        if (cands[0].price && parsed.price == null) parsed.price = cands[0].price;
+      } else if (cands.length > 10) {
+        const menuMsgs = await maybeMenuMessages(env, task);
+        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+          { type: 'text', text: `@${askName} 「${itemName}」能對到 ${cands.length} 個菜單品項，請講詳細一點～` },
+          ...menuMsgs,
+        ].slice(0, 5));
+        return;
+      } else if (cands.length >= 2) {
+        const list = cands.map((c, i) => `${i + 1}. ${c.name}${c.price ? ` $${c.price}` : ''}`).join('\n');
+        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+          type: 'text', text: `@${askName} 「${itemName}」有多個候選，請挑一個：\n${list}`,
+        }]);
+        return;
+      } else {
+        const menuMsgs = await maybeMenuMessages(env, task);
+        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+          { type: 'text', text: `@${askName} 「${itemName}」不在菜單上，請從菜單挑選；若確定還是要這項，請管理員裁定。` },
+          ...menuMsgs,
+        ].slice(0, 5));
+        return;
+      }
     }
   }
 
@@ -1660,4 +1721,53 @@ async function upsertMemberSighting(DB, userId, groupId, token) {
   } catch (e) {
     console.error('[upsert member] fail:', e);
   }
+}
+
+// 菜單照片訊息建構器（每 task 60 秒 rate limit）
+async function maybeMenuMessages(env, task) {
+  if (!task?.menu_json) return [];
+  const DB = env.DB;
+  await DB.prepare(
+    `CREATE TABLE IF NOT EXISTS menu_push_log (task_id INTEGER PRIMARY KEY, pushed_at TEXT)`
+  ).run();
+  const r = await DB.prepare(
+    `SELECT pushed_at FROM menu_push_log WHERE task_id = ?`
+  ).bind(task.id).first();
+  if (r?.pushed_at) {
+    const last = Date.parse(String(r.pushed_at).replace(' ', 'T') + 'Z');
+    if (!isNaN(last) && Date.now() - last < 60_000) return [];
+  }
+  const photos = await DB.prepare(
+    `SELECT id FROM menu_photos WHERE task_id = ? ORDER BY created_at`
+  ).bind(task.id).all();
+  const list = (photos.results || []).slice(0, 4);
+  if (!list.length) return [];
+  await DB.prepare(
+    `INSERT INTO menu_push_log (task_id, pushed_at) VALUES (?, datetime('now'))
+     ON CONFLICT(task_id) DO UPDATE SET pushed_at = excluded.pushed_at`
+  ).bind(task.id).run();
+  const host = env.PUBLIC_HOST || 'https://assist-gcl.pages.dev';
+  return list.map(p => ({
+    type: 'image',
+    originalContentUrl: `${host}/api/menu/${task.id}/file/${p.id}`,
+    previewImageUrl: `${host}/api/menu/${task.id}/file/${p.id}`,
+  }));
+}
+
+// 模糊匹配菜單品項
+// 回傳：{ matched: [candidates...] }；長度 0=無匹配，1=唯一對應，2+=需讓使用者選
+function matchMenuCandidates(menuItems, itemName) {
+  const norm = (s) => String(s || '').replace(/\s+/g, '').toLowerCase();
+  const target = norm(itemName);
+  if (!target || !Array.isArray(menuItems)) return [];
+  // 1) 完全相同
+  const exact = menuItems.filter(it => norm(it.name) === target);
+  if (exact.length === 1) return exact;
+  if (exact.length > 1) return exact;
+  // 2) 包含關係
+  const partial = menuItems.filter(it => {
+    const n = norm(it.name);
+    return n && (n.includes(target) || target.includes(n));
+  });
+  return partial;
 }
