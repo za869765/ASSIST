@@ -823,6 +823,11 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
     }
   }
 
+  // 菜單模式：品項即一切，不需要葷素欄位（葷素只用在一般便當 +1 無菜單情境）
+  if (Array.isArray(menuItems) && menuItems.length && parsed?.data?.品項 && parsed.data['葷素']) {
+    delete parsed.data['葷素'];
+  }
+
   // 菜單模式：非白名單品項需模糊比對；多候選/未命中 → 追問，不寫入（admin 發送者 bypass）
   if (!isAdminUser && Array.isArray(menuItems) && menuItems.length && parsed?.data?.品項) {
     const DEFAULT_PASSES = new Set(['葷食便當', '素食便當']);
@@ -938,8 +943,15 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
   const explicitReplace = /(^|[\s，,。、])?(改|換|更改|改成|改為|換成|換為|修改|取代|替換)/.test(text) || (isBentoTask && existing && !additive);
   const explicitAdd = /(^|[\s，,。、])?(加|加點|加上|再加|再來|多加|多點|還要|外加|追加)/.test(text);
   // 品項能代表葷素時，就省略「葷素」欄位避免重複
+  // 菜單模式下，若品項是菜單料理（非預設葷/素食便當），也省略葷素以免出現「葷/牛小排」
   const dataForShow = { ...parsed.data };
-  if (dataForShow['品項'] && /葷食|素食/.test(dataForShow['品項'])) delete dataForShow['葷素'];
+  if (dataForShow['品項']) {
+    if (/葷食|素食/.test(dataForShow['品項'])) {
+      delete dataForShow['葷素'];
+    } else if (Array.isArray(menuItems) && menuItems.length) {
+      delete dataForShow['葷素'];
+    }
+  }
   const showParts = Object.values(dataForShow).filter(Boolean).join('/');
   let reply;
   if (existing && additive && explicitAdd) {
