@@ -15,8 +15,10 @@ export async function onRequestPost({ env, params, request }) {
   if (!taskId) return json({ error: 'bad taskId' }, 400);
   const body = await request.json().catch(() => ({}));
   const zone = String(body.zone || '').trim();
+  const isLeave = !!body.leave;
   const item = String(body.item || '').trim();
-  if (!zone || !item) return json({ error: 'zone 與 item 不可為空' }, 400);
+  if (!zone) return json({ error: 'zone 不可為空' }, 400);
+  if (!isLeave && !item) return json({ error: 'item 不可為空' }, 400);
   const note = body.note == null ? null : String(body.note).slice(0, 60);
   const price = body.price == null || body.price === '' ? null : +body.price;
   const sweet = body.sweet == null ? null : String(body.sweet).slice(0, 10);
@@ -54,9 +56,9 @@ export async function onRequestPost({ env, params, request }) {
     } catch {}
   }
 
-  // 菜單模式：item 必須在菜單上（防止前端亂送）；custom=true 允許菜單外
+  // 菜單模式：item 必須在菜單上（防止前端亂送）；custom=true 允許菜單外；leave 跳過
   const isCustom = !!body.custom;
-  if (task.menu_json && !isCustom) {
+  if (!isLeave && task.menu_json && !isCustom) {
     const menu = JSON.parse(task.menu_json);
     const norm = (s) => String(s || '').replace(/\s+/g, '').toLowerCase();
     const hit = menu.find(it => norm(it.name) === norm(item));
@@ -83,19 +85,27 @@ export async function onRequestPost({ env, params, request }) {
      ON CONFLICT(user_id) DO UPDATE SET zone = excluded.zone, real_name = excluded.real_name, last_seen_at = datetime('now')`
   ).bind(userId, memberLabel, zone).run();
 
-  const data = { 品項: item };
-  if (sweet) data['甜度'] = sweet;
-  if (ice) data['冰塊'] = ice;
+  const data = isLeave ? {} : { 品項: item };
+  if (!isLeave) {
+    if (sweet) data['甜度'] = sweet;
+    if (ice) data['冰塊'] = ice;
+  }
   if (memberName) data['姓名'] = memberName;
   if (nonMemberName) { data['姓名'] = nonMemberName; data['身份'] = '非會員'; }
   if (!data['姓名'] && autoName) data['姓名'] = autoName;
 
+  const additive = !!body.additive && !isLeave;
+  const finalNote = isLeave ? '請假' : note;
+  const finalPrice = isLeave ? null : price;
+  const rawText = isLeave
+    ? `[web] ${zone} ${displayName}${isNon ? '(非會員)' : ''} → 請假${note ? '（' + note + '）' : ''}`
+    : `[web] ${zone} ${displayName}${isNon ? '(非會員)' : ''} → ${item}${sweet ? '/' + sweet : ''}${ice ? '/' + ice : ''}`;
   await upsertEntry(env.DB, {
     taskId, userId,
     data,
-    note, price,
-    rawText: `[web] ${zone} ${displayName}${isNon ? '(非會員)' : ''} → ${item}${sweet ? '/' + sweet : ''}${ice ? '/' + ice : ''}`,
-    additive: false,
+    note: finalNote, price: finalPrice,
+    rawText,
+    additive,
   });
 
   return json({ ok: true });

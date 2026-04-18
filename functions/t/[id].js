@@ -482,6 +482,17 @@ h1 {
 }
 .menu-card .items-list .item-chip:active { transform: translateY(0) scale(.98); }
 
+.menu-card .items-list .item-chip.leave-chip {
+  border-color: rgba(194,112,112,.35);
+  background: rgba(194,112,112,.08);
+}
+.menu-card .items-list .item-chip.leave-chip:hover {
+  border-color: var(--danger);
+  background: rgba(194,112,112,.14);
+  box-shadow: 0 4px 14px rgba(194,112,112,.22);
+}
+.menu-card .items-list .item-chip.leave-chip .item-pick { color: var(--danger); }
+
 .menu-card .items-list .item-chip .item-pick {
   color: var(--gold);
   font-weight: 500;
@@ -1822,12 +1833,13 @@ async function loadMenu() {
     // 無菜單 fallback
     const hasItems = (j.items || []).length > 0;
     const recBar = document.querySelector('.recommend-bar');
+    const leaveRow = '<div class="cat-row" style="margin-top:8px"><span class="item-chip leave-chip" data-name="__leave__"><b class="item-pick">📝 請假</b></span></div>';
     if (!hasItems && IS_DRINK_TASK) {
-      // 飲料類強制要有菜單，沒上傳就擋住
+      // 飲料類強制要有菜單，沒上傳就擋住（請假仍可）
       document.getElementById('menuItems').innerHTML =
-        '<div style="padding:10px;background:#fff3e0;border:1px dashed #f0a058;border-radius:6px;color:#b04a1a;font-size:13px">' +
+        '<div style="padding:10px;background:rgba(240,160,88,.08);border:1px dashed rgba(240,160,88,.4);border-radius:6px;color:var(--wine);font-size:13px">' +
         '🥤 飲料類任務必須先上傳菜單才能點單。<br>請先用上方「＋ 上傳菜單照」上傳菜單照片。' +
-        '</div>';
+        '</div>' + leaveRow;
       if (recBar) recBar.style.display = 'none';
     } else if (!hasItems) {
       document.getElementById('menuItems').innerHTML =
@@ -1835,12 +1847,13 @@ async function loadMenu() {
         '<span class="item-chip" data-name="葷食便當" data-price=""><b class="item-pick">葷食便當</b></span>' +
         '<span class="item-chip" data-name="素食便當" data-price=""><b class="item-pick">素食便當</b></span>' +
         '</div>' +
-        '<div style="margin-top:6px;font-size:11px;color:#888">（尚未上傳菜單；可直接點上面快速下單）</div>';
+        leaveRow +
+        '<div style="margin-top:6px;font-size:11px;color:var(--text-dim)">（尚未上傳菜單；可直接點上面快速下單）</div>';
       if (recBar) recBar.style.display = 'none';
     } else {
-      // 菜單模式也允許新增菜單外品項
-      const extraBtn = '<div class="cat-row" style="margin-top:8px"><span class="item-chip add-custom" data-name="__custom__" style="background:#fff3e0;border-color:#f0a058"><b class="item-pick" style="color:#b04a1a">＋ 新增品項（菜單外）</b></span></div>';
-      document.getElementById('menuItems').innerHTML = sections + extraBtn;
+      // 菜單模式也允許新增菜單外品項，並加上請假按鈕
+      const extraBtn = '<div class="cat-row" style="margin-top:8px"><span class="item-chip add-custom" data-name="__custom__" style="background:rgba(240,160,88,.1);border-color:rgba(240,160,88,.4)"><b class="item-pick" style="color:var(--wine)">＋ 新增品項（菜單外）</b></span></div>';
+      document.getElementById('menuItems').innerHTML = sections + extraBtn + leaveRow;
       if (recBar) recBar.style.display = '';
     }
     // 綁定價格編輯（僅編輯模式）
@@ -1862,6 +1875,10 @@ async function loadMenu() {
         if (ev.target.closest('.price-edit')) return; // 點到價格修改區不觸發
         if (chip.dataset.name === '__custom__') {
           openCustomModal();
+          return;
+        }
+        if (chip.dataset.name === '__leave__') {
+          openLeaveModal();
           return;
         }
         const name = chip.dataset.name;
@@ -2259,10 +2276,18 @@ function openOrderModal(itemName, price, isCustom) {
         memberName = active.dataset.val;
       }
     }
+    // 檢查是否已有點餐：同人再點要問「加點 / 更改」
+    const existing = findExistingEntry(zone, memberName, nonMemberName);
+    let additive = false;
+    if (existing) {
+      const choice = await askAddOrReplace(existing, itemName, price);
+      if (!choice) { okBtn.disabled = false; okBtn.textContent = '送出'; return; }
+      additive = (choice === 'add');
+    }
     try {
       const r = await fetch('/api/t/' + TASK_ID + '/quick-entry', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ zone, item: itemName, price, sweet, ice, note, memberName, nonMemberName, custom: !!isCustom }),
+        body: JSON.stringify({ zone, item: itemName, price, sweet, ice, note, memberName, nonMemberName, custom: !!isCustom, additive }),
       });
       const j = await r.json();
       if (!r.ok) { alert('失敗：' + (j.error || r.status)); okBtn.disabled = false; okBtn.textContent = '送出'; return; }
@@ -2273,9 +2298,172 @@ function openOrderModal(itemName, price, isCustom) {
         zone,
         name: memberName || nonMemberName || null,
         sweet, ice, note, price,
+        additive,
       });
       await poll();
     } catch (e) { alert('錯誤：' + e.message); okBtn.disabled = false; okBtn.textContent = '送出'; }
+  });
+}
+
+// 判斷這次下單是否會覆蓋既有紀錄（依 backend user_id 規則）
+function findExistingEntry(zone, memberName, nonMemberName) {
+  const entries = (state.entries || []);
+  const zones = (state.zones || []);
+  const zRow = zones.find(z => z.name === zone);
+  const unlimited = zRow && +zRow.capacity === 0;
+  if (/衛生局/.test(zone)) {
+    if (nonMemberName) return null; // 衛生局非會員每次都新建
+    if (memberName) {
+      return entries.find(e => e.zone === zone && e.name === memberName) || null;
+    }
+    return null;
+  }
+  if (unlimited) return null; // 其他不限人數區（如檢驗中心）每次都新建
+  // 一般區：同區覆蓋
+  return entries.find(e => e.zone === zone) || null;
+}
+
+function askAddOrReplace(existing, newItem, newPrice) {
+  return new Promise(resolve => {
+    const oldItem = (existing.data && existing.data['品項']) || '(無品項)';
+    const oldPriceStr = existing.price ? ' $' + existing.price : '';
+    const newPriceStr = newPrice != null ? ' $' + newPrice : '';
+    const who = existing.name || existing.zone || '這筆';
+    const d = document.createElement('div');
+    d.className = 'order-modal';
+    d.innerHTML = '<div class="box">' +
+      '<h3>已經點過</h3>' +
+      '<div style="padding:4px 0 12px;font-size:13.5px;line-height:1.6">' +
+        '<div style="color:var(--text-muted)">' + esc(who) + ' 原訂：</div>' +
+        '<div style="color:var(--text);font-weight:600;margin-top:2px">' + esc(oldItem) + esc(oldPriceStr) + '</div>' +
+        '<div style="color:var(--text-muted);margin-top:10px">這次要送出：</div>' +
+        '<div style="color:var(--gold);font-weight:600;margin-top:2px">' + esc(newItem) + esc(newPriceStr) + '</div>' +
+      '</div>' +
+      '<div class="row-btns" style="flex-direction:column;gap:8px">' +
+        '<button type="button" class="primary" data-a="add">＋ 加點（原訂保留，再加這個）</button>' +
+        '<button type="button" data-a="replace">✎ 更改（用新的取代）</button>' +
+        '<button type="button" data-a="cancel">取消</button>' +
+      '</div>' +
+      '</div>';
+    document.body.appendChild(d);
+    const done = (v) => { d.classList.add('closing'); setTimeout(() => d.remove(), 200); resolve(v); };
+    d.addEventListener('click', (e) => {
+      if (e.target === d) return done(null);
+      const b = e.target.closest('button[data-a]'); if (!b) return;
+      const a = b.dataset.a;
+      done(a === 'add' ? 'add' : a === 'replace' ? 'replace' : null);
+    });
+  });
+}
+
+function openLeaveModal() {
+  const zones = (state.zones || []).filter(z => z.enabled !== 0);
+  if (!zones.length) { alert('沒有可選的分區'); return; }
+  const lastZone = localStorage.getItem(LS_LAST_ZONE) || '';
+  const zoneOpts = zones.map(z => {
+    const so = +z.sort_order;
+    const code = (so >= 100 && so < 1000) ? String(so).padStart(4, '0') + ' ' : '';
+    const sel = z.name === lastZone ? ' selected' : '';
+    return '<option value="' + esc(z.name) + '"' + sel + '>' + esc(code + z.name) + '</option>';
+  }).join('');
+  const memberRow = '<div id="omMemberRow" style="display:none">' +
+    '<label>是誰請假？（名單內請直接點；不在名單請選「非會員」並填名字）</label>' +
+    '<div class="opt-grid" id="omRosterGrid"><span style="color:var(--text-dim);font-size:12px">載入花名冊中…</span></div>' +
+    '<div id="omNonMemberInput" style="display:none;margin-top:8px"><input id="omNonMemberName" maxlength="20" placeholder="請輸入非會員姓名"></div>' +
+    '</div>' +
+    '<div id="omZoneMemberHint" style="display:none;margin-top:6px;font-size:12px;color:var(--jade)"></div>';
+  const d = document.createElement('div');
+  d.className = 'order-modal';
+  d.innerHTML = '<div class="box">' +
+    '<h3>登記請假：<span style="color:var(--danger)">📝 請假</span></h3>' +
+    '<label>哪一區 / 誰</label><select id="omZone">' + zoneOpts + '</select>' +
+    memberRow +
+    '<label>備註（選填，例：身體不適）</label><input id="omNote" maxlength="60" placeholder="原因（可留空）">' +
+    '<div class="row-btns"><button type="button" id="omCancel">取消</button><button type="button" class="primary" id="omOk">確認請假</button></div>' +
+    '</div>';
+  document.body.appendChild(d);
+  const close = () => { d.classList.add('closing'); setTimeout(() => d.remove(), 200); };
+  d.addEventListener('click', (e) => { if (e.target === d) close(); });
+  const memberRowEl = d.querySelector('#omMemberRow');
+  const hintEl = d.querySelector('#omZoneMemberHint');
+  const zoneSel = d.querySelector('#omZone');
+  const rosterGrid = d.querySelector('#omRosterGrid');
+  let rosterAll = null;
+  let rosterGridRendered = false;
+  async function ensureRosterLoaded() {
+    if (rosterAll) return rosterAll;
+    const r = await fetch('/api/roster');
+    const j = await r.json();
+    rosterAll = j.list || [];
+    return rosterAll;
+  }
+  function renderHealthBureauGrid() {
+    if (rosterGridRendered) return; rosterGridRendered = true;
+    const list = (rosterAll || []).filter(m => m.zone === '衛生局');
+    const btns = list.map(m => {
+      const label = esc(m.real_name) + (m.title ? ' <small style="opacity:.7">' + esc(m.title) + '</small>' : '');
+      return '<button type="button" data-val="' + esc(m.real_name) + '" data-title="' + esc(m.title || '') + '">' + label + '</button>';
+    }).join('');
+    rosterGrid.innerHTML = btns + '<button type="button" data-val="__non__" style="background:rgba(240,160,88,.15);color:var(--wine);border-color:rgba(240,160,88,.4)">＋ 非會員</button>';
+  }
+  const nonMemberInput = d.querySelector('#omNonMemberInput');
+  rosterGrid.addEventListener('click', (ev) => {
+    const b = ev.target.closest('button'); if (!b) return;
+    rosterGrid.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    const isNon = b.dataset.val === '__non__';
+    nonMemberInput.style.display = isNon ? '' : 'none';
+    if (isNon) setTimeout(() => d.querySelector('#omNonMemberName')?.focus(), 0);
+  });
+  const syncMemberRow = async () => {
+    const z = zoneSel.value || '';
+    const isHB = /衛生局/.test(z);
+    memberRowEl.style.display = isHB ? '' : 'none';
+    hintEl.style.display = 'none'; hintEl.textContent = '';
+    try {
+      await ensureRosterLoaded();
+    } catch { rosterGrid.innerHTML = '<span style="color:var(--danger)">花名冊載入失敗</span>'; return; }
+    if (isHB) {
+      renderHealthBureauGrid();
+    } else {
+      const hit = (rosterAll || []).find(m => m.zone === z);
+      if (hit) {
+        hintEl.textContent = '這筆會記給：' + hit.real_name + (hit.title ? '（' + hit.title + '）' : '');
+        hintEl.style.display = '';
+      }
+    }
+  };
+  zoneSel.addEventListener('change', syncMemberRow);
+  syncMemberRow();
+  d.querySelector('#omCancel').addEventListener('click', close);
+  d.querySelector('#omOk').addEventListener('click', async () => {
+    const okBtn = d.querySelector('#omOk');
+    okBtn.disabled = true; okBtn.textContent = '送出中…';
+    const zone = d.querySelector('#omZone').value;
+    const note = d.querySelector('#omNote').value.trim() || null;
+    let memberName = null, nonMemberName = null;
+    if (/衛生局/.test(zone)) {
+      const active = rosterGrid.querySelector('button.active');
+      if (!active) { alert('請先選「是誰」'); okBtn.disabled = false; okBtn.textContent = '確認請假'; return; }
+      if (active.dataset.val === '__non__') {
+        nonMemberName = (d.querySelector('#omNonMemberName')?.value || '').trim();
+        if (!nonMemberName) { alert('請填非會員姓名'); okBtn.disabled = false; okBtn.textContent = '確認請假'; return; }
+      } else {
+        memberName = active.dataset.val;
+      }
+    }
+    try {
+      const r = await fetch('/api/t/' + TASK_ID + '/quick-entry', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ zone, leave: true, note, memberName, nonMemberName }),
+      });
+      const j = await r.json();
+      if (!r.ok) { alert('失敗：' + (j.error || r.status)); okBtn.disabled = false; okBtn.textContent = '確認請假'; return; }
+      localStorage.setItem(LS_LAST_ZONE, zone);
+      close();
+      showToast('✓ 已登記請假');
+      await poll();
+    } catch (e) { alert('錯誤：' + e.message); okBtn.disabled = false; okBtn.textContent = '確認請假'; }
   });
 }
 
