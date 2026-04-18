@@ -83,7 +83,6 @@ function renderZones() {
       <td class="center">\${i + 1}</td>
       <td class="name">\${esc(z.name)}</td>
       <td class="center"><input type="checkbox" \${z.enabled ? 'checked' : ''} onchange="ZONES[\${i}].enabled = this.checked ? 1 : 0"></td>
-      <td class="center cap"><input type="number" min="0" value="\${z.capacity}" onchange="ZONES[\${i}].capacity = parseInt(this.value) || 0"><small class="capnote">\${z.capacity === 0 ? '(不限)' : ''}</small></td>
     </tr>\`).join('');
 }
 
