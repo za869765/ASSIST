@@ -95,6 +95,18 @@ CREATE TABLE IF NOT EXISTS pending_dups (
   PRIMARY KEY (task_id, user_id)
 );
 
+-- 結單匯出檔（一次性下載）
+CREATE TABLE IF NOT EXISTS exports (
+  token        TEXT PRIMARY KEY,               -- 隨機 24 字
+  task_id      INTEGER NOT NULL,
+  filename     TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  blob         BLOB NOT NULL,
+  used         INTEGER NOT NULL DEFAULT 0,     -- 0=可下載 1=已用
+  created_at   TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_exports_task ON exports(task_id);
+
 -- 同義詞對照（學習累積，給 Gemini 當 few-shot 參考）
 CREATE TABLE IF NOT EXISTS synonyms (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,

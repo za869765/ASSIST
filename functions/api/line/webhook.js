@@ -8,6 +8,7 @@ import {
   getGroupMemberProfile, getUserProfile,
 } from './_lib.js';
 import { geminiChat, geminiExtract, geminiIntent, geminiClassifyTask } from './_gemini.js';
+import { buildXLSX } from './_xlsx.js';
 import {
   findOpenTask, findOpenTasks, matchTaskByHint,
   createTask, closeTask, upsertEntry, listEntries, summarizeEntries,
@@ -171,8 +172,20 @@ async function handleEvent(ev, env) {
     }
     const entries = await listEntries(env.DB, picked.id);
     await closeTask(env.DB, picked.id);
+
+    // 產 XLSX（文字格式避免失真：01234、長數字、日期字串不被 Excel 自動轉型）
+    const rows = buildSheetRows(picked.task_name, entries);
+    const bytes = buildXLSX(picked.task_name.slice(0, 31) || 'sheet', rows);
+    const token = genDownloadToken();
+    const filename = `${picked.task_name}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    await env.DB.prepare(
+      `INSERT INTO exports (token, task_id, filename, content_type, blob) VALUES (?, ?, ?, ?, ?)`
+    ).bind(token, picked.id, filename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', bytes).run();
+
+    const base = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
+    const dlUrl = `${base}/d/${token}`;
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-      { type: 'text', text: `✅ 任務「${picked.task_name}」已結單（共 ${entries.length} 筆）\n\n${summarizeEntries(entries)}\n\n（看板已關閉公開，檔案整理中）` },
+      { type: 'text', text: `✅ 任務「${picked.task_name}」已結單（共 ${entries.length} 筆）\n\n${summarizeEntries(entries)}\n\n📎 一次性下載（僅能開啟一次）：\n${dlUrl}` },
     ]);
     return;
   }
@@ -276,6 +289,48 @@ async function collectEntry(env, task, userId, text, replyToken) {
     reply += `\n${followUp}`;
   }
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
+}
+
+function genDownloadToken() {
+  const b = new Uint8Array(12);
+  crypto.getRandomValues(b);
+  return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+}
+
+// XLSX 要用的 rows（每個 cell 強制文字）
+function buildSheetRows(taskName, entries) {
+  const fieldOrder = [];
+  const parsed = entries.map(e => {
+    let data = {};
+    try { data = JSON.parse(e.data_json || '{}'); } catch {}
+    for (const k of Object.keys(data)) if (!fieldOrder.includes(k)) fieldOrder.push(k);
+    let raws = [];
+    try { raws = JSON.parse(e.raw_texts || '[]'); } catch {}
+    return { e, data, raws };
+  });
+  const rows = [];
+  rows.push([`任務：${taskName}　筆數：${parsed.length}　匯出：${new Date().toISOString().replace('T', ' ').slice(0, 19)}`]);
+  rows.push([]);
+  rows.push(['#', '姓名', ...fieldOrder, '備註', '價格', '原始發言', '最後更新']);
+  let total = 0;
+  parsed.forEach(({ e, data, raws }, i) => {
+    const name = e.real_name || e.line_display || (e.user_id ? e.user_id.slice(0, 6) : '');
+    rows.push([
+      String(i + 1),
+      name,
+      ...fieldOrder.map(k => data[k] == null ? '' : String(data[k])),
+      e.note || '',
+      e.price != null ? String(e.price) : '',
+      Array.isArray(raws) ? raws.join(' | ') : '',
+      e.updated_at || '',
+    ]);
+    total += e.price || 0;
+  });
+  if (total) {
+    rows.push([]);
+    rows.push(['', '合計', ...fieldOrder.map(() => ''), '', String(total), '', '']);
+  }
+  return rows;
 }
 
 function normalizeVerdict(s) {
