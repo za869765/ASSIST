@@ -261,19 +261,13 @@ async function collectEntry(env, task, userId, text, replyToken) {
     return;
   }
 
-  // 重複點餐判斷（有舊資料時）
+  // 已點過再講話：預設視為「改單」覆蓋；只有明確「加點字眼」才累加
+  // （已點的狀態通常是修正/改口/刪除，不是加點，不反問）
   let additive = false;
   if (existing) {
     const intent = parsed.dup_intent;
     const conf = typeof parsed.dup_confidence === 'number' ? parsed.dup_confidence : 0;
-    if ((intent === 'add' || intent === 'replace') && conf >= 80) {
-      additive = (intent === 'add');
-    } else {
-      // 不夠確定 → 一律反問當事人（不騷擾管理員）
-      const guess = intent === 'add' ? 'add' : 'replace';
-      await askSelfConfirm(env, task, userId, text, parsed, guess, replyToken);
-      return;
-    }
+    additive = (intent === 'add' && conf >= 70);
   }
 
   await upsertEntry(env.DB, {
