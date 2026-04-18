@@ -286,6 +286,50 @@ export async function geminiChat(apiKey, userText) {
   return text || '（沒有回應）';
 }
 
+// 菜單整理：把多張照片彙總後的雜亂品項，交給 AI 去重/修名/分類，變成可讀菜單
+export async function geminiOrganizeMenu(apiKey, rawItems) {
+  if (!apiKey || !Array.isArray(rawItems) || !rawItems.length) return { items: rawItems || [] };
+  const prompt = `以下是從餐廳菜單照片 OCR 抽出的品項清單（可能有重複、錯字、分類不一致）。請整理成乾淨、有條理、易於點餐的菜單。
+
+要求：
+- 合併重複或錯字變體；保留最完整/正確的名稱（例：「珍奶」「珍珠奶茶」→「珍珠奶茶」）
+- 修正/補齊分類。分類用以下之一：主食、便當、飯、麵、湯品、飲料、小菜、加料、套餐、甜點、其他
+- 保留整數台幣價格；同一品項有多個價格取最合理者；沒價格就給 null
+- 依分類、再依價格由低到高排序（同價保留原順序）
+- 只回 JSON，格式：{"items":[{"name":"珍珠奶茶","price":50,"category":"飲料"}, ...]}
+- 不要加解釋、不要用 markdown
+
+輸入：${JSON.stringify(rawItems)}`;
+
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { responseMimeType: 'application/json', temperature: 0 },
+  };
+  try {
+    const r = await fetch(`${ENDPOINT}?key=${apiKey}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const err = await r.text().catch(() => '');
+      console.error('[gemini organize] http', r.status, err);
+      return { items: rawItems, _error: `${r.status}` };
+    }
+    const j = await r.json();
+    const text = (j?.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
+    const parsed = JSON.parse(text);
+    const items = Array.isArray(parsed?.items) ? parsed.items : [];
+    if (!items.length) return { items: rawItems };
+    return { items: items.map(it => ({
+      name: String(it.name || '').trim(),
+      price: (it.price != null && !isNaN(+it.price)) ? +it.price : null,
+      category: it.category ? String(it.category).trim() : null,
+    })).filter(it => it.name) };
+  } catch (e) {
+    console.error('[gemini organize]', e);
+    return { items: rawItems, _error: String(e).slice(0, 100) };
+  }
+}
+
 // 菜單照片 OCR：用 Gemini Vision 抽出 [{name, price}] 陣列
 export async function geminiParseMenu(apiKey, imageBase64, mimeType) {
   if (!apiKey) return { items: [], _error: 'no api key' };

@@ -2,7 +2,7 @@
 //  GET    → 列出此任務的照片 + OCR 品項彙總
 //  POST   → 上傳一張照片（multipart/form-data, field 名 "photo"）
 //  DELETE → 刪除單張（body: { photoId }）
-import { geminiParseMenu } from '../line/_gemini.js';
+import { geminiParseMenu, geminiOrganizeMenu } from '../line/_gemini.js';
 
 function uuid() {
   // 短亂數 id，避免引入 crypto.randomUUID 以相容舊環境
@@ -85,13 +85,18 @@ export async function onRequestPost({ env, params, request }) {
     `INSERT INTO menu_photos (id, task_id, r2_key, mime, size, items_json) VALUES (?, ?, ?, ?, ?, ?)`
   ).bind(id, taskId, r2Key, mime, bytes.byteLength, JSON.stringify(items)).run();
 
-  // 更新任務 menu_json 彙總（供 webhook extract 時當白名單提示）
+  // 彙總 + 交 AI 再整理（去重/修名/分類/排序）→ 存為 menu_json
   const agg = await aggregateItems(env.DB, taskId);
+  let finalItems = agg;
+  try {
+    const org = await geminiOrganizeMenu(env.GEMINI_API_KEY, agg);
+    if (Array.isArray(org?.items) && org.items.length) finalItems = org.items;
+  } catch (e) { console.error('[menu organize]', e); }
   await env.DB.prepare(
     `UPDATE tasks SET menu_json = ?, mode = 'menu' WHERE id = ?`
-  ).bind(JSON.stringify(agg), taskId).run();
+  ).bind(JSON.stringify(finalItems), taskId).run();
 
-  return json({ id, itemCount: items.length, items, aggItems: agg });
+  return json({ id, itemCount: items.length, items, aggItems: finalItems });
 }
 
 export async function onRequestDelete({ env, params, request }) {
@@ -113,10 +118,15 @@ export async function onRequestDelete({ env, params, request }) {
   const agg = await aggregateItems(env.DB, taskId);
   if (agg.length === 0) {
     await env.DB.prepare(`UPDATE tasks SET menu_json = NULL, mode = 'free' WHERE id = ?`).bind(taskId).run();
-  } else {
-    await env.DB.prepare(`UPDATE tasks SET menu_json = ? WHERE id = ?`).bind(JSON.stringify(agg), taskId).run();
+    return json({ ok: true, aggItems: [] });
   }
-  return json({ ok: true, aggItems: agg });
+  let finalItems = agg;
+  try {
+    const org = await geminiOrganizeMenu(env.GEMINI_API_KEY, agg);
+    if (Array.isArray(org?.items) && org.items.length) finalItems = org.items;
+  } catch (e) { console.error('[menu organize]', e); }
+  await env.DB.prepare(`UPDATE tasks SET menu_json = ? WHERE id = ?`).bind(JSON.stringify(finalItems), taskId).run();
+  return json({ ok: true, aggItems: finalItems });
 }
 
 function bytesToBase64(buffer) {

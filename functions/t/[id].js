@@ -122,9 +122,14 @@ li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 3px
 .menu-card .upload-row label { display: inline-block; padding: 4px 10px; border-radius: 6px; background: #2db87a; color: white; font-size: 12px; cursor: pointer; }
 .menu-card .upload-row label.busy { background: #888; pointer-events: none; }
 .menu-card .upload-row span { font-size: 11px; color: #888; }
-.menu-card .items-list { margin-top: 6px; font-size: 11px; color: #666; max-height: 110px; overflow-y: auto; }
+.menu-card .items-list { margin-top: 6px; font-size: 11px; color: #666; max-height: 220px; overflow-y: auto; }
+.menu-card .items-list .cat-row { margin: 4px 0 6px; }
+.menu-card .items-list .cat-row > b { display: inline-block; margin-right: 6px; padding: 1px 6px; background: #2db87a; color: white; border-radius: 10px; font-size: 11px; font-weight: 600; }
 .menu-card .items-list span { display: inline-block; padding: 1px 6px; margin: 1px; background: #eef; border-radius: 10px; }
-@media (prefers-color-scheme: dark) { .menu-card .items-list span { background: #333; } }
+.menu-card .items-list span b { font-weight: 700; margin-left: 2px; }
+.menu-summary { margin-top: 6px; padding: 6px 8px; background: #fff3e0; border-radius: 6px; font-size: 12px; color: #b04a1a; }
+.menu-summary:empty { display: none; }
+@media (prefers-color-scheme: dark) { .menu-card .items-list span { background: #333; } .menu-summary { background: #3a2e1f; color: #f0a058; } }
 .menu-lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.9); display: flex; align-items: center; justify-content: center; z-index: 999; flex-direction: column; }
 .menu-lightbox .stage { flex: 1; width: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: pan-y; }
 .menu-lightbox img { max-width: 95vw; max-height: 88vh; user-select: none; -webkit-user-drag: none; }
@@ -153,6 +158,7 @@ ${closed ? '' : `<details class="menu-card" id="menuCard">
     <span id="uploadMsg">支援多張；任務結單後自動清除</span>
   </div>
   <div class="items-list" id="menuItems"></div>
+  <div class="menu-summary" id="menuSummary"></div>
 </details>`}
 <div id="board"></div>
 
@@ -235,7 +241,7 @@ async function poll() {
 }
 
 render();
-${closed ? '' : 'setInterval(poll, 5000);'}
+${closed ? '' : 'setInterval(async () => { await poll(); if (typeof loadMenu === "function") loadMenu(); }, 5000);'}
 
 ${closed ? '' : `
 const TASK_ID = ${task.id};
@@ -257,10 +263,47 @@ async function loadMenu() {
     }));
     document.getElementById('menuCount').textContent = (j.photos || []).length;
     document.getElementById('menuItemCount').textContent = (j.items || []).length;
-    document.getElementById('menuItems').innerHTML = (j.items || []).map(it => {
-      const price = it.price ? \` \$\${it.price}\` : '';
-      return \`<span>\${esc(it.name)}\${price}</span>\`;
+    // 依「目前有多少人點」算熱度
+    const norm = (s) => String(s || '').replace(/\\s+/g, '').toLowerCase();
+    const orderCount = new Map();
+    for (const e of (state.entries || [])) {
+      const it = (e.data && e.data['品項']) || '';
+      if (!it) continue;
+      const k = norm(it);
+      orderCount.set(k, (orderCount.get(k) || 0) + 1);
+    }
+    // 依分類分組
+    const byCat = new Map();
+    for (const it of (j.items || [])) {
+      const cat = it.category || '其他';
+      if (!byCat.has(cat)) byCat.set(cat, []);
+      byCat.get(cat).push(it);
+    }
+    const CAT_ORDER = ['主食','便當','飯','麵','套餐','湯品','小菜','加料','飲料','甜點','其他'];
+    const sortedCats = [...byCat.keys()].sort((a,b) => {
+      const ia = CAT_ORDER.indexOf(a); const ib = CAT_ORDER.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+    const sections = sortedCats.map(cat => {
+      const its = byCat.get(cat).map(it => {
+        const cnt = orderCount.get(norm(it.name)) || 0;
+        const price = it.price ? \` $\${it.price}\` : '';
+        const hot = cnt > 0 ? \` <b style="color:#d4543a">×\${cnt}</b>\` : '';
+        return \`<span>\${esc(it.name)}\${price}\${hot}</span>\`;
+      }).join('');
+      return \`<div class="cat-row"><b>\${esc(cat)}</b>\${its}</div>\`;
     }).join('');
+    document.getElementById('menuItems').innerHTML = sections;
+    // 目前點餐熱度摘要
+    const top = [...orderCount.entries()]
+      .sort((a,b) => b[1] - a[1]).slice(0, 5)
+      .map(([k, n]) => {
+        const it = (j.items || []).find(x => norm(x.name) === k);
+        const name = it ? it.name : k;
+        return \`\${esc(name)} ×\${n}\`;
+      }).join('、');
+    const sumEl = document.getElementById('menuSummary');
+    if (sumEl) sumEl.textContent = top ? ('🔥 目前熱門：' + top) : '';
     if ((j.photos || []).length > 0) document.getElementById('menuCard').open = true;
   } catch (e) { console.error(e); }
 }
