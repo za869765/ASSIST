@@ -268,13 +268,10 @@ async function collectEntry(env, task, userId, text, replyToken) {
     const conf = typeof parsed.dup_confidence === 'number' ? parsed.dup_confidence : 0;
     if ((intent === 'add' || intent === 'replace') && conf >= 80) {
       additive = (intent === 'add');
-    } else if ((intent === 'add' || intent === 'replace') && conf >= 60) {
-      // 60~80 → 反問當事人確認
-      await askSelfConfirm(env, task, userId, text, parsed, intent, replyToken);
-      return;
     } else {
-      // < 60 → 問管理員
-      await handleDupPending(env, task, userId, text, parsed, replyToken);
+      // 不夠確定 → 一律反問當事人（不騷擾管理員）
+      const guess = intent === 'add' ? 'add' : 'replace';
+      await askSelfConfirm(env, task, userId, text, parsed, guess, replyToken);
       return;
     }
   }
@@ -545,7 +542,7 @@ async function askSelfConfirm(env, task, userId, text, parsed, intent, replyToke
   const verb = intent === 'add' ? '加點' : '改單';
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
     type: 'text',
-    text: `${who} 您好～想跟您確認一下，請問是要${verb}「${parts}」嗎？\n回「加」=加點、「改」=改單，謝謝您 🙏`,
+    text: `${who} 想跟您確認一下，請問是要${verb}「${parts}」嗎？\n回「加」=加點、「改」=改單，謝謝您 🙏`,
   }]);
 }
 
