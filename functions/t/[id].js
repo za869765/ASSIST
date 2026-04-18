@@ -161,11 +161,18 @@ li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 3px
 .menu-card .items-list .price-edit:hover { color: #249864; text-decoration: underline; }
 .menu-summary { margin-top: 6px; padding: 6px 8px; background: #fff3e0; border-radius: 6px; font-size: 12px; color: #b04a1a; }
 .menu-summary:empty { display: none; }
-.recommend-bar { margin-top: 8px; padding-top: 6px; border-top: 1px dashed #ccc6; }
-.recommend-buttons { display: flex; flex-wrap: wrap; gap: 4px; }
-.recommend-buttons button { padding: 4px 8px; font-size: 12px; border: 1px solid #2db87a; background: #fff1; color: #2db87a; border-radius: 12px; cursor: pointer; }
-.recommend-buttons button:hover { background: #2db87a; color: white; }
+.recommend-bar { margin-top: 10px; padding: 8px 8px 10px; border-top: 1px dashed #ccc6; background: linear-gradient(180deg, #fff8e1 0%, #fff 70%); border-radius: 0 0 8px 8px; }
+.recommend-bar::before { content: '🤖 AI 推薦 — 按下方口味挑品項'; display: block; font-size: 12px; font-weight: 700; color: #b04a1a; margin-bottom: 6px; letter-spacing: .5px; }
+.recommend-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.recommend-buttons button { padding: 8px 12px; font-size: 14px; font-weight: 600; border: 2px solid #2db87a; background: #fff; color: #2db87a; border-radius: 16px; cursor: pointer; box-shadow: 0 1px 3px rgba(45,184,122,.15); transition: transform .08s, background .15s; }
+.recommend-buttons button:hover { background: #2db87a; color: white; transform: translateY(-1px); box-shadow: 0 2px 6px rgba(45,184,122,.35); }
+.recommend-buttons button:active { transform: scale(.95); }
 .recommend-buttons button.busy { background: #888; color: white; border-color: #888; pointer-events: none; }
+@media (prefers-color-scheme: dark) {
+  .recommend-bar { background: linear-gradient(180deg, #3a2e1f 0%, transparent 70%); }
+  .recommend-bar::before { color: #f0a058; }
+  .recommend-buttons button { background: #222; }
+}
 .recommend-result { margin-top: 6px; font-size: 12px; color: #333; }
 .recommend-result:empty { display: none; }
 .recommend-result .pick { display: block; padding: 4px 8px; margin: 3px 0; background: #e8f7ef; border-left: 3px solid #2db87a; border-radius: 4px; }
