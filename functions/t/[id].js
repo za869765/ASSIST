@@ -126,6 +126,23 @@ li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 3px
 .menu-card .items-list .cat-row { margin: 4px 0 6px; }
 .menu-card .items-list .cat-row > b { display: inline-block; margin-right: 6px; padding: 1px 6px; background: #2db87a; color: white; border-radius: 10px; font-size: 11px; font-weight: 600; }
 .menu-card .items-list span { display: inline-block; padding: 1px 6px; margin: 1px; background: #eef; border-radius: 10px; }
+.menu-card .items-list .item-chip { cursor: pointer; transition: background .15s; }
+.menu-card .items-list .item-chip:hover { background: #d5ead9; }
+.menu-card .items-list .item-chip .item-pick { color: #2db87a; font-weight: 700; }
+.order-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 998; display: flex; align-items: center; justify-content: center; }
+.order-modal .box { background: #fff; border-radius: 10px; padding: 16px 18px; max-width: 360px; width: 92vw; box-shadow: 0 8px 32px rgba(0,0,0,.3); }
+.order-modal h3 { margin: 0 0 10px; font-size: 15px; }
+.order-modal label { display: block; font-size: 12px; color: #555; margin: 8px 0 3px; }
+.order-modal select, .order-modal input { width: 100%; padding: 6px 8px; font-size: 13px; border: 1px solid #bbb; border-radius: 5px; box-sizing: border-box; }
+.order-modal .row-btns { margin-top: 14px; display: flex; gap: 8px; justify-content: flex-end; }
+.order-modal button { padding: 6px 14px; font-size: 13px; border-radius: 6px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+.order-modal button.primary { background: #2db87a; color: white; border-color: #2db87a; }
+.order-modal button.primary:disabled { background: #888; border-color: #888; cursor: wait; }
+@media (prefers-color-scheme: dark) {
+  .order-modal .box { background: #222; color: #eee; }
+  .order-modal select, .order-modal input { background: #333; color: #eee; border-color: #555; }
+  .order-modal button { background: #333; color: #eee; border-color: #555; }
+}
 .menu-card .items-list span b { font-weight: 700; margin-left: 2px; }
 .menu-card .items-list .price-edit { color: #2db87a; cursor: pointer; text-decoration: underline dotted; margin-left: 2px; font-variant-numeric: tabular-nums; }
 .menu-card .items-list .price-edit:hover { color: #249864; text-decoration: underline; }
@@ -331,7 +348,7 @@ async function loadMenu() {
         const cnt = orderCount.get(norm(it.name)) || 0;
         const priceLabel = it.price != null ? \`$\${it.price}\` : '—';
         const hot = cnt > 0 ? \` <b style="color:#d4543a">×\${cnt}</b>\` : '';
-        return \`<span>\${esc(it.name)} <a class="price-edit" data-name="\${esc(it.name)}" title="點擊修改價格">\${priceLabel}</a>\${hot}</span>\`;
+        return \`<span class="item-chip" data-name="\${esc(it.name)}" data-price="\${it.price ?? ''}" title="點擊下單到某一區"><b class="item-pick">\${esc(it.name)}</b> <a class="price-edit" data-name="\${esc(it.name)}" title="點擊修改價格">\${priceLabel}</a>\${hot}</span>\`;
       }).join('');
       return \`<div class="cat-row"><b>\${esc(cat)}</b>\${its}</div>\`;
     }).join('');
@@ -354,6 +371,15 @@ async function loadMenu() {
           if (!r.ok) { const j = await r.json().catch(() => ({})); alert('更新失敗：' + (j.error || r.status)); return; }
           loadMenu();
         } catch (e) { alert('錯誤：' + e.message); }
+      });
+    });
+    // 品項 chip 點擊 → 開下單 modal
+    document.querySelectorAll('.item-chip').forEach(chip => {
+      chip.addEventListener('click', (ev) => {
+        if (ev.target.closest('.price-edit')) return; // 點到價格修改區不觸發
+        const name = chip.dataset.name;
+        const price = chip.dataset.price === '' ? null : +chip.dataset.price;
+        openOrderModal(name, price);
       });
     });
     // 目前點餐熱度摘要
@@ -525,6 +551,61 @@ async function fetchRecommend(btn, dir) {
 document.querySelectorAll('.recommend-buttons button').forEach(b => {
   b.addEventListener('click', () => fetchRecommend(b, b.dataset.dir));
 });
+
+const TASK_NAME_RAW = ${JSON.stringify(task.task_name)};
+const IS_DRINK_TASK = /飲料|飲品|茶|咖啡|手搖|冷飲|熱飲|奶茶|果汁|冰沙/.test(TASK_NAME_RAW);
+const SWEET_OPTS = ['正常糖','少糖','半糖','微糖','無糖'];
+const ICE_OPTS = ['正常冰','少冰','微冰','去冰','溫','熱'];
+const LS_LAST_ZONE = 'lastZone:' + TASK_ID;
+
+function openOrderModal(itemName, price) {
+  const zones = (state.zones || []).filter(z => z.enabled !== 0);
+  if (!zones.length) { alert('沒有可選的分區'); return; }
+  const lastZone = localStorage.getItem(LS_LAST_ZONE) || '';
+  const zoneOpts = zones.map(z => {
+    const so = +z.sort_order;
+    const code = (so >= 100 && so < 1000) ? String(so).padStart(4, '0') + ' ' : '';
+    const sel = z.name === lastZone ? ' selected' : '';
+    return '<option value="' + esc(z.name) + '"' + sel + '>' + esc(code + z.name) + '</option>';
+  }).join('');
+  const drinkRow = IS_DRINK_TASK ? (
+    '<label>甜度</label><select id="omSweet">' + SWEET_OPTS.map(o => '<option>' + o + '</option>').join('') + '</select>' +
+    '<label>冰塊</label><select id="omIce">' + ICE_OPTS.map(o => '<option>' + o + '</option>').join('') + '</select>'
+  ) : '';
+  const priceStr = price != null ? ' $' + price : '';
+  const d = document.createElement('div');
+  d.className = 'order-modal';
+  d.innerHTML = '<div class="box">' +
+    '<h3>下單：<span style="color:#2db87a">' + esc(itemName) + '</span>' + esc(priceStr) + '</h3>' +
+    '<label>哪一區 / 誰</label><select id="omZone">' + zoneOpts + '</select>' +
+    drinkRow +
+    '<label>備註（選填）</label><input id="omNote" maxlength="60" placeholder="例：不要香菜">' +
+    '<div class="row-btns"><button id="omCancel">取消</button><button class="primary" id="omOk">送出</button></div>' +
+    '</div>';
+  document.body.appendChild(d);
+  const close = () => d.remove();
+  d.addEventListener('click', (e) => { if (e.target === d) close(); });
+  d.querySelector('#omCancel').addEventListener('click', close);
+  d.querySelector('#omOk').addEventListener('click', async () => {
+    const okBtn = d.querySelector('#omOk');
+    okBtn.disabled = true; okBtn.textContent = '送出中…';
+    const zone = d.querySelector('#omZone').value;
+    const sweet = IS_DRINK_TASK ? d.querySelector('#omSweet').value : null;
+    const ice = IS_DRINK_TASK ? d.querySelector('#omIce').value : null;
+    const note = d.querySelector('#omNote').value.trim() || null;
+    try {
+      const r = await fetch('/api/t/' + TASK_ID + '/quick-entry', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ zone, item: itemName, price, sweet, ice, note }),
+      });
+      const j = await r.json();
+      if (!r.ok) { alert('失敗：' + (j.error || r.status)); okBtn.disabled = false; okBtn.textContent = '送出'; return; }
+      localStorage.setItem(LS_LAST_ZONE, zone);
+      close();
+      await poll();
+    } catch (e) { alert('錯誤：' + e.message); okBtn.disabled = false; okBtn.textContent = '送出'; }
+  });
+}
 
 loadMenu();
 `}
