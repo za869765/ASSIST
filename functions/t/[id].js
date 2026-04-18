@@ -586,8 +586,9 @@ function openOrderModal(itemName, price) {
   ) : '';
   // 衛生局：從花名冊挑會員，或選「非會員」
   const memberRow = '<div id="omMemberRow" style="display:none">' +
-    '<label>是誰？（請挑會員名字，或選「非會員」）</label>' +
+    '<label>是誰？（名單內請直接點；不在名單請選「非會員」並填名字）</label>' +
     '<div class="opt-grid" id="omRosterGrid"><span style="color:#888;font-size:12px">載入花名冊中…</span></div>' +
+    '<div id="omNonMemberInput" style="display:none;margin-top:8px"><input id="omNonMemberName" maxlength="20" placeholder="請輸入非會員姓名"></div>' +
     '</div>';
   const priceStr = price != null ? ' $' + price : '';
   const d = document.createElement('div');
@@ -629,10 +630,14 @@ function openOrderModal(itemName, price) {
       rosterGrid.innerHTML = btns + '<button type="button" data-val="__non__" style="background:#fff3e0;color:#b04a1a;border-color:#f0a058">＋ 非會員（代點）</button>';
     } catch (e) { rosterGrid.innerHTML = '<span style="color:#d4543a">載入失敗</span>'; rosterLoaded = false; }
   }
+  const nonMemberInput = d.querySelector('#omNonMemberInput');
   rosterGrid.addEventListener('click', (ev) => {
     const b = ev.target.closest('button'); if (!b) return;
     rosterGrid.querySelectorAll('button').forEach(x => x.classList.remove('active'));
     b.classList.add('active');
+    const isNon = b.dataset.val === '__non__';
+    nonMemberInput.style.display = isNon ? '' : 'none';
+    if (isNon) setTimeout(() => d.querySelector('#omNonMemberName')?.focus(), 0);
   });
   const syncMemberRow = () => {
     const z = zoneSel.value || '';
@@ -656,11 +661,21 @@ function openOrderModal(itemName, price) {
     const sweet = IS_DRINK_TASK ? getOpt('sweet') : null;
     const ice = IS_DRINK_TASK ? getOpt('ice') : null;
     const note = d.querySelector('#omNote').value.trim() || null;
-    const isNonMember = /衛生局/.test(zone) && d.querySelector('#omNonMember')?.classList.contains('active');
+    let memberName = null, nonMemberName = null;
+    if (/衛生局/.test(zone)) {
+      const active = rosterGrid.querySelector('button.active');
+      if (!active) { alert('請先選「是誰」'); okBtn.disabled = false; okBtn.textContent = '送出'; return; }
+      if (active.dataset.val === '__non__') {
+        nonMemberName = (d.querySelector('#omNonMemberName')?.value || '').trim();
+        if (!nonMemberName) { alert('請填非會員姓名'); okBtn.disabled = false; okBtn.textContent = '送出'; return; }
+      } else {
+        memberName = active.dataset.val;
+      }
+    }
     try {
       const r = await fetch('/api/t/' + TASK_ID + '/quick-entry', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ zone, item: itemName, price, sweet, ice, note, nonMember: isNonMember }),
+        body: JSON.stringify({ zone, item: itemName, price, sweet, ice, note, memberName, nonMemberName }),
       });
       const j = await r.json();
       if (!r.ok) { alert('失敗：' + (j.error || r.status)); okBtn.disabled = false; okBtn.textContent = '送出'; return; }

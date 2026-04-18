@@ -21,7 +21,8 @@ export async function onRequestPost({ env, params, request }) {
   const price = body.price == null || body.price === '' ? null : +body.price;
   const sweet = body.sweet == null ? null : String(body.sweet).slice(0, 10);
   const ice = body.ice == null ? null : String(body.ice).slice(0, 10);
-  const nonMember = !!body.nonMember;
+  const memberName = (body.memberName == null ? '' : String(body.memberName)).trim().slice(0, 20) || null;
+  const nonMemberName = (body.nonMemberName == null ? '' : String(body.nonMemberName)).trim().slice(0, 20) || null;
   if (price != null && (isNaN(price) || price < 0 || price > 100000)) {
     return json({ error: 'bad price' }, 400);
   }
@@ -38,6 +39,10 @@ export async function onRequestPost({ env, params, request }) {
   if (!zrow) return json({ error: 'zone 未啟用或不存在' }, 400);
   // capacity = 0 → 該區不限人數（例：檢驗中心/衛生局），每次都開新紀錄
   const unlimited = +zrow.capacity === 0;
+  // 衛生局：一定要挑會員 或 非會員姓名
+  if (/衛生局/.test(zone) && !memberName && !nonMemberName) {
+    return json({ error: '衛生局需指定 會員 或 非會員姓名' }, 400);
+  }
 
   // 菜單模式：item 必須在菜單上（防止前端亂送）
   if (task.menu_json) {
@@ -47,25 +52,37 @@ export async function onRequestPost({ env, params, request }) {
     if (!hit) return json({ error: '品項不在菜單上' }, 400);
   }
 
-  const userId = unlimited
-    ? `web:${taskId}:${zone}:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-    : `web:${taskId}:${zone}`;
+  // 身份辨識 + 顯示名
+  const isNon = !!nonMemberName;
+  const displayName = memberName || nonMemberName || zone;
+  // 衛生局會員用姓名當 key（避免同一會員代點成多筆），非會員每筆獨立
+  const userId = /衛生局/.test(zone)
+    ? (memberName
+        ? `web:${taskId}:${zone}:m:${memberName}`
+        : `web:${taskId}:${zone}:n:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`)
+    : (unlimited
+        ? `web:${taskId}:${zone}:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+        : `web:${taskId}:${zone}`);
+  const memberLabel = /衛生局/.test(zone)
+    ? (memberName ? `🌐 ${memberName}` : `🌐 ${nonMemberName}（非會員）`)
+    : `🌐 ${zone}`;
   await env.DB.prepare(
     `INSERT INTO members (user_id, real_name, zone, last_seen_at)
      VALUES (?, ?, ?, datetime('now'))
      ON CONFLICT(user_id) DO UPDATE SET zone = excluded.zone, real_name = excluded.real_name, last_seen_at = datetime('now')`
-  ).bind(userId, `🌐 ${zone}`, zone).run();
+  ).bind(userId, memberLabel, zone).run();
 
   const data = { 品項: item };
   if (sweet) data['甜度'] = sweet;
   if (ice) data['冰塊'] = ice;
-  if (nonMember && /衛生局/.test(zone)) data['身份'] = '非會員';
+  if (memberName) data['姓名'] = memberName;
+  if (nonMemberName) { data['姓名'] = nonMemberName; data['身份'] = '非會員'; }
 
   await upsertEntry(env.DB, {
     taskId, userId,
     data,
     note, price,
-    rawText: `[web] ${zone}${nonMember ? '(非會員)' : ''} → ${item}${sweet ? '/' + sweet : ''}${ice ? '/' + ice : ''}`,
+    rawText: `[web] ${zone} ${displayName}${isNon ? '(非會員)' : ''} → ${item}${sweet ? '/' + sweet : ''}${ice ? '/' + ice : ''}`,
     additive: false,
   });
 
