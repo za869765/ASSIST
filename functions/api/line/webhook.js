@@ -556,7 +556,11 @@ async function collectEntry(env, task, userId, text, replyToken) {
   const dataKeys = new Set(Object.keys(parsed.data || {}));
   const synonyms = { '甜度': ['糖度'], '冰塊': ['冰量', '冰度'], '份量': ['大小', '飯量'] };
   const hasField = (k) => dataKeys.has(k) || (synonyms[k] || []).some(s => dataKeys.has(s));
-  const missing = (Array.isArray(parsed.missing) ? parsed.missing : []).filter(k => !hasField(k));
+  // 被動欄位黑名單：預設不主動追問（除非 AI 很堅持且 data 已有）
+  const PASSIVE_FIELDS = new Set(['份量', '飯量', '大小', '葷素', '辣度', '備註', '忌口']);
+  const missing = (Array.isArray(parsed.missing) ? parsed.missing : [])
+    .filter(k => !hasField(k))
+    .filter(k => !PASSIVE_FIELDS.has(k));
   const followUp = missing.length ? (parsed.follow_up || '') : '';
 
   const m = await env.DB.prepare(
