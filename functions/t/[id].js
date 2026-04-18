@@ -285,7 +285,7 @@ body.is-edit-price h1::after { content: '💰 編輯價格模式'; display: inli
   .recommend-bar::before { font-size: 14px; }
   /* LUXE 主題手機版 */
   body.luxe h1 { font-size: 20px; letter-spacing: 1px; }
-  .luxe-toggle { width: 42px; height: 42px; font-size: 18px; bottom: 14px; right: 14px; }
+  .luxe-toggle { width: 42px; height: 42px; font-size: 18px; bottom: 14px; left: 14px; }
   .luxe-toast { font-size: 14px; padding: .9rem 1.6rem; white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis; }
 }
 /* 低效能裝置：關粒子 */
@@ -390,15 +390,15 @@ body.luxe .admin-banner { background: rgba(232,168,200,.15); border-color: var(-
 body.luxe .del-btn { background: transparent; border-color: var(--rose); color: var(--rose); }
 body.luxe .del-btn:hover { background: var(--rose); color: var(--luxe-bg); }
 /* 主題切換按鈕（6 色） */
-.luxe-toggle { position: fixed; bottom: 20px; right: 20px; width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--gold); background: rgba(26,26,26,.85); color: var(--gold); font-size: 20px; cursor: pointer; z-index: 9999; box-shadow: 0 4px 16px rgba(0,0,0,.3); backdrop-filter: blur(4px); transition: transform .2s; }
+.luxe-toggle { position: fixed; bottom: 20px; left: 20px; width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--gold); background: rgba(26,26,26,.85); color: var(--gold); font-size: 20px; cursor: pointer; z-index: 9999; box-shadow: 0 4px 16px rgba(0,0,0,.3); backdrop-filter: blur(4px); transition: transform .2s; }
 .luxe-toggle:hover { transform: scale(1.1) rotate(15deg); }
-.theme-switcher { position: fixed; bottom: 20px; left: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+.theme-switcher { position: fixed; bottom: 80px; left: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
 .theme-switcher.hidden { display: none; }
 .theme-btn { width: 42px; height: 42px; border-radius: 50%; border: 2px solid rgba(255,255,255,.4); background: rgba(0,0,0,.5); color: #fff; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .2s; backdrop-filter: blur(6px); }
 .theme-btn:hover { transform: scale(1.15); }
 .theme-btn.active { border-color: #fff; box-shadow: 0 0 20px rgba(255,255,255,.6); transform: scale(1.1); }
 @media (max-width: 480px) {
-  .theme-switcher { bottom: 14px; left: 14px; gap: 6px; }
+  .theme-switcher { bottom: 64px; left: 14px; gap: 6px; }
   .theme-btn { width: 34px; height: 34px; font-size: 14px; }
 }
 /* 點單成功浮動 toast */
