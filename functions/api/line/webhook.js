@@ -496,13 +496,17 @@ function buildAggregateText(taskName, entries) {
 
 function normalizeVerdict(s) {
   const t = String(s).trim().toUpperCase().replace(/[\s!?！？。.]+/g, '');
-  // 加點/累加同義詞（含英文/符號）：加、加點、再加、多、多一份、再來、累加、追加、還要、+、PLUS、ADD、&、和、與
-  if (/^(\+|＋|加|加點|加上|加一|再加|再來|多加|多一|多點|多要|多來|累加|追加|一起|都要|還要|還需要|外加|併|合併|ADD|PLUS|&|AND|和|與)/.test(t)) return '加';
+  // 加點／累加（中文詞、英文詞含常見打錯字、符號）
+  if (/^(\+|＋|加|加點|加上|加一|再加|再來|多加|多一|多點|多要|多來|累加|追加|一起|都要|還要|還需要|外加|併|合併|和|與)/.test(t)) return '加';
   if (/(再一(份|杯|個|碗|份兒))/.test(t)) return '加';
   if (/(多(一|兩|三)?(份|杯|個|碗))/.test(t)) return '加';
-  // 改單/覆蓋的同義詞：改、更改、改成、改為、換、換成、重新、修改、取代、覆蓋
-  if (/^(改|更改|改成|改為|改了|修改|換|換成|換為|重新|重點|取代|替換|覆蓋|不要剛剛|不要上面|以新|新的|以新為主|REPLACE|OVERWRITE|UPDATE|CHANGE|MODIFY|EDIT)/.test(t)) return '改';
+  // 英文：ADD / PLUS / AND / EXTRA / MORE / APPEND / ACCUM（含常見打錯字，只比對前幾碼）
+  if (/^(AD+|PLU?S+|ANDD?|EXT|MOR|APP|ACCU?|APND|INCR)/.test(t)) return '加';
+  // 改單／覆蓋
+  if (/^(改|更改|改成|改為|改了|修改|換|換成|換為|重新|重點|取代|替換|覆蓋|不要剛剛|不要上面|以新|新的|以新為主)/.test(t)) return '改';
   if (/(取消前面|取消上面|取消剛剛|取消之前)/.test(t)) return '改';
+  // 英文：REPLACE / CHANGE / MODIFY / EDIT / OVERWRITE / UPDATE（打錯字容錯）
+  if (/^(REPL?|CHAN?G?|CHN?G?|MODI?|EDI?T?|OVER?W?|UPDT?|UPD|RWRT|CORR?)/.test(t)) return '改';
   if (/^(收|OK|可以|好|照記|照寫|記下|記|收下|就這樣|照舊)/.test(t)) return '收';
   if (/^(問|再問|重問|再一次|重來|AGAIN|RETRY|問他|問一下|叫他|叫他講|請他)/.test(t)) return '問';
   if (/^(略|略過|跳過|跳|忽略|算了|不要|不用管|不管|別管|別理|不理)/.test(t)) return '略';
