@@ -13,16 +13,12 @@ export async function onRequestGet({ params, request, env }) {
   }
   if (!task) return new Response('Not found', { status: 404 });
 
-  // 結單後：需要 ?k=<view_token> 才可檢視
+  // 結單後：一律關閉公開看板
   if (task.status === 'closed') {
-    const url = new URL(request.url);
-    const k = url.searchParams.get('k') || '';
-    if (!task.view_token || k !== task.view_token) {
-      return new Response(
-        '<!DOCTYPE html><meta charset="utf-8"><title>已結單</title><style>body{font-family:-apple-system,"PingFang TC",sans-serif;max-width:480px;margin:80px auto;padding:16px;text-align:center;color:#666}</style><h2>🔒 此任務已結單</h2><p>僅管理員可檢視結果，請向管理員索取私人連結。</p>',
-        { status: 403, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
-      );
-    }
+    return new Response(
+      '<!DOCTYPE html><meta charset="utf-8"><title>已結單</title><style>body{font-family:-apple-system,"PingFang TC",sans-serif;max-width:480px;margin:80px auto;padding:16px;text-align:center;color:#666}</style><h2>🔒 此任務已結單</h2><p>看板已停止公開，請洽管理員索取結果檔案。</p>',
+      { status: 403, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+    );
   }
 
   const entries = await env.DB.prepare(

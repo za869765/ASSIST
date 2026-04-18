@@ -172,20 +172,8 @@ async function handleEvent(ev, env) {
     const entries = await listEntries(env.DB, picked.id);
     await closeTask(env.DB, picked.id);
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-      { type: 'text', text: `✅ 任務「${picked.task_name}」已結單（共 ${entries.length} 筆）\n\n${summarizeEntries(entries)}\n\n看板已改為僅限管理員檢視，已將私人連結傳給管理員。` },
+      { type: 'text', text: `✅ 任務「${picked.task_name}」已結單（共 ${entries.length} 筆）\n\n${summarizeEntries(entries)}\n\n（看板已關閉公開，檔案整理中）` },
     ]);
-    // 把 tokenized URL 私推給每位管理員
-    const tokRow = await env.DB.prepare(`SELECT view_token, url_slug FROM tasks WHERE id = ?`).bind(picked.id).first();
-    const base = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
-    const privateUrl = `${base}/t/${tokRow?.url_slug || picked.id}?k=${tokRow?.view_token || ''}`;
-    const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
-    for (const aid of adminIds) {
-      try {
-        await linePush(env.LINE_CHANNEL_ACCESS_TOKEN, aid, [{
-          type: 'text', text: `🔒 「${picked.task_name}」結單後私人看板：\n${privateUrl}`,
-        }]);
-      } catch (e) { console.error('[push admin]', e); }
-    }
     return;
   }
 
