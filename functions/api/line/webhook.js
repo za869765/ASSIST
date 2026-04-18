@@ -572,12 +572,16 @@ async function collectEntry(env, task, userId, text, replyToken) {
     // 訊息含明確改/換字眼 → 直接改（不用兩階段）
     const hasReplaceWord = /(^|[\s，,。、])?(改|換|更改|改成|改為|換成|換為|修改|取代|替換)/.test(text);
     const hasAddWord = /(^|[\s，,。、])(加|加點|加上|再加|再來|多加|多點|還要|外加|追加|併|合併)/.test(text);
+    const taskIsBentoLike = /便當|飯|自助餐|餐盒/.test(task.task_name || '');
     if (hasReplaceWord && !hasAddWord) {
       additive = false; // 直接改
     } else if (hasAddWord && !hasReplaceWord) {
       additive = true;
+    } else if (taskIsBentoLike) {
+      // 便當類預設改單（便當很少加點），跳過反問
+      additive = false;
     } else if (intent === 'add' && conf >= 80) {
-      additive = true; // 明確加點字眼才自動累加
+      additive = true;
     } else {
       // 其他一律反問當事人是改還是加，避免把舊的吃掉
       await askAddOrReplace(env, task, userId, text, parsed, oldData, replyToken);
@@ -619,7 +623,8 @@ async function collectEntry(env, task, userId, text, replyToken) {
   const name = (m?.real_name || m?.line_display || userId.slice(0, 6));
 
   // 是否明確改/換字眼 → 肯定句收尾
-  const explicitReplace = /(^|[\s，,。、])?(改|換|更改|改成|改為|換成|換為|修改|取代|替換)/.test(text);
+  const isBentoTask = /便當|飯|自助餐|餐盒/.test(task.task_name || '');
+  const explicitReplace = /(^|[\s，,。、])?(改|換|更改|改成|改為|換成|換為|修改|取代|替換)/.test(text) || (isBentoTask && existing && !additive);
   const explicitAdd = /(^|[\s，,。、])?(加|加點|加上|再加|再來|多加|多點|還要|外加|追加)/.test(text);
   // 品項能代表葷素時，就省略「葷素」欄位避免重複
   const dataForShow = { ...parsed.data };
