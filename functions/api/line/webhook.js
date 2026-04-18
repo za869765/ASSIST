@@ -268,7 +268,7 @@ async function collectEntry(env, task, userId, text, replyToken) {
         text: `${adminTag}${who} 已經反應兩次「不對」了，目前紀錄是「${oldItem}」，麻煩您協助問一下實際要點什麼，謝謝 🙏`,
       }]);
     } else {
-      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `${who} 不好意思～麻煩再講一次完整的訂單內容，謝謝您 🙏` }]);
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `${who} 麻煩您再說清楚一點，謝謝您 🙏` }]);
     }
     return;
   }
