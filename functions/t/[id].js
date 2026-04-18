@@ -589,7 +589,8 @@ function openOrderModal(itemName, price) {
     '<label>是誰？（名單內請直接點；不在名單請選「非會員」並填名字）</label>' +
     '<div class="opt-grid" id="omRosterGrid"><span style="color:#888;font-size:12px">載入花名冊中…</span></div>' +
     '<div id="omNonMemberInput" style="display:none;margin-top:8px"><input id="omNonMemberName" maxlength="20" placeholder="請輸入非會員姓名"></div>' +
-    '</div>';
+    '</div>' +
+    '<div id="omZoneMemberHint" style="display:none;margin-top:6px;font-size:12px;color:#2db87a"></div>';
   const priceStr = price != null ? ' $' + price : '';
   const d = document.createElement('div');
   d.className = 'order-modal';
@@ -614,21 +615,26 @@ function openOrderModal(itemName, price) {
   });
   // 依區動態顯示/隱藏 會員挑選
   const memberRowEl = d.querySelector('#omMemberRow');
+  const hintEl = d.querySelector('#omZoneMemberHint');
   const zoneSel = d.querySelector('#omZone');
   const rosterGrid = d.querySelector('#omRosterGrid');
-  let rosterLoaded = false;
-  async function loadRoster() {
-    if (rosterLoaded) return; rosterLoaded = true;
-    try {
-      const r = await fetch('/api/roster?zone=衛生局');
-      const j = await r.json();
-      const list = j.list || [];
-      const btns = list.map(m => {
-        const label = esc(m.real_name) + (m.title ? ' <small style="opacity:.7">' + esc(m.title) + '</small>' : '');
-        return '<button type="button" data-val="' + esc(m.real_name) + '" data-title="' + esc(m.title || '') + '">' + label + '</button>';
-      }).join('');
-      rosterGrid.innerHTML = btns + '<button type="button" data-val="__non__" style="background:#fff3e0;color:#b04a1a;border-color:#f0a058">＋ 非會員（代點）</button>';
-    } catch (e) { rosterGrid.innerHTML = '<span style="color:#d4543a">載入失敗</span>'; rosterLoaded = false; }
+  let rosterAll = null; // 全部花名冊（一次載入）
+  let rosterGridRendered = false;
+  async function ensureRosterLoaded() {
+    if (rosterAll) return rosterAll;
+    const r = await fetch('/api/roster');
+    const j = await r.json();
+    rosterAll = j.list || [];
+    return rosterAll;
+  }
+  function renderHealthBureauGrid() {
+    if (rosterGridRendered) return; rosterGridRendered = true;
+    const list = (rosterAll || []).filter(m => m.zone === '衛生局');
+    const btns = list.map(m => {
+      const label = esc(m.real_name) + (m.title ? ' <small style="opacity:.7">' + esc(m.title) + '</small>' : '');
+      return '<button type="button" data-val="' + esc(m.real_name) + '" data-title="' + esc(m.title || '') + '">' + label + '</button>';
+    }).join('');
+    rosterGrid.innerHTML = btns + '<button type="button" data-val="__non__" style="background:#fff3e0;color:#b04a1a;border-color:#f0a058">＋ 非會員（代點）</button>';
   }
   const nonMemberInput = d.querySelector('#omNonMemberInput');
   rosterGrid.addEventListener('click', (ev) => {
@@ -639,11 +645,23 @@ function openOrderModal(itemName, price) {
     nonMemberInput.style.display = isNon ? '' : 'none';
     if (isNon) setTimeout(() => d.querySelector('#omNonMemberName')?.focus(), 0);
   });
-  const syncMemberRow = () => {
+  const syncMemberRow = async () => {
     const z = zoneSel.value || '';
-    const show = /衛生局/.test(z);
-    memberRowEl.style.display = show ? '' : 'none';
-    if (show) loadRoster();
+    const isHB = /衛生局/.test(z);
+    memberRowEl.style.display = isHB ? '' : 'none';
+    hintEl.style.display = 'none'; hintEl.textContent = '';
+    try {
+      await ensureRosterLoaded();
+    } catch { rosterGrid.innerHTML = '<span style="color:#d4543a">花名冊載入失敗</span>'; return; }
+    if (isHB) {
+      renderHealthBureauGrid();
+    } else {
+      const hit = (rosterAll || []).find(m => m.zone === z);
+      if (hit) {
+        hintEl.textContent = '這筆會記給：' + hit.real_name + (hit.title ? '（' + hit.title + '）' : '');
+        hintEl.style.display = '';
+      }
+    }
   };
   zoneSel.addEventListener('change', syncMemberRow);
   syncMemberRow();

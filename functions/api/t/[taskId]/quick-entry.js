@@ -43,6 +43,16 @@ export async function onRequestPost({ env, params, request }) {
   if (/衛生局/.test(zone) && !memberName && !nonMemberName) {
     return json({ error: '衛生局需指定 會員 或 非會員姓名' }, 400);
   }
+  // 非衛生局區：若沒傳名字，自動從花名冊補上該區的人
+  let autoName = null;
+  if (!/衛生局/.test(zone) && !memberName && !nonMemberName) {
+    try {
+      const hit = await env.DB.prepare(
+        `SELECT real_name FROM roster WHERE zone = ? LIMIT 1`
+      ).bind(zone).first();
+      if (hit?.real_name) autoName = hit.real_name;
+    } catch {}
+  }
 
   // 菜單模式：item 必須在菜單上（防止前端亂送）
   if (task.menu_json) {
@@ -65,7 +75,7 @@ export async function onRequestPost({ env, params, request }) {
         : `web:${taskId}:${zone}`);
   const memberLabel = /衛生局/.test(zone)
     ? (memberName ? `🌐 ${memberName}` : `🌐 ${nonMemberName}（非會員）`)
-    : `🌐 ${zone}`;
+    : (autoName ? `🌐 ${autoName}` : `🌐 ${zone}`);
   await env.DB.prepare(
     `INSERT INTO members (user_id, real_name, zone, last_seen_at)
      VALUES (?, ?, ?, datetime('now'))
@@ -77,6 +87,7 @@ export async function onRequestPost({ env, params, request }) {
   if (ice) data['冰塊'] = ice;
   if (memberName) data['姓名'] = memberName;
   if (nonMemberName) { data['姓名'] = nonMemberName; data['身份'] = '非會員'; }
+  if (!data['姓名'] && autoName) data['姓名'] = autoName;
 
   await upsertEntry(env.DB, {
     taskId, userId,
