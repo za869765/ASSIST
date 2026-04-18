@@ -136,11 +136,21 @@ async function handleEvent(ev, env) {
           if (prefix.startsWith(z.name)) { prefix = prefix.slice(z.name.length).trim(); break; }
         }
         if (prefix) {
-          const person = await env.DB.prepare(
-            `SELECT user_id, real_name, line_display, zone FROM members
-             WHERE user_id NOT LIKE 'zone:%' AND (real_name = ? OR line_display = ?)
-             ORDER BY last_seen_at DESC LIMIT 1`
-          ).bind(prefix, prefix).first();
+          // 名字比對：去掉 emoji/空白/標點後再比（處理「🌲 倖妤」這類含圖案的名字）
+          const normName = (s) => String(s || '')
+            .replace(/[\p{Extended_Pictographic}\p{Emoji_Presentation}\uFE0F\u200D]/gu, '')
+            .replace(/[\s·・\.、,，!！?？]+/g, '')
+            .trim();
+          const pfx = normName(prefix);
+          const allMembers = await env.DB.prepare(
+            `SELECT user_id, real_name, line_display, zone, last_seen_at FROM members
+             WHERE user_id NOT LIKE 'zone:%'
+             ORDER BY last_seen_at DESC`
+          ).all();
+          let person = null;
+          for (const r of (allMembers.results || [])) {
+            if (normName(r.real_name) === pfx || normName(r.line_display) === pfx) { person = r; break; }
+          }
           // 本人自報請假：允許非 admin
           const isSelf = person?.user_id === userId;
           if (person && (admin || isSelf)) {
@@ -1199,23 +1209,33 @@ async function tryProxyPerson(env, userId, text) {
   const rows = await env.DB.prepare(
     `SELECT user_id, real_name, line_display FROM members WHERE user_id NOT LIKE 'zone:%'`
   ).all();
+  const normName = (s) => String(s || '')
+    .replace(/[\p{Extended_Pictographic}\p{Emoji_Presentation}\uFE0F\u200D]/gu, '')
+    .replace(/[\s·・\.、,，!！?？]+/g, '')
+    .trim();
   const candidates = [];
   for (const r of (rows.results || [])) {
-    if (r.real_name) candidates.push({ name: r.real_name, uid: r.user_id });
-    if (r.line_display && r.line_display !== r.real_name) candidates.push({ name: r.line_display, uid: r.user_id });
+    const rn = normName(r.real_name);
+    const ld = normName(r.line_display);
+    if (rn) candidates.push({ name: rn, uid: r.user_id });
+    if (ld && ld !== rn) candidates.push({ name: ld, uid: r.user_id });
   }
   // 長名字優先
   candidates.sort((a, b) => b.name.length - a.name.length);
+  const normText = normName(trimmed);
   for (const c of candidates) {
     if (c.name.length < 2) continue;
-    // 只認「名字在最前面」的情況，且名字後面是空白/標點/+/數字/葷/素
-    const re = new RegExp('^' + c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\\s:：,，、\\-+＋]*(.*)$');
-    const m = trimmed.match(re);
-    if (!m) continue;
-    const after = (m[1] || '').trim();
-    if (after.length > 30) continue;
-    // 自己打自己名字不算代點
     if (c.uid === userId) continue;
+    if (!normText.startsWith(c.name)) continue;
+    // 找 normText 去掉 c.name 之後，反推回原 trimmed 的相對位置
+    // 簡化：原文裡剝掉任何等同 c.name 的前綴（允許前後插入 emoji/空白）
+    const re = new RegExp('^[\\s\\p{Extended_Pictographic}\\p{Emoji_Presentation}\\uFE0F\\u200D]*' +
+      c.name.split('').map(ch => ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('[\\s\\p{Extended_Pictographic}\\p{Emoji_Presentation}\\uFE0F\\u200D]*') +
+      '[\\s:：,，、\\-+＋]*(.*)$', 'u');
+    const m = trimmed.match(re);
+    const after = (m?.[1] || '').trim();
+    if (after.length > 30) continue;
     return { userId: c.uid, text: after || '+1' };
   }
   return null;
