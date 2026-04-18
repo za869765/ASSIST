@@ -333,13 +333,35 @@ async function collectEntry(env, task, userId, text, replyToken) {
     await handleNonsense(env, task, userId, text, replyToken, parsed.follow_up, !!existing);
     return;
   }
-  // 取消訂單（只想刪舊、沒點新的）
+  // 取消訂單（全部或指定某項）
   if (parsed?.cancel && existing) {
-    await env.DB.prepare(`DELETE FROM entries WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
-    await env.DB.prepare(`DELETE FROM pending_dups WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
-    const oldItem = Object.values(JSON.parse(existing.data_json || '{}')).filter(Boolean).join('/') || '(未辨識)';
     const m = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
     const who = m?.real_name || m?.line_display || userId.slice(0, 6);
+    const existingData = JSON.parse(existing.data_json || '{}');
+    const itemStr = existingData['品項'] || '';
+    const items = itemStr.split(/\s*\+\s*/).filter(Boolean);
+    const target = (parsed.cancel_target || '').trim();
+
+    // 指定取消某項 且 有多項 → 只刪該項
+    if (target && items.length > 1) {
+      const norm = (s) => String(s).replace(/\s+/g, '').toLowerCase();
+      const remaining = items.filter(it => !norm(it).includes(norm(target)) && !norm(target).includes(norm(it)));
+      if (remaining.length && remaining.length < items.length) {
+        const newData = { ...existingData, '品項': remaining.join(' + ') };
+        await env.DB.prepare(
+          `UPDATE entries SET data_json = ?, price = NULL, updated_at = datetime('now') WHERE task_id = ? AND user_id = ?`
+        ).bind(JSON.stringify(newData), task.id, userId).run();
+        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+          type: 'text', text: `🗑️ 已取消 ${who} 的「${items.filter(it => !remaining.includes(it)).join('、')}」，剩餘「${remaining.join(' + ')}」，是這樣嗎？`,
+        }]);
+        return;
+      }
+    }
+
+    // 全部取消（或找不到目標/只剩一項）
+    await env.DB.prepare(`DELETE FROM entries WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
+    await env.DB.prepare(`DELETE FROM pending_dups WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
+    const oldItem = Object.values(existingData).filter(Boolean).join('/') || '(未辨識)';
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `🗑️ 已取消 ${who} 的「${oldItem}」，是這樣嗎？` }]);
     return;
   }
