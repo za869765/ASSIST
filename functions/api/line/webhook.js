@@ -287,6 +287,12 @@ async function collectEntry(env, task, userId, text, replyToken) {
     return;
   }
 
+  // 硬規則：明顯污穢/體液/性暗示字眼直接 @ 管理員，不進 Gemini
+  if (isProfane(text)) {
+    await handleProfanity(env, task, userId, text, replyToken);
+    return;
+  }
+
   // 撈「品項不適用欄位」知識庫當 Gemini 提示
   const noFieldsRows = await env.DB.prepare(`SELECT item, field FROM item_no_fields`).all();
   const itemNoFields = {};
@@ -740,6 +746,16 @@ async function handleDupPending(env, task, userId, text, parsed, replyToken) {
   const adminTag = adminNames.length ? adminNames.map(n => `@${n}`).join(' ') + ' ' : '';
   const reply = `${adminTag}打擾一下～${who} 原本點的是「${oldItem}」，剛剛又提到「${newItem}」，麻煩您裁示一下是要「加點」還是「改單」呢？謝謝 🙏`;
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
+}
+
+// 硬規則污穢字偵測：體液/排泄物/性器官/中文粗話等
+const PROFANITY_RE = /(尿液|尿尿|屎|大便|糞|屁股|精液|嘔吐|鼻屎|痰|月經|經血|陰道|陰莖|雞雞|屌|幹你|幹他|操你|肏|去死|靠北|靠腰|幹話|白癡|智障|低能|f[u\*]ck|shit|bitch|dick|pussy|asshole)/i;
+function isProfane(text) {
+  const s = String(text || '').trim();
+  if (!s) return false;
+  // 單字「尿」「屎」「糞」等單獨出現也算
+  if (/^(尿|屎|糞|屁|痰)$/.test(s)) return true;
+  return PROFANITY_RE.test(s);
 }
 
 async function handleProfanity(env, task, userId, text, replyToken) {
