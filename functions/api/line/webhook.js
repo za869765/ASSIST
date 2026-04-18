@@ -1840,6 +1840,52 @@ async function upsertMemberSighting(DB, userId, groupId, token) {
          line_avatar  = COALESCE(excluded.line_avatar, line_avatar),
          last_seen_at = datetime('now')`
     ).bind(userId, display, avatar).run();
+    // 自動比對 roster：若 LINE 顯示名能唯一對上 roster 的 real_name → 綁定 + 補 zone
+    if (display) {
+      const existing = await DB.prepare(
+        `SELECT real_name, zone FROM members WHERE user_id = ?`
+      ).bind(userId).first();
+      const alreadyBound = !!(existing?.real_name && existing?.zone);
+      if (!alreadyBound) {
+        // 模糊比對：去 emoji / 括號註解 / 分隔符、只保留中文字
+        const stripNoise = (s) => String(s || '')
+          .replace(/[\p{Extended_Pictographic}\p{Emoji_Component}]/gu, '')
+          .replace(/[（(【\[].*?[）)】\]]/g, '')
+          .replace(/[|｜·・/／\-_~!@#$%^&*+=?.,:;<>'"`{}]/g, '')
+          .replace(/\s+/g, '');
+        const cjkOnly = (s) => (String(s || '').match(/[\u4e00-\u9fff]+/g) || []).join('');
+        const dispStrip = stripNoise(display);
+        const dispCJK = cjkOnly(display);
+        if (dispStrip || dispCJK) {
+          const rosterRows = await DB.prepare(
+            `SELECT id, real_name, zone FROM roster WHERE user_id IS NULL`
+          ).all();
+          const rows = rosterRows.results || [];
+          const matches = rows.filter(r => {
+            const rn = stripNoise(r.real_name);
+            if (!rn) return false;
+            // 三層比對：完整名、名字出現在顯示名中、去括號後含名
+            if (rn === dispStrip) return true;
+            if (dispStrip && dispStrip.includes(rn)) return true;
+            if (dispCJK && dispCJK.includes(rn)) return true;
+            // 反向：顯示名只有 2 字，roster 名字 3 字（"兆鑫" match "鄭兆鑫" 後兩字）
+            if (rn.length >= 3 && dispStrip.length >= 2 && rn.slice(-dispStrip.length) === dispStrip) return true;
+            if (rn.length >= 3 && dispCJK.length >= 2 && rn.slice(-dispCJK.length) === dispCJK) return true;
+            return false;
+          });
+          if (matches.length === 1) {
+            const m = matches[0];
+            await DB.prepare(
+              `UPDATE roster SET user_id = ?, bound_at = datetime('now') WHERE id = ?`
+            ).bind(userId, m.id).run();
+            await DB.prepare(
+              `UPDATE members SET real_name = ?, zone = ? WHERE user_id = ?`
+            ).bind(m.real_name, m.zone, userId).run();
+            console.log('[roster auto-bind]', userId, '→', m.real_name, m.zone);
+          }
+        }
+      }
+    }
   } catch (e) {
     console.error('[upsert member] fail:', e);
   }
