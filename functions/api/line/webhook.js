@@ -204,13 +204,18 @@ async function collectEntry(env, task, userId, text, replyToken) {
     rawText: text,
   });
 
-  const parts = Object.values(parsed.data).filter(Boolean).join(' / ');
+  const parts = Object.values(parsed.data).filter(Boolean).join('/');
   const price = parsed.price ? ` $${parsed.price}` : '';
   const note = parsed.note ? `（${parsed.note}）` : '';
   const missing = Array.isArray(parsed.missing) ? parsed.missing : [];
   const followUp = parsed.follow_up || '';
 
-  let reply = `✓ 已記錄到「${task.task_name}」：${parts}${price}${note}`;
+  const m = await env.DB.prepare(
+    `SELECT real_name, line_display FROM members WHERE user_id = ?`
+  ).bind(userId).first();
+  const name = (m?.real_name || m?.line_display || userId.slice(0, 6));
+
+  let reply = `${name} ${parts}${price}${note}`;
   if (missing.length && followUp) {
     reply += `\n${followUp}`;
   }
