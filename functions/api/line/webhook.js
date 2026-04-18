@@ -508,6 +508,16 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
     await handleProfanity(env, task, userId, text, replyToken);
     return;
   }
+  // 防呆：Gemini 偶爾把 value 回成物件 → 壓成字串，避免顯示 [object Object]
+  if (parsed?.data && typeof parsed.data === 'object') {
+    for (const k of Object.keys(parsed.data)) {
+      const v = parsed.data[k];
+      if (v && typeof v === 'object') {
+        const flat = Object.values(v).filter(x => x != null && x !== '').map(String).join('/');
+        parsed.data[k] = flat || '';
+      }
+    }
+  }
   // 便當類 + 只給葷/素 → 自動補全品項（比照 +1 行為）
   if (parsed?.data) {
     const taskIsBento = /便當|飯|自助餐|餐盒/.test(task.task_name || '');

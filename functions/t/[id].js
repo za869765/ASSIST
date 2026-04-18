@@ -128,7 +128,12 @@ let state = INITIAL;
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 function entryBody(e) {
-  const parts = Object.values(e.data || {}).filter(Boolean).join(' / ');
+  const flat = (v) => {
+    if (v == null || v === '') return '';
+    if (typeof v === 'object') return Object.values(v).map(flat).filter(Boolean).join('/');
+    return String(v);
+  };
+  const parts = Object.values(e.data || {}).map(flat).filter(Boolean).join(' / ');
   if (parts) return parts;
   if (e.note === '請假' || e.note === '不吃') return e.note;
   return '(未辨識)';

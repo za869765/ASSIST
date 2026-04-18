@@ -99,6 +99,33 @@ export async function geminiClassifyTask(apiKey, taskNames, text) {
   try { return JSON.parse(txt); } catch { return { task_name: null, confidence: 'low' }; }
 }
 
+// 把一則訊息拆成多個任務的片段（例：「雞腿便當 檸檬綠」→ 便當:雞腿便當, 飲料:檸檬綠）
+export async function geminiSplitTasks(apiKey, taskNames, text) {
+  if (!apiKey || !taskNames?.length) return [];
+  const sys = `同一群組目前有多個進行中的統計任務：${JSON.stringify(taskNames)}。
+把使用者訊息切成屬於各任務的片段，只保留真正屬於該任務的內容。
+如果訊息只屬於一個任務，回傳一個元素即可。
+如果完全看不出任務歸屬，回傳空陣列。
+回傳格式（嚴格 JSON）：{"segments":[{"task_name":"...","text":"..."}]}
+task_name 必須是 ${JSON.stringify(taskNames)} 其中之一。`;
+  const r = await fetch(`${ENDPOINT}?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text }] }],
+      systemInstruction: { parts: [{ text: sys }] },
+      generationConfig: { temperature: 0.1, maxOutputTokens: 256, responseMimeType: 'application/json' },
+    }),
+  });
+  if (!r.ok) return [];
+  const j = await r.json();
+  const txt = j?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
+  try {
+    const obj = JSON.parse(txt);
+    return Array.isArray(obj.segments) ? obj.segments : [];
+  } catch { return []; }
+}
+
 // 任務模式下，從使用者訊息抽出結構化欄位
 // taskName 為任務主題（例：「飲料」「便當」「晚餐」）
 // 回傳 { data: { 品項, 甜度, 冰塊, ... }, note, price, confidence }
