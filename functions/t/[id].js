@@ -584,9 +584,11 @@ function openOrderModal(itemName, price) {
     '<label>甜度</label>' + optBtns('sweet', SWEET_OPTS, 0) +
     '<label>冰塊</label>' + optBtns('ice', ICE_OPTS, 0)
   ) : '';
-  // 衛生局：預設會員，只有非會員需要勾選
-  const memberRow = '<div id="omMemberRow" style="display:none"><label>身份（預設會員，非會員請勾）</label>' +
-    '<div class="opt-grid"><button type="button" id="omNonMember">勾選：非會員</button></div></div>';
+  // 衛生局：從花名冊挑會員，或選「非會員」
+  const memberRow = '<div id="omMemberRow" style="display:none">' +
+    '<label>是誰？（請挑會員名字，或選「非會員」）</label>' +
+    '<div class="opt-grid" id="omRosterGrid"><span style="color:#888;font-size:12px">載入花名冊中…</span></div>' +
+    '</div>';
   const priceStr = price != null ? ' $' + price : '';
   const d = document.createElement('div');
   d.className = 'order-modal';
@@ -609,20 +611,34 @@ function openOrderModal(itemName, price) {
       b.classList.add('active');
     });
   });
-  // 非會員 toggle（單鈕切換）
-  const nonMemberBtn = d.querySelector('#omNonMember');
-  if (nonMemberBtn) {
-    nonMemberBtn.addEventListener('click', () => {
-      nonMemberBtn.classList.toggle('active');
-      nonMemberBtn.textContent = nonMemberBtn.classList.contains('active') ? '✓ 非會員' : '勾選：非會員';
-    });
-  }
-  // 依區動態顯示/隱藏 會員勾選
+  // 依區動態顯示/隱藏 會員挑選
   const memberRowEl = d.querySelector('#omMemberRow');
   const zoneSel = d.querySelector('#omZone');
+  const rosterGrid = d.querySelector('#omRosterGrid');
+  let rosterLoaded = false;
+  async function loadRoster() {
+    if (rosterLoaded) return; rosterLoaded = true;
+    try {
+      const r = await fetch('/api/roster?zone=衛生局');
+      const j = await r.json();
+      const list = j.list || [];
+      const btns = list.map(m => {
+        const label = esc(m.real_name) + (m.title ? ' <small style="opacity:.7">' + esc(m.title) + '</small>' : '');
+        return '<button type="button" data-val="' + esc(m.real_name) + '" data-title="' + esc(m.title || '') + '">' + label + '</button>';
+      }).join('');
+      rosterGrid.innerHTML = btns + '<button type="button" data-val="__non__" style="background:#fff3e0;color:#b04a1a;border-color:#f0a058">＋ 非會員（代點）</button>';
+    } catch (e) { rosterGrid.innerHTML = '<span style="color:#d4543a">載入失敗</span>'; rosterLoaded = false; }
+  }
+  rosterGrid.addEventListener('click', (ev) => {
+    const b = ev.target.closest('button'); if (!b) return;
+    rosterGrid.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+  });
   const syncMemberRow = () => {
     const z = zoneSel.value || '';
-    memberRowEl.style.display = /衛生局/.test(z) ? '' : 'none';
+    const show = /衛生局/.test(z);
+    memberRowEl.style.display = show ? '' : 'none';
+    if (show) loadRoster();
   };
   zoneSel.addEventListener('change', syncMemberRow);
   syncMemberRow();
