@@ -599,14 +599,17 @@ async function collectEntry(env, task, userId, text, replyToken) {
 
   // 是否明確改/換字眼 → 肯定句收尾
   const explicitReplace = /(^|[\s，,。、])?(改|換|更改|改成|改為|換成|換為|修改|取代|替換)/.test(text);
+  const explicitAdd = /(^|[\s，,。、])?(加|加點|加上|再加|再來|多加|多點|還要|外加|追加)/.test(text);
+  // 品項能代表葷素時，就省略「葷素」欄位避免重複
+  const dataForShow = { ...parsed.data };
+  if (dataForShow['品項'] && /葷食|素食/.test(dataForShow['品項'])) delete dataForShow['葷素'];
+  const showParts = Object.values(dataForShow).filter(Boolean).join('/');
   let reply;
-  if (existing && additive) {
-    reply = `${name} 加點 ${parts}${price}${note}，是這樣嗎？`;
+  if (existing && additive && explicitAdd) {
+    reply = `✅ 已幫 ${name} 加點 ${showParts}${price}${note}`;
+  } else if (existing && additive) {
+    reply = `${name} 加點 ${showParts}${price}${note}，是這樣嗎？`;
   } else if (existing && !additive && explicitReplace) {
-    // 品項能代表葷素時，就省略「葷素」欄位避免重複
-    const dataForShow = { ...parsed.data };
-    if (dataForShow['品項'] && /葷食|素食/.test(dataForShow['品項'])) delete dataForShow['葷素'];
-    const showParts = Object.values(dataForShow).filter(Boolean).join('/');
     reply = `✅ 已幫 ${name} 換成 ${showParts}${price}${note}`;
   } else if (existing && !additive) {
     const tail = oldItemForReport ? `（原「${oldItemForReport}」已取消）` : '';
