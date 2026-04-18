@@ -63,13 +63,21 @@ task_name 規則：
 // 回傳 { task_name: string|null, confidence: 'high'|'mid'|'low' }
 export async function geminiClassifyTask(apiKey, taskNames, text) {
   if (!apiKey || !taskNames?.length) return { task_name: null, confidence: 'low' };
-  const sys = `目前同一群組有多個進行中的統計任務：${JSON.stringify(taskNames)}。
-判斷這則訊息是屬於「哪一個」任務，或根本不屬於任何一個。
-例如任務有 ["飲料","便當"]：
-- 「紅茶拿鐵微糖少冰」→ 飲料
-- 「排骨便當 葷的」→ 便當
-- 「我要一杯珍奶 + 雞腿便當」→ 可能同時屬兩個（挑最主要的，或 low confidence）
-- 「哈哈」→ null
+  const sys = `同一群組目前有多個進行中的統計任務：${JSON.stringify(taskNames)}。
+判斷這則使用者訊息最可能屬於其中哪一個任務（即便字面上不完全一樣，也要從常識/語意推斷）。
+重點：使用者回覆任務時不會特意講任務名，你要從內容推測。
+
+舉例（假設任務有 ["飲料","便當"]）：
+- 「紅茶拿鐵微糖少冰」→ 飲料（high）
+- 「珍珠奶茶」「冬瓜檸檬」「拿鐵」「美式」→ 飲料（high）
+- 「排骨飯」「雞腿飯」「魯肉飯」「排骨便當」「雞腿便當」→ 便當（high）
+- 「我要排骨飯 + 珍奶」→ 挑最主要的，或 mid
+- 「哈哈」「好喔」「收到」→ null（low，純閒聊）
+
+規則：
+- 只要內容看得出是食物/飲料類的訂單訊息，就必須選出最接近的任務，即使用詞和任務名不完全一致
+- 只有完全無法連到任何任務（純表情、閒聊、與主題無關）才回 null
+- 回傳的 task_name 必須是 ${JSON.stringify(taskNames)} 其中之一，或 null
 
 嚴格 JSON：{"task_name":string|null,"confidence":"high"|"mid"|"low"}`;
   const r = await fetch(`${ENDPOINT}?key=${apiKey}`, {
