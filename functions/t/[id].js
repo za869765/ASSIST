@@ -129,7 +129,22 @@ li { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; padding: 3px
 .menu-card .items-list span b { font-weight: 700; margin-left: 2px; }
 .menu-summary { margin-top: 6px; padding: 6px 8px; background: #fff3e0; border-radius: 6px; font-size: 12px; color: #b04a1a; }
 .menu-summary:empty { display: none; }
-@media (prefers-color-scheme: dark) { .menu-card .items-list span { background: #333; } .menu-summary { background: #3a2e1f; color: #f0a058; } }
+.recommend-bar { margin-top: 8px; padding-top: 6px; border-top: 1px dashed #ccc6; }
+.recommend-buttons { display: flex; flex-wrap: wrap; gap: 4px; }
+.recommend-buttons button { padding: 4px 8px; font-size: 12px; border: 1px solid #2db87a; background: #fff1; color: #2db87a; border-radius: 12px; cursor: pointer; }
+.recommend-buttons button:hover { background: #2db87a; color: white; }
+.recommend-buttons button.busy { background: #888; color: white; border-color: #888; pointer-events: none; }
+.recommend-result { margin-top: 6px; font-size: 12px; color: #333; }
+.recommend-result:empty { display: none; }
+.recommend-result .pick { display: block; padding: 4px 8px; margin: 3px 0; background: #e8f7ef; border-left: 3px solid #2db87a; border-radius: 4px; }
+.recommend-result .pick b { color: #2db87a; }
+.recommend-result .note { color: #888; font-size: 11px; margin-top: 4px; }
+@media (prefers-color-scheme: dark) {
+  .menu-card .items-list span { background: #333; }
+  .menu-summary { background: #3a2e1f; color: #f0a058; }
+  .recommend-result { color: #ccc; }
+  .recommend-result .pick { background: #1f3a2a; }
+}
 .menu-lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.9); display: flex; align-items: center; justify-content: center; z-index: 999; flex-direction: column; }
 .menu-lightbox .stage { flex: 1; width: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: pan-y; }
 .menu-lightbox img { max-width: 95vw; max-height: 88vh; user-select: none; -webkit-user-drag: none; }
@@ -159,6 +174,19 @@ ${closed ? '' : `<details class="menu-card" id="menuCard">
   </div>
   <div class="items-list" id="menuItems"></div>
   <div class="menu-summary" id="menuSummary"></div>
+  <div class="recommend-bar">
+    <div class="recommend-buttons">
+      <button data-dir="light">🥗 輕食</button>
+      <button data-dir="no_beef">🚫 不吃牛</button>
+      <button data-dir="vegan">🌱 素食</button>
+      <button data-dir="staple">🍚 主食</button>
+      <button data-dir="filling">🍱 飽足</button>
+      <button data-dir="spicy">🌶 重口味</button>
+      <button data-dir="value">💰 C/P 值</button>
+      <button data-dir="healthy">💪 健康</button>
+    </div>
+    <div class="recommend-result" id="recommendResult"></div>
+  </div>
 </details>`}
 <div id="board"></div>
 
@@ -396,6 +424,29 @@ document.getElementById('menuFile').addEventListener('change', (e) => {
   const files = [...e.target.files]; e.target.value = '';
   if (files.length) uploadFiles(files);
 });
+
+async function fetchRecommend(btn, dir) {
+  const result = document.getElementById('recommendResult');
+  btn.classList.add('busy'); const orig = btn.textContent; btn.textContent = '思考中…';
+  try {
+    const r = await fetch('/api/menu/' + TASK_ID + '/recommend?dir=' + encodeURIComponent(dir));
+    const j = await r.json();
+    if (!r.ok) { result.innerHTML = '<span style="color:#d4543a">' + esc(j.error || '失敗') + '</span>'; return; }
+    const picks = (j.picks || []).map(p =>
+      '<span class="pick"><b>' + esc(p.name) + '</b>' + (p.reason ? ' — ' + esc(p.reason) : '') + '</span>'
+    ).join('');
+    const note = j.note ? '<div class="note">' + esc(j.note) + '</div>' : '';
+    result.innerHTML = '<div style="margin:4px 0;font-size:11px;color:#2db87a">' + esc(j.label || dir) + (j.cached ? ' (快取)' : '') + '</div>' + (picks || '<span style="color:#888">沒有推薦</span>') + note;
+  } catch (e) {
+    result.innerHTML = '<span style="color:#d4543a">錯誤：' + esc(e.message) + '</span>';
+  } finally {
+    btn.classList.remove('busy'); btn.textContent = orig;
+  }
+}
+document.querySelectorAll('.recommend-buttons button').forEach(b => {
+  b.addEventListener('click', () => fetchRecommend(b, b.dataset.dir));
+});
+
 loadMenu();
 `}
 </script>
