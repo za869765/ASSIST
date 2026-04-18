@@ -521,7 +521,16 @@ async function collectEntry(env, task, userId, text, replyToken) {
       }
     }
 
-    // 全部取消（或找不到目標/只剩一項）
+    // 多項但找不到取消目標 → 請使用者明示，避免誤刪全部
+    const explicitAll = /(都|全部|全|所有|整個|全都|所有的|通通|一起)(不要|取消|刪|不點|不吃|不喝)/.test(text) || /^(取消|不要|不點)(我)?(的)?$/.test(text.trim());
+    if (items.length > 1 && !explicitAll) {
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+        type: 'text', text: `@${who} 您目前有「${items.join('、')}」，請問是要取消哪一個？要全部取消請說「都不要了」`,
+      }]);
+      return;
+    }
+
+    // 全部取消
     await env.DB.prepare(`DELETE FROM entries WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
     await env.DB.prepare(`DELETE FROM pending_dups WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
     const oldItem = Object.values(existingData).filter(Boolean).join('/') || '(未辨識)';
