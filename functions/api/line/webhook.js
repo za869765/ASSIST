@@ -477,8 +477,17 @@ async function collectEntry(env, task, userId, text, replyToken) {
 
     // 指定取消某項 且 有多項 → 只刪該項
     if (target && items.length > 1) {
-      const norm = (s) => String(s).replace(/\s+/g, '').toLowerCase();
-      const remaining = items.filter(it => !norm(it).includes(norm(target)) && !norm(target).includes(norm(it)));
+      const norm = (s) => String(s).replace(/\s+/g, '').replace(/[的那個個份]+$/, '').toLowerCase();
+      const t = norm(target);
+      const matches = (it) => {
+        const n = norm(it);
+        if (!t || !n) return false;
+        if (n.includes(t) || t.includes(n)) return true;
+        // 單字關鍵詞：葷/素 → 匹配含該字的品項
+        if (t.length <= 2 && n.includes(t)) return true;
+        return false;
+      };
+      const remaining = items.filter(it => !matches(it));
       if (remaining.length && remaining.length < items.length) {
         const newData = { ...existingData, '品項': remaining.join(' + ') };
         await env.DB.prepare(
