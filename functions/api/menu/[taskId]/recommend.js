@@ -1,6 +1,7 @@
 // 菜單推薦 API：/api/menu/:taskId/recommend?dir=xxx
 // 依照不同方向（輕食、不吃牛、素食、主食、飽足感 等）用 Gemini 挑 1–3 個品項
 const DIRECTIONS = {
+  // 餐點類
   light: '女性輕食 / 少油少重口味，熱量較低',
   no_beef: '不吃牛肉（排除所有牛料理）',
   vegan: '素食（無肉無海鮮）',
@@ -9,6 +10,14 @@ const DIRECTIONS = {
   spicy: '重口味 / 辣',
   value: 'C/P 值高：便宜又划算',
   healthy: '健康取向：蒸煮、少油炸',
+  // 飲料類
+  pure_tea: '純茶（綠茶、紅茶、青茶、烏龍、四季春等，無奶無果），純粹茶香、找口感',
+  milk_tea: '奶類（奶茶、奶蓋、鮮奶、拿鐵、奶霜等含乳製品的飲品）',
+  fruit: '果味飲品（檸檬、柚、百香、葡萄、芒果、梅子等，茶或水果茶為底）',
+  coffee: '咖啡類（美式、拿鐵、咖啡拿鐵、冰咖啡、咖啡系列）',
+  light_drink: '無糖 / 低熱量 / 清爽路線：純茶或低糖選項，不要太甜',
+  signature: '店家特色 / 招牌 / 饗樂霸多 這類看起來是 signature 的品項',
+  sweet: '重甜香濃：布丁、焦糖、可可、巧克力、漂浮、奶蓋、奶霜、煉乳等甜系',
 };
 
 function json(data, status = 200) {

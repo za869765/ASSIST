@@ -178,6 +178,16 @@ ${closed ? '' : `<details class="menu-card" id="menuCard">
   <div class="menu-summary" id="menuSummary"></div>
   <div class="recommend-bar">
     <div class="recommend-buttons">
+      ${/飲料|飲品|茶|咖啡|手搖|冷飲|熱飲|奶茶|果汁|冰沙/.test(task.task_name || '') ? `
+      <button data-dir="pure_tea">🍵 純茶</button>
+      <button data-dir="milk_tea">🥛 奶類</button>
+      <button data-dir="fruit">🍋 果味</button>
+      <button data-dir="coffee">☕ 咖啡</button>
+      <button data-dir="light_drink">💧 無糖低卡</button>
+      <button data-dir="signature">⭐ 特色</button>
+      <button data-dir="value">💰 C/P 值</button>
+      <button data-dir="sweet">🍯 重甜香濃</button>
+      ` : `
       <button data-dir="light">🥗 輕食</button>
       <button data-dir="no_beef">🚫 不吃牛</button>
       <button data-dir="vegan">🌱 素食</button>
@@ -186,6 +196,7 @@ ${closed ? '' : `<details class="menu-card" id="menuCard">
       <button data-dir="spicy">🌶 重口味</button>
       <button data-dir="value">💰 C/P 值</button>
       <button data-dir="healthy">💪 健康</button>
+      `}
     </div>
     <div class="recommend-result" id="recommendResult"></div>
   </div>
