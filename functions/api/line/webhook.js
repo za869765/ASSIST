@@ -507,8 +507,7 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
   await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS pending_menu_pick (task_id INTEGER, user_id TEXT, candidates TEXT, created_at TEXT, PRIMARY KEY(task_id, user_id))`
   ).run();
-  const pickMatch = String(text || '').trim().match(/^(?:第\s*)?([1-9]\d?)(?:\s*號|\s*項)?[\s!?！？。.~～]*$/);
-  if (pickMatch) {
+  {
     const pendRow = await env.DB.prepare(
       `SELECT candidates, created_at FROM pending_menu_pick WHERE task_id = ? AND user_id = ?`
     ).bind(task.id, userId).first();
@@ -516,11 +515,26 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
       const age = Date.now() - Date.parse(String(pendRow.created_at).replace(' ', 'T') + 'Z');
       if (!isNaN(age) && age < 5 * 60_000) {
         const cands = JSON.parse(pendRow.candidates);
-        const idx = +pickMatch[1] - 1;
-        if (idx >= 0 && idx < cands.length) {
-          const chosen = cands[idx];
+        const raw = String(text || '').trim();
+        let chosen = null;
+        // A) 純數字序號：3 / 第3 / 3號
+        const pickMatch = raw.match(/^(?:第\s*)?([1-9]\d?)(?:\s*號|\s*項)?[\s!?！？。.~～]*$/);
+        if (pickMatch) {
+          const idx = +pickMatch[1] - 1;
+          if (idx >= 0 && idx < cands.length) chosen = cands[idx];
+        }
+        // B) 中文關鍵字：只要 raw 能唯一命中某候選的名稱（子字串雙向）
+        if (!chosen && raw.length >= 1) {
+          const norm = (s) => String(s || '').replace(/\s+/g, '').toLowerCase();
+          const target = norm(raw);
+          const hits = cands.filter(c => {
+            const n = norm(c.name);
+            return n && (n.includes(target) || target.includes(n));
+          });
+          if (hits.length === 1) chosen = hits[0];
+        }
+        if (chosen) {
           await env.DB.prepare(`DELETE FROM pending_menu_pick WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
-          // 模擬使用者輸入品項全名，往下走正常寫入流程
           text = chosen.name;
         }
       }
@@ -885,7 +899,19 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
   // 注意：admin 也要受限（admin 裁定應走明確流程，不是自動 bypass）
   if (Array.isArray(menuItems) && menuItems.length && parsed?.data?.品項) {
     const DEFAULT_PASSES = new Set(['葷食便當', '素食便當']);
-    const itemName = String(parsed.data.品項).trim();
+    let itemName = String(parsed.data.品項).trim();
+    // 防止 Gemini 自作主張把「牛排」這種短義詞升級成某個全名（例：菲力牛排）。
+    // 若使用者原話是個更短/更模糊的形式、而它在菜單上能對到 2+ 候選 → 以原話走 guard。
+    if (!DEFAULT_PASSES.has(itemName)) {
+      const rawTrim = String(text || '').trim();
+      if (rawTrim && rawTrim !== itemName && rawTrim.length < itemName.length) {
+        const rawCands = matchMenuCandidates(menuItems, rawTrim);
+        if (rawCands.length >= 2) {
+          itemName = rawTrim;
+          parsed.data.品項 = rawTrim;
+        }
+      }
+    }
     if (!DEFAULT_PASSES.has(itemName)) {
       const cands = matchMenuCandidates(menuItems, itemName);
       const mInfo = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
