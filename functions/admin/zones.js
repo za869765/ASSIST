@@ -170,7 +170,7 @@ function esc(s) {
 (function initBack() {
   const btn = document.getElementById('backBtn');
   const ref = document.referrer;
-  if (ref && /\/t\//.test(ref)) btn.href = ref;
+  if (ref && ref.indexOf('/t/') >= 0) btn.href = ref;
   else btn.onclick = (e) => { e.preventDefault(); history.back(); };
 })();
 
