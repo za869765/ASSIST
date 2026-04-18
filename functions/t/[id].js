@@ -553,7 +553,16 @@ h1 {
   color: var(--wine) !important;
 }
 
-/* 編輯價格模式 */
+/* 編輯模式（同時可改名稱與價格） */
+body.is-edit-price .menu-card .items-list .item-chip {
+  cursor: pointer;
+}
+body.is-edit-price .menu-card .items-list .item-chip .item-pick {
+  padding: 2px 8px;
+  border-radius: 2px;
+  border: 1px dashed rgba(201,169,97,.6);
+  background: rgba(201,169,97,.1);
+}
 body.is-edit-price .menu-card .items-list .price-edit {
   cursor: pointer;
   pointer-events: auto;
@@ -565,11 +574,12 @@ body.is-edit-price .menu-card .items-list .price-edit {
   text-decoration: none;
 }
 body.is-edit-price .menu-card .items-list .price-edit:hover,
-body.is-edit-price .menu-card .items-list .price-edit:active {
+body.is-edit-price .menu-card .items-list .price-edit:active,
+body.is-edit-price .menu-card .items-list .item-chip .item-pick:hover {
   background: var(--gold); color: var(--bg);
 }
 body.is-edit-price h1::after {
-  content: '編輯價格中';
+  content: '編輯模式';
   display: inline-flex;
   align-items: center;
   font-family: var(--f-en);
@@ -1502,7 +1512,7 @@ ${tabs}
   <a class="admin-toggle" href="/admin/zones" target="_blank">🔧 管理員</a>
   ${closed ? '' : `
   <a class="admin-toggle" href="?admin=1">🗑 刪除模式</a>
-  <a class="admin-toggle" href="?edit=1">💰 編輯價格</a>
+  <a class="admin-toggle" href="?edit=1">📝 編輯模式</a>
   <a class="admin-toggle" href="/api/t/${task.id}/export">📊 匯出 XLSX</a>
   `}
 </div>
@@ -1544,7 +1554,7 @@ ${closed ? '' : `<details class="menu-card" id="menuCard">
 </details>`}
 
 ${closed ? '' : `<div id="adminBanner" class="admin-banner" style="display:none">🔧 管理員模式：web 紀錄可刪除（× 按鈕）。<a href="?">離開</a></div>`}
-${closed ? '' : `<div id="editPriceBanner" class="admin-banner" style="display:none">💰 編輯價格模式：點價格可以改。<a href="?">離開</a></div>`}
+${closed ? '' : `<div id="editPriceBanner" class="admin-banner" style="display:none">📝 編輯模式：點「品項名稱」或「價格」可以改（OCR 亂碼可在這裡修正）。<a href="?">離開</a></div>`}
 
 <div id="board"></div>
 
@@ -1856,23 +1866,11 @@ async function loadMenu() {
       document.getElementById('menuItems').innerHTML = sections + extraBtn + leaveRow;
       if (recBar) recBar.style.display = '';
     }
-    // 綁定價格編輯（僅編輯模式）
-    if (IS_EDIT_PRICE) {
-      document.querySelectorAll('.price-edit').forEach(el => {
-        el.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          const name = el.dataset.name;
-          const current = el.textContent.replace(/[^\\d]/g, '') || '';
-          openPriceModal(name, current);
-        });
-      });
-    }
     // 還原 AI 推薦高亮
     if (currentRecHits.size) highlightChips([...currentRecHits]);
-    // 品項 chip 點擊 → 開下單 modal
+    // 品項 chip 點擊：編輯模式→開編輯 modal；一般→開下單 modal
     document.querySelectorAll('.item-chip').forEach(chip => {
       chip.addEventListener('click', (ev) => {
-        if (ev.target.closest('.price-edit')) return; // 點到價格修改區不觸發
         if (chip.dataset.name === '__custom__') {
           openCustomModal();
           return;
@@ -1883,6 +1881,13 @@ async function loadMenu() {
         }
         const name = chip.dataset.name;
         const price = chip.dataset.price === '' ? null : +chip.dataset.price;
+        if (IS_EDIT_PRICE) {
+          // 編輯模式：無論點名稱或價格都開同一個 modal（名稱+價格一起改）
+          if (chip.classList.contains('add-custom')) return; // 新增品項鈕不能改
+          openEditItemModal(name, price);
+          return;
+        }
+        if (ev.target.closest('.price-edit')) return; // 下單模式：點到價格不觸發
         openOrderModal(name, price);
       });
     });
@@ -2038,34 +2043,36 @@ function highlightChips(names, opts) {
   if (scroll && first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
-function openPriceModal(itemName, current) {
+function openEditItemModal(itemName, currentPrice) {
   const d = document.createElement('div');
   d.className = 'order-modal';
   d.innerHTML = \`
     <div class="box" style="max-width:380px">
-      <h3>💰 修改「\${esc(itemName)}」的價格</h3>
+      <h3>📝 修改品項</h3>
+      <label>品項名稱（OCR 亂碼可在這裡改）</label>
+      <input id="pmName" type="text" maxlength="60" value="\${esc(itemName)}" autofocus>
       <label>金額（留空＝未知、僅數字）</label>
-      <input id="pmVal" type="number" inputmode="numeric" min="0" max="9999" value="\${esc(current)}" autofocus>
+      <input id="pmVal" type="number" inputmode="numeric" min="0" max="9999" value="\${esc(currentPrice ?? '')}">
       <div class="row-btns">
-        <button id="pmCancel">取消</button>
-        <button id="pmClear" style="background:#fee;color:#b04a1a;border-color:#f5a595">清除</button>
-        <button id="pmOk" class="primary">儲存</button>
+        <button type="button" id="pmCancel">取消</button>
+        <button type="button" id="pmClear" style="background:rgba(194,112,112,.12);color:var(--danger);border-color:rgba(194,112,112,.4)">清除價格</button>
+        <button type="button" id="pmOk" class="primary">儲存</button>
       </div>
     </div>
   \`;
   document.body.appendChild(d);
   const close = () => { d.classList.add('closing'); setTimeout(() => d.remove(), 200); };
-  const input = d.querySelector('#pmVal');
-  setTimeout(() => { input.focus(); input.select(); }, 50);
+  const nameInput = d.querySelector('#pmName');
+  const priceInput = d.querySelector('#pmVal');
+  setTimeout(() => { nameInput.focus(); nameInput.select(); }, 50);
   d.querySelector('#pmCancel').addEventListener('click', close);
   d.addEventListener('click', (e) => { if (e.target === d) close(); });
-  const submit = async (val) => {
-    if (val != null && (isNaN(val) || val < 0)) { alert('價格不合法'); return; }
+  const submit = async (payload) => {
     try {
       const r = await fetch('/api/menu/' + TASK_ID, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: itemName, price: val }),
+        body: JSON.stringify(payload),
       });
       if (!r.ok) { const j = await r.json().catch(() => ({})); alert('更新失敗：' + (j.error || r.status)); return; }
       close();
@@ -2073,14 +2080,21 @@ function openPriceModal(itemName, current) {
     } catch (e) { alert('錯誤：' + e.message); }
   };
   d.querySelector('#pmOk').addEventListener('click', () => {
-    const raw = input.value.trim();
-    submit(raw === '' ? null : +raw);
+    const newName = nameInput.value.trim();
+    if (!newName) { alert('品項名稱不可為空'); return; }
+    const raw = priceInput.value.trim();
+    const priceVal = raw === '' ? null : +raw;
+    if (priceVal != null && (isNaN(priceVal) || priceVal < 0)) { alert('價格不合法'); return; }
+    submit({ name: itemName, newName, price: priceVal });
   });
-  d.querySelector('#pmClear').addEventListener('click', () => submit(null));
-  input.addEventListener('keydown', (e) => {
+  d.querySelector('#pmClear').addEventListener('click', () => {
+    priceInput.value = '';
+    priceInput.focus();
+  });
+  [nameInput, priceInput].forEach(el => el.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') d.querySelector('#pmOk').click();
     if (e.key === 'Escape') close();
-  });
+  }));
 }
 
 function renderRecommend(dir, j, fromCache) {
@@ -2311,10 +2325,13 @@ function findExistingEntry(zone, memberName, nonMemberName) {
   const zones = (state.zones || []);
   const zRow = zones.find(z => z.name === zone);
   const unlimited = zRow && +zRow.capacity === 0;
+  // 名字比對前去掉 web 紀錄的「🌐 」前綴與空白
+  const normName = (s) => String(s || '').replace(/^🌐\\s*/, '').replace(/（非會員）$/, '').trim();
   if (/衛生局/.test(zone)) {
     if (nonMemberName) return null; // 衛生局非會員每次都新建
     if (memberName) {
-      return entries.find(e => e.zone === zone && e.name === memberName) || null;
+      const target = normName(memberName);
+      return entries.find(e => e.zone === zone && normName(e.name) === target) || null;
     }
     return null;
   }

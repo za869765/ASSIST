@@ -99,15 +99,20 @@ export async function onRequestPost({ env, params, request }) {
   return json({ id, itemCount: items.length, items, aggItems: finalItems });
 }
 
-// PATCH：修改單一品項價格（菜單過期時手動調整）/ body: { name, price }
+// PATCH：修改單一品項（名稱/價格；OCR 亂碼可手動調整）/ body: { name, newName?, price? }
 export async function onRequestPatch({ env, params, request }) {
   const taskId = +params.taskId;
   if (!taskId) return json({ error: 'bad taskId' }, 400);
   const body = await request.json().catch(() => ({}));
   const targetName = String(body.name || '').trim();
-  const newPrice = body.price == null || body.price === '' ? null : +body.price;
+  const hasNewName = body.newName !== undefined;
+  const newName = hasNewName ? String(body.newName || '').trim() : null;
+  const hasPrice = body.price !== undefined;
+  const newPrice = hasPrice ? (body.price == null || body.price === '' ? null : +body.price) : undefined;
   if (!targetName) return json({ error: 'no name' }, 400);
-  if (newPrice != null && (isNaN(newPrice) || newPrice < 0 || newPrice > 100000)) {
+  if (hasNewName && !newName) return json({ error: 'newName 不可為空' }, 400);
+  if (hasNewName && newName.length > 60) return json({ error: 'newName 過長' }, 400);
+  if (hasPrice && newPrice != null && (isNaN(newPrice) || newPrice < 0 || newPrice > 100000)) {
     return json({ error: 'bad price' }, 400);
   }
   const task = await env.DB.prepare(`SELECT menu_json FROM tasks WHERE id = ?`).bind(taskId).first();
@@ -115,9 +120,17 @@ export async function onRequestPatch({ env, params, request }) {
   const items = JSON.parse(task.menu_json);
   const idx = items.findIndex(it => String(it.name || '').trim() === targetName);
   if (idx < 0) return json({ error: 'item not found' }, 404);
-  items[idx] = { ...items[idx], price: newPrice };
+  // 新名字不能跟其他既有品項重複
+  if (hasNewName && newName !== targetName) {
+    const dup = items.findIndex((it, i) => i !== idx && String(it.name || '').trim() === newName);
+    if (dup >= 0) return json({ error: '新名稱已存在' }, 400);
+  }
+  const patched = { ...items[idx] };
+  if (hasNewName) patched.name = newName;
+  if (hasPrice) patched.price = newPrice;
+  items[idx] = patched;
   await env.DB.prepare(`UPDATE tasks SET menu_json = ? WHERE id = ?`).bind(JSON.stringify(items), taskId).run();
-  // 清掉舊的推薦快取（價格變了推薦也可能變）
+  // 清掉舊的推薦快取（菜單變了推薦也可能變）
   try { await env.DB.prepare(`DELETE FROM menu_recommend WHERE task_id = ?`).bind(taskId).run(); } catch {}
   return json({ ok: true, items });
 }
