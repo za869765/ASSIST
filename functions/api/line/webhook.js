@@ -202,7 +202,14 @@ async function collectEntryMulti(env, tasks, userId, text, replyToken) {
     return { task: t, parsed, got };
   }));
   const winner = results.find(r => r.got);
-  if (!winner) return; // 都抽不到 → 靜默
+  if (!winner) {
+    // DEBUG：看兩邊 extractor 各回什麼
+    const dbg = results.map(r => `${r.task.task_name}=${JSON.stringify(r.parsed?.data || null)}`).join(' | ');
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
+      { type: 'text', text: `[debug multi] ${dbg}` },
+    ]);
+    return;
+  }
   const { task, parsed } = winner;
   await upsertEntry(env.DB, {
     taskId: task.id, userId,
