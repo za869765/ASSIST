@@ -439,9 +439,10 @@ async function fetchRecommend(btn, dir) {
       return;
     }
     for (const p of (j.picks || [])) recommendedSet.add(p.name);
-    const picks = (j.picks || []).map(p =>
-      '<span class="pick"><b>' + esc(p.name) + '</b>' + (p.reason ? ' — ' + esc(p.reason) : '') + '</span>'
-    ).join('');
+    const picks = (j.picks || []).map(p => {
+      const price = (p.price != null) ? ' $' + p.price : '';
+      return '<span class="pick"><b>' + esc(p.name) + price + '</b>' + (p.reason ? ' — ' + esc(p.reason) : '') + '</span>';
+    }).join('');
     const note = j.note ? '<div class="note">' + esc(j.note) + '</div>' : '';
     result.innerHTML = '<div style="margin:4px 0;font-size:11px;color:#2db87a">' + esc(j.label || dir) + (j.cached ? ' (快取)' : '') + '</div>' + (picks || '<span style="color:#888">沒有推薦</span>') + note;
   } catch (e) {

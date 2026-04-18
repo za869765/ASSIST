@@ -126,10 +126,16 @@ export async function onRequestGet({ env, params, request }) {
     const j = await r.json();
     const txt = (j?.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
     const parsed = JSON.parse(txt);
-    const picks = Array.isArray(parsed?.picks) ? parsed.picks.map(p => ({
-      name: String(p.name || '').trim(),
-      reason: String(p.reason || '').trim(),
-    })).filter(p => p.name) : [];
+    // 從菜單反查價格附在 pick 上
+    const priceByName = new Map(menu.map(it => [String(it.name || '').trim(), it.price]));
+    const picks = Array.isArray(parsed?.picks) ? parsed.picks.map(p => {
+      const name = String(p.name || '').trim();
+      return {
+        name,
+        reason: String(p.reason || '').trim(),
+        price: priceByName.has(name) ? priceByName.get(name) : null,
+      };
+    }).filter(p => p.name) : [];
     const result = { picks, note: String(parsed?.note || '').trim(), dir, label: directive };
     await env.DB.prepare(
       `INSERT INTO menu_recommend (key, task_id, dir, result, created_at) VALUES (?, ?, ?, ?, datetime('now'))
