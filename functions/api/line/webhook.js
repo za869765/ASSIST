@@ -262,15 +262,22 @@ async function doCloseTask(env, picked, replyToken) {
   const bytes = buildXLSX(picked.task_name.slice(0, 31) || 'sheet', rows);
   const token = genDownloadToken();
   const filename = `${picked.task_name}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+  // 下載 token：24 小時到期，可多人重複下載
+  const expiresDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const expiresISO = expiresDate.toISOString().replace('T', ' ').slice(0, 19);
   await env.DB.prepare(
-    `INSERT INTO exports (token, task_id, filename, content_type, blob) VALUES (?, ?, ?, ?, ?)`
-  ).bind(token, picked.id, filename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', bytes).run();
+    `INSERT INTO exports (token, task_id, filename, content_type, blob, expires_at) VALUES (?, ?, ?, ?, ?, ?)`
+  ).bind(token, picked.id, filename, contentType, bytes, expiresISO).run();
 
   const base = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
   const dlUrl = `${base}/d/${token}`;
   const aggText = buildAggregateText(picked.task_name, entries);
+  const tpeExpire = new Date(expiresDate.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16).replace('T', ' ');
+
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-    { type: 'text', text: `✅ 任務「${picked.task_name}」已結單\n\n${aggText}\n\n📎 完整明細（彙總+依品項排序）一次性下載：\n${dlUrl}` },
+    { type: 'text', text: `✅ 任務「${picked.task_name}」已結單\n\n${aggText}\n\n📎 完整明細下載：\n${dlUrl}\n⏰ 連結在 ${tpeExpire}（台北時間）前有效，可多人重複下載` },
   ]);
 }
 
