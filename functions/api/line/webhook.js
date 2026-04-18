@@ -176,7 +176,7 @@ async function handleEvent(ev, env) {
     }
 
     // 「<名字> 刪除<任務>」「<任務>刪除」「取消便當」→ 刪該人該任務的紀錄
-    const delMatch = text.trim().match(/^(?:(.{1,20}?)\s+)?(刪除|刪掉|取消|移除|清除)\s*(.{1,10})$/);
+    const delMatch = text.trim().match(/^(?:(.{1,20}?)\s+)?(刪除|刪掉|取消|移除|清除|不要)\s*(.{1,10})$/);
     if (delMatch) {
       const personHint = (delMatch[1] || '').trim();
       const taskHint = (delMatch[3] || '').trim();
@@ -604,6 +604,56 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
   }
   // pendingP 僅對「新一次也是污穢」才重複提醒；一般訊息放行（避免無辜訊息被累計）
 
+  // 硬規則：「不要X」/「我不要X」→ 從既有紀錄移除 X（單項則整筆刪）
+  // 本人直講或管理員代點（經 tryProxyPerson 已把 userId/text 切好）都適用
+  {
+    const dropMatch = text.trim().match(/^(?:我)?\s*不要\s*(.+?)\s*(?:啦|了|喔|耶|欸|ㄟ|哦|啊)?[\s!?！？。.~～]*$/);
+    if (dropMatch && existing) {
+      const rawTarget = (dropMatch[1] || '').trim();
+      // 排除「不要了 / 不要」這種全取消詞（讓它走 Gemini cancel 流程，保留原確認邏輯）
+      if (rawTarget && !/^(了|的)$/.test(rawTarget)) {
+        const existingData = JSON.parse(existing.data_json || '{}');
+        const itemStr = existingData['品項'] || '';
+        const items = itemStr.split(/\s*\+\s*/).filter(Boolean);
+        const norm = (s) => String(s).replace(/\s+/g, '').replace(/[的那個個份]+$/, '').toLowerCase();
+        const t = norm(rawTarget);
+        const matches = (it) => {
+          const n = norm(it);
+          if (!t || !n) return false;
+          return n.includes(t) || t.includes(n);
+        };
+        const m = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
+        const who = m?.real_name || m?.line_display || userId.slice(0, 6);
+        if (items.length > 1) {
+          const remaining = items.filter(it => !matches(it));
+          if (remaining.length && remaining.length < items.length) {
+            const cancelled = items.filter(it => !remaining.includes(it));
+            const newData = { ...existingData, '品項': remaining.join(' + ') };
+            if (remaining.length === 1) {
+              if (/葷食/.test(remaining[0])) newData['葷素'] = '葷';
+              else if (/素食/.test(remaining[0])) newData['葷素'] = '素';
+            }
+            await env.DB.prepare(
+              `UPDATE entries SET data_json = ?, price = NULL, updated_at = datetime('now') WHERE task_id = ? AND user_id = ?`
+            ).bind(JSON.stringify(newData), task.id, userId).run();
+            await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+              type: 'text', text: `✅ 已幫 ${who} 取消「${cancelled.join('、')}」，剩下「${remaining.join(' + ')}」`,
+            }]);
+            return;
+          }
+        } else if (items.length === 1 && matches(items[0])) {
+          await env.DB.prepare(`DELETE FROM entries WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
+          await env.DB.prepare(`DELETE FROM pending_dups WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
+          await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+            type: 'text', text: `✅ 已幫 ${who} 取消「${items[0]}」`,
+          }]);
+          return;
+        }
+        // 目標不在現有品項中 → 留給 Gemini / 後續流程（可能是閒聊或是其他意思）
+      }
+    }
+  }
+
   // 撈「品項不適用欄位」知識庫當 Gemini 提示
   const noFieldsRows = await env.DB.prepare(`SELECT item, field FROM item_no_fields`).all();
   const itemNoFields = {};
@@ -709,13 +759,23 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
     return;
   }
   if (!parsed || !parsed.data || Object.keys(parsed.data).length === 0) {
-    // 抽不到東西 → 若 AI 有追問話術就回，否則靜默略過（避免閒聊被亂回）
-    if (parsed?.follow_up) {
-      const mInfo = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
-      const askName = mInfo?.real_name || mInfo?.line_display || userId.slice(0, 6);
-      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `@${askName} ${parsed.follow_up}` }]);
+    // AI 抽不到但文字看起來像飲料/便當短名詞 → 直接當品項寫入（避免冷僻名稱被拒）
+    const tClean = String(text || '').replace(/^(我要|我想要|幫我點|來一?[個份杯碗])/, '').trim();
+    const looksLikeItem = tClean.length >= 2 && tClean.length <= 15
+      && !/[。?？!！]/.test(tClean)
+      && !parsed?.profanity;
+    if (looksLikeItem) {
+      parsed = parsed || {};
+      parsed.data = { 品項: tClean };
+      // 繼續往下走正常寫入流程（不 return）
+    } else {
+      if (parsed?.follow_up) {
+        const mInfo = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
+        const askName = mInfo?.real_name || mInfo?.line_display || userId.slice(0, 6);
+        await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `@${askName} ${parsed.follow_up}` }]);
+      }
+      return;
     }
-    return;
   }
 
   // 已點過再講話的處理：
