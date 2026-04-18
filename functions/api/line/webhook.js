@@ -121,11 +121,11 @@ async function handleEvent(ev, env) {
     // 「某區請假/不吃/沒訂」或「某人請假」或「某區 某人 請假」→ 套用到所有開啟中的任務
     const leaveMatch = text.trim().match(/^(.{1,20}?)\s*(請假|休假|不吃|沒訂|跳過|不訂|沒點|不出席|不參加|缺席|不能出席|沒辦法出席)$/);
     if (leaveMatch) {
-      // 先試區名（admin only），再試人名（任何人都能「倖妤請假」）
+      // 名字/區前綴只認 admin；非 admin 只能用裸「請假」（bareLeave 已處理）
       let leave = admin ? await tryZoneLeave(env, userId, text) : null;
       let leaveLabel = leave?.zoneName;
       let leaveTargetId = leave?.userId;
-      if (!leave) {
+      if (!leave && admin) {
         // 嘗試人名（或「區 名字」）比對 members
         let prefix = leaveMatch[1].trim();
         // 如果前綴是「<zone> <name>」，剝掉 zone
@@ -151,9 +151,7 @@ async function handleEvent(ev, env) {
           for (const r of (allMembers.results || [])) {
             if (normName(r.real_name) === pfx || normName(r.line_display) === pfx) { person = r; break; }
           }
-          // 本人自報請假：允許非 admin
-          const isSelf = person?.user_id === userId;
-          if (person && (admin || isSelf)) {
+          if (person) {
             leaveTargetId = person.user_id;
             leaveLabel = person.real_name || person.line_display || prefix;
             leave = { userId: leaveTargetId, zoneName: leaveLabel };
