@@ -421,9 +421,14 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
     }
   }
 
-  const existing = await env.DB.prepare(
+  let existing = await env.DB.prepare(
     `SELECT data_json, note, price FROM entries WHERE task_id = ? AND user_id = ?`
   ).bind(task.id, userId).first();
+  // 請假紀錄（空 data + note=請假）視同空白，該人重新點 → 直接當首次寫入，不問改/加
+  if (existing && existing.note === '請假' && (!existing.data_json || existing.data_json === '{}')) {
+    await env.DB.prepare(`DELETE FROM entries WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
+    existing = null;
+  }
   const known = existing ? {
     ...JSON.parse(existing.data_json || '{}'),
     ...(existing.note ? { 備註: existing.note } : {}),
