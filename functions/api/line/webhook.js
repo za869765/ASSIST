@@ -198,13 +198,16 @@ async function collectEntryMulti(env, tasks, userId, text, replyToken) {
       ...(existing.price ? { 價格: existing.price } : {}),
     } : {};
     const parsed = await geminiExtract(env.GEMINI_API_KEY, t.task_name, text, known);
-    const got = parsed && parsed.data && Object.keys(parsed.data).length > 0;
+    const got = parsed && !parsed._error && parsed.data && Object.keys(parsed.data).length > 0;
     return { task: t, parsed, got };
   }));
   const winner = results.find(r => r.got);
   if (!winner) {
     // DEBUG：看兩邊 extractor 各回什麼
-    const dbg = results.map(r => `${r.task.task_name}=${JSON.stringify(r.parsed?.data || null)}`).join(' | ');
+    const dbg = results.map(r => {
+      if (r.parsed?._error) return `${r.task.task_name}: ${r.parsed._error}`;
+      return `${r.task.task_name}=${JSON.stringify(r.parsed?.data || null)}`;
+    }).join(' | ');
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
       { type: 'text', text: `[debug multi] ${dbg}` },
     ]);
