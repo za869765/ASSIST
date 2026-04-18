@@ -663,7 +663,7 @@ async function handleNonsense(env, task, userId, text, replyToken, teaseFromAI, 
   // 未點狀態：模糊/矛盾比較正常，第 1 次 AI 吐槽留空間；第 2 次起才 @ 管理員
   // 已點狀態：已經有有效紀錄，任何矛盾發言直接 @ 管理員（不再吐槽浪費時間）
   if (!hasExisting && count === 1) {
-    const tease = teaseFromAI || '別鬧啦，認真講～';
+    const tease = teaseFromAI || '不好意思～這個描述我沒辦法幫您點，麻煩再提供一次正確的品項，謝謝您 🙏';
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: tease }]);
     return;
   }
