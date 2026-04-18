@@ -243,6 +243,16 @@ async function collectEntry(env, task, userId, text, replyToken) {
     await handleNonsense(env, task, userId, text, replyToken, parsed.follow_up);
     return;
   }
+  // 取消訂單（只想刪舊、沒點新的）
+  if (parsed?.cancel && existing) {
+    await env.DB.prepare(`DELETE FROM entries WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
+    await env.DB.prepare(`DELETE FROM pending_dups WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
+    const oldItem = Object.values(JSON.parse(existing.data_json || '{}')).filter(Boolean).join('/') || '(未辨識)';
+    const m = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
+    const who = m?.real_name || m?.line_display || userId.slice(0, 6);
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `🗑️ 已取消 ${who} 的「${oldItem}」` }]);
+    return;
+  }
   if (!parsed || !parsed.data || Object.keys(parsed.data).length === 0) {
     // 抽不到東西 → 若 AI 有追問話術就回，否則靜默略過（避免閒聊被亂回）
     if (parsed?.follow_up) {
@@ -492,6 +502,12 @@ async function handleVerdict(env, groupId, nameHint, action, replyToken) {
 }
 
 async function applyDupDecision(env, taskId, userId, pending, additive, replyToken) {
+  // 改單先記舊品項（用於回報「原 X 取消」）
+  let oldItem = '';
+  if (!additive) {
+    const oldRow = await env.DB.prepare(`SELECT data_json FROM entries WHERE task_id = ? AND user_id = ?`).bind(taskId, userId).first();
+    oldItem = oldRow ? (Object.values(JSON.parse(oldRow.data_json || '{}')).filter(Boolean).join('/') || '') : '';
+  }
   const data = JSON.parse(pending.new_data || '{}');
   await upsertEntry(env.DB, {
     taskId, userId,
@@ -508,7 +524,8 @@ async function applyDupDecision(env, taskId, userId, pending, additive, replyTok
   const parts = Object.values(JSON.parse(row?.data_json || '{}')).filter(Boolean).join('/');
   const price = row?.price ? ` $${row.price}` : '';
   const verb = additive ? '加點' : '改為';
-  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `✓ ${who} ${verb} ${parts}${price}` }]);
+  const tail = (!additive && oldItem) ? `（原「${oldItem}」已取消）` : '';
+  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `✓ ${who} ${verb} ${parts}${price}${tail}` }]);
 }
 
 // 60~80%：反問當事人本人是否為 XXX（改單 / 加點）
