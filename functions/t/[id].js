@@ -227,6 +227,65 @@ li:hover { background: #fff8; }
 .menu-lightbox .strip { display: flex; gap: 6px; padding: 8px; overflow-x: auto; max-width: 100vw; background: rgba(0,0,0,.4); }
 .menu-lightbox .strip img { width: 54px; height: 54px; object-fit: cover; border-radius: 4px; border: 2px solid transparent; cursor: pointer; max-width: none; max-height: none; opacity: .6; }
 .menu-lightbox .strip img.active { border-color: #2db87a; opacity: 1; }
+
+/* ========== LUXE 主題疊加（參考 Claude Design：LUXE DINING） ========== */
+:root { --gold:#d4af37; --rose:#e8a8c8; --teal:#2dd4bf; --luxe-bg:#0f0f0f; --luxe-card:#1a1a1a; --luxe-text:#e8e8e8; }
+body.luxe { background: linear-gradient(135deg, var(--luxe-bg) 0%, #1a0f2e 100%); color: var(--luxe-text); min-height: 100vh; position: relative; }
+body.luxe .particles { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+body.luxe .particle { position: absolute; width: 4px; height: 4px; background: var(--gold); border-radius: 50%; opacity: .3; animation: luxeFloat 20s infinite; }
+@keyframes luxeFloat { 0% { transform: translateY(0) translateX(0); opacity: 0; } 10%,90% { opacity: .3; } 100% { transform: translateY(-100vh) translateX(80px); opacity: 0; } }
+body.luxe main, body.luxe #board, body.luxe .tabs, body.luxe h1, body.luxe .meta, body.luxe .menu-card, body.luxe .admin-banner { position: relative; z-index: 1; }
+body.luxe h1 { font-size: 2rem; font-weight: 800; background: linear-gradient(135deg, var(--gold), var(--rose), var(--teal)); -webkit-background-clip: text; background-clip: text; color: transparent; letter-spacing: 2px; animation: luxeTitleShine 3s ease-in-out infinite; }
+@keyframes luxeTitleShine { 0%,100% { filter: drop-shadow(0 0 10px rgba(212,175,55,.3)); } 50% { filter: drop-shadow(0 0 25px rgba(232,168,200,.5)); } }
+body.luxe .meta { background: rgba(26,26,26,.6); color: rgba(232,232,232,.7); border-left-color: var(--gold); backdrop-filter: blur(4px); }
+body.luxe .pill.open { background: linear-gradient(135deg, var(--gold), #f0c050); color: var(--luxe-bg); box-shadow: 0 0 20px rgba(212,175,55,.6); animation: luxePillGlow 2s ease-in-out infinite; }
+@keyframes luxePillGlow { 0%,100% { box-shadow: 0 0 12px rgba(212,175,55,.5); } 50% { box-shadow: 0 0 24px rgba(212,175,55,.9); } }
+body.luxe .admin-toggle { color: var(--gold) !important; text-shadow: 0 0 8px rgba(212,175,55,.4); }
+body.luxe .tab { background: rgba(26,26,26,.8); color: var(--gold); border: 2px solid rgba(212,175,55,.4); backdrop-filter: blur(8px); }
+body.luxe .tab:hover { box-shadow: 0 8px 20px rgba(212,175,55,.4); border-color: var(--gold); }
+body.luxe .tab.active { background: linear-gradient(135deg, var(--gold), #f0c050); color: var(--luxe-bg); border-color: var(--gold); box-shadow: 0 0 30px rgba(212,175,55,.6); }
+body.luxe h2.zone { background: linear-gradient(90deg, rgba(212,175,55,.15) 0%, transparent 80%); border-left: 3px solid var(--gold); color: var(--gold); }
+body.luxe h2.zone.none { background: linear-gradient(90deg, rgba(232,168,200,.2) 0%, transparent 80%); border-left-color: var(--rose); color: var(--rose); }
+body.luxe h2.zone.empty { background: rgba(26,26,26,.4); border-left-color: #444; color: #777; }
+body.luxe li { background: rgba(26,26,26,.5); border: 1px solid rgba(212,175,55,.15); margin-bottom: 4px; backdrop-filter: blur(4px); }
+body.luxe li:hover { background: rgba(26,26,26,.8); border-color: rgba(212,175,55,.4); }
+body.luxe .who { color: var(--teal); }
+body.luxe .body { color: var(--luxe-text); }
+body.luxe .price { color: var(--gold); font-weight: 700; }
+body.luxe .uid-row { color: #555; }
+body.luxe .total { background: linear-gradient(135deg, var(--gold), var(--rose)); color: var(--luxe-bg); box-shadow: 0 8px 30px rgba(212,175,55,.5); font-size: 20px; letter-spacing: 1px; }
+body.luxe .menu-card { background: linear-gradient(135deg, var(--luxe-card), rgba(26,26,26,.8)); border: 1px solid rgba(212,175,55,.3); overflow: hidden; }
+body.luxe .menu-card::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle, rgba(212,175,55,.08) 0%, transparent 70%); animation: luxeShimmer 8s linear infinite; pointer-events: none; z-index: 0; }
+@keyframes luxeShimmer { from { transform: translate(-50%,-50%) rotate(0); } to { transform: translate(-50%,-50%) rotate(360deg); } }
+body.luxe .menu-card > * { position: relative; z-index: 1; }
+body.luxe .menu-card summary { color: var(--gold); }
+body.luxe .menu-card .items-list .cat-row > b { background: linear-gradient(135deg, var(--gold), #f0c050); color: var(--luxe-bg); }
+body.luxe .menu-card .items-list span { background: rgba(26,26,26,.7); border: 1px solid rgba(212,175,55,.25); color: var(--luxe-text); }
+body.luxe .menu-card .items-list .item-chip { transition: all .3s cubic-bezier(.23,1,.32,1); }
+body.luxe .menu-card .items-list .item-chip:hover { background: rgba(212,175,55,.15); border-color: var(--gold); transform: translateY(-3px); box-shadow: 0 8px 20px rgba(212,175,55,.3); }
+body.luxe .menu-card .items-list .item-chip .item-pick { color: var(--gold); }
+body.luxe .menu-card .items-list .item-chip .price-edit { color: var(--teal); }
+body.luxe .menu-card .upload-row label { background: linear-gradient(135deg, var(--gold), #f0c050); color: var(--luxe-bg); }
+body.luxe .menu-summary { background: rgba(232,168,200,.12); color: var(--rose); border-left: 3px solid var(--rose); padding-left: 8px; }
+body.luxe .recommend-bar { background: linear-gradient(180deg, rgba(212,175,55,.1) 0%, transparent 70%); border-top: 1px dashed rgba(212,175,55,.3); }
+body.luxe .recommend-bar::before { color: var(--gold); text-shadow: 0 0 10px rgba(212,175,55,.4); }
+body.luxe .recommend-buttons button { background: rgba(26,26,26,.6); border: 2px solid var(--gold); color: var(--gold); font-weight: 700; backdrop-filter: blur(4px); position: relative; overflow: hidden; }
+body.luxe .recommend-buttons button::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: var(--gold); z-index: -1; transition: left .3s ease; }
+body.luxe .recommend-buttons button:hover::before { left: 0; }
+body.luxe .recommend-buttons button:hover { color: var(--luxe-bg); box-shadow: 0 8px 20px rgba(212,175,55,.5); }
+body.luxe .recommend-result .pick { background: linear-gradient(135deg, rgba(212,175,55,.15), rgba(232,168,200,.1)); border-left: 3px solid var(--gold); color: var(--luxe-text); }
+body.luxe .recommend-result .pick b { color: var(--gold); }
+body.luxe .item-chip.rec-hit { background: linear-gradient(135deg, rgba(212,175,55,.3), rgba(255,140,0,.3)) !important; border-color: var(--gold) !important; box-shadow: 0 0 0 3px var(--gold), 0 0 30px 6px rgba(212,175,55,.7) !important; }
+body.luxe .item-chip.rec-hit .item-pick { color: #fff3c4 !important; text-shadow: 0 0 12px var(--gold); }
+body.luxe .admin-banner { background: rgba(232,168,200,.15); border-color: var(--rose); color: var(--rose); }
+body.luxe .del-btn { background: transparent; border-color: var(--rose); color: var(--rose); }
+body.luxe .del-btn:hover { background: var(--rose); color: var(--luxe-bg); }
+/* 主題切換按鈕 */
+.luxe-toggle { position: fixed; bottom: 20px; right: 20px; width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--gold); background: rgba(26,26,26,.85); color: var(--gold); font-size: 20px; cursor: pointer; z-index: 9999; box-shadow: 0 4px 16px rgba(0,0,0,.3); backdrop-filter: blur(4px); transition: transform .2s; }
+.luxe-toggle:hover { transform: scale(1.1) rotate(15deg); }
+/* 點單成功浮動 toast */
+.luxe-toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); background: linear-gradient(135deg, var(--gold), var(--rose)); color: white; padding: 1.2rem 2.4rem; border-radius: 50px; font-weight: 700; font-size: 16px; z-index: 10000; box-shadow: 0 10px 40px rgba(212,175,55,.6); pointer-events: none; animation: luxeToastFloat 1.4s ease-out forwards; }
+@keyframes luxeToastFloat { 0% { opacity: 0; transform: translate(-50%,-50%) scale(.6); } 15% { opacity: 1; transform: translate(-50%,-50%) scale(1); } 100% { opacity: 0; transform: translate(-50%,-180%) scale(1.1); } }
 </style>
 </head>
 <body>
@@ -271,10 +330,51 @@ ${closed ? '' : `<details class="menu-card" id="menuCard">
 </details>`}
 ${closed ? '' : `<div id="adminBanner" class="admin-banner" style="display:none">🔧 管理員模式：web 紀錄可刪除（× 按鈕）。<a href="?" style="color:#b04a1a">離開</a></div>`}
 <div id="board"></div>
+<div class="particles" id="luxeParticles" style="display:none"></div>
+<button id="luxeToggle" class="luxe-toggle" title="切換 LUXE 主題">✨</button>
 
 <script>
 const INITIAL = ${JSON.stringify(initData)};
 let state = INITIAL;
+
+// LUXE 主題切換（localStorage 記憶）
+const LS_LUXE = 'ui:luxe';
+function applyLuxe(on) {
+  document.body.classList.toggle('luxe', on);
+  const p = document.getElementById('luxeParticles');
+  if (p) {
+    p.style.display = on ? '' : 'none';
+    if (on && !p.dataset.ready) {
+      p.dataset.ready = '1';
+      for (let i = 0; i < 30; i++) {
+        const el = document.createElement('div');
+        el.className = 'particle';
+        el.style.left = Math.random() * 100 + '%';
+        el.style.top = Math.random() * 100 + '%';
+        el.style.animationDelay = (Math.random() * 20) + 's';
+        el.style.animationDuration = (15 + Math.random() * 20) + 's';
+        p.appendChild(el);
+      }
+    }
+  }
+  const btn = document.getElementById('luxeToggle');
+  if (btn) btn.textContent = on ? '🍵' : '✨';
+}
+applyLuxe(localStorage.getItem(LS_LUXE) === '1');
+document.getElementById('luxeToggle')?.addEventListener('click', () => {
+  const on = !document.body.classList.contains('luxe');
+  localStorage.setItem(LS_LUXE, on ? '1' : '0');
+  applyLuxe(on);
+});
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'luxe-toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 1400);
+}
+
 const IS_ADMIN = new URLSearchParams(location.search).get('admin') === '1';
 if (IS_ADMIN) {
   document.body.classList.add('is-admin');
@@ -823,6 +923,7 @@ function openOrderModal(itemName, price, isCustom) {
       if (!r.ok) { alert('失敗：' + (j.error || r.status)); okBtn.disabled = false; okBtn.textContent = '送出'; return; }
       localStorage.setItem(LS_LAST_ZONE, zone);
       close();
+      showToast('✓ 已送出：' + itemName);
       await poll();
     } catch (e) { alert('錯誤：' + e.message); okBtn.disabled = false; okBtn.textContent = '送出'; }
   });
