@@ -950,11 +950,17 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
         }]);
         return;
       } else {
-        const menuMsgs = await maybeMenuMessages(env, task);
+        // 文字帶有明顯「非點餐」意圖（刪除/取消/管理/閒聊）→ 靜默，不要打擾
+        const offTopic = /刪除|刪\b|取消|管理|裁定|謝謝|感恩|辛苦|再見|掰掰|晚安|早安|午安|收到|了解|ok$|好的$|好喔|好啊/i.test(text);
+        if (offTopic) {
+          console.log('[off-topic silent on menu miss]', text);
+          return;
+        }
+        const base = env.PUBLIC_BASE_URL || env.PUBLIC_HOST || 'https://assist-gcl.pages.dev';
+        const boardUrl = `${base}/t/${task.url_slug || task.id}`;
         await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-          { type: 'text', text: `@${askName} 「${itemName}」不在菜單上，請從菜單挑選；若確定還是要這項，請管理員裁定。` },
-          ...menuMsgs,
-        ].slice(0, 5));
+          { type: 'text', text: `@${askName} 「${itemName}」不在菜單上，請到看板點選：\n${boardUrl}` },
+        ]);
         return;
       }
     }
@@ -1847,30 +1853,30 @@ async function upsertMemberSighting(DB, userId, groupId, token) {
       ).bind(userId).first();
       const alreadyBound = !!(existing?.real_name && existing?.zone);
       if (!alreadyBound) {
-        // 模糊比對：去 emoji / 括號註解 / 分隔符、只保留中文字
-        const stripNoise = (s) => String(s || '')
+        // 模糊比對：去 emoji / 括號註解後，只保留中文字
+        const stripBrackets = (s) => String(s || '')
           .replace(/[\p{Extended_Pictographic}\p{Emoji_Component}]/gu, '')
-          .replace(/[（(【\[].*?[）)】\]]/g, '')
-          .replace(/[|｜·・/／\-_~!@#$%^&*+=?.,:;<>'"`{}]/g, '')
-          .replace(/\s+/g, '');
+          .replace(/[（(【\[][^）)】\]]*[）)】\]]/g, '');
         const cjkOnly = (s) => (String(s || '').match(/[\u4e00-\u9fff]+/g) || []).join('');
-        const dispStrip = stripNoise(display);
-        const dispCJK = cjkOnly(display);
-        if (dispStrip || dispCJK) {
+        const dispCJK = cjkOnly(stripBrackets(display));
+        if (dispCJK) {
           const rosterRows = await DB.prepare(
             `SELECT id, real_name, zone FROM roster WHERE user_id IS NULL`
           ).all();
           const rows = rosterRows.results || [];
           const matches = rows.filter(r => {
-            const rn = stripNoise(r.real_name);
+            const rn = cjkOnly(r.real_name);
             if (!rn) return false;
-            // 三層比對：完整名、名字出現在顯示名中、去括號後含名
-            if (rn === dispStrip) return true;
-            if (dispStrip && dispStrip.includes(rn)) return true;
-            if (dispCJK && dispCJK.includes(rn)) return true;
-            // 反向：顯示名只有 2 字，roster 名字 3 字（"兆鑫" match "鄭兆鑫" 後兩字）
-            if (rn.length >= 3 && dispStrip.length >= 2 && rn.slice(-dispStrip.length) === dispStrip) return true;
-            if (rn.length >= 3 && dispCJK.length >= 2 && rn.slice(-dispCJK.length) === dispCJK) return true;
+            // 1. 完全相同
+            if (rn === dispCJK) return true;
+            // 2. roster 全名出現在顯示名中（涵蓋「陳芊伃-官田」「Candy  盧昭吟-股長」等）
+            if (dispCJK.includes(rn)) return true;
+            // 3. roster 尾 N 字 == 顯示名前 N 字（涵蓋「麗萍-關廟」「嘉玟-永康」「兆鑫」等只有名字的情況）
+            for (const n of [2, 3]) {
+              if (rn.length >= n && dispCJK.length >= n) {
+                if (rn.slice(-n) === dispCJK.slice(0, n)) return true;
+              }
+            }
             return false;
           });
           if (matches.length === 1) {
