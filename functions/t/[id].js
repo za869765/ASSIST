@@ -489,6 +489,7 @@ ${closed ? '' : `<details class="menu-card" id="menuCard">
   </div>
 </details>`}
 ${closed ? '' : `<div id="adminBanner" class="admin-banner" style="display:none">🔧 管理員模式：web 紀錄可刪除（× 按鈕）。<a href="?" style="color:#b04a1a">離開</a></div>`}
+${closed ? '' : `<div id="editPriceBanner" class="admin-banner" style="display:none;background:#fef3c7;color:#78350f;border-color:#d4af37">💰 編輯價格模式：點價格可以改。<a href="?" style="color:#78350f;font-weight:700">離開</a></div>`}
 <div id="board"></div>
 <div class="particles" id="luxeParticles" style="display:none"></div>
 <button id="luxeToggle" class="luxe-toggle" title="切換 LUXE 主題">✨</button>
@@ -642,6 +643,8 @@ if (IS_ADMIN) {
 }
 if (IS_EDIT_PRICE) {
   document.body.classList.add('is-edit-price');
+  const eb = document.getElementById('editPriceBanner');
+  if (eb) eb.style.display = '';
 }
 
 // 記住目前 AI 推薦命中，loadMenu 重新渲染後還原
@@ -983,9 +986,10 @@ function primeRecommendedSet() {
 }
 primeRecommendedSet();
 
-function highlightChips(names) {
+function highlightChips(names, opts) {
   const norm = (s) => String(s || '').replace(/\\s+/g, '').toLowerCase();
   const list = Array.isArray(names) ? names : [];
+  const scroll = opts && opts.scroll;
   currentRecHits = new Set(list); // 記住，loadMenu 之後可還原
   const targets = new Set(list.map(norm));
   const chips = document.querySelectorAll('.item-chip');
@@ -999,7 +1003,7 @@ function highlightChips(names) {
       if (!first) first = c;
     }
   });
-  if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (scroll && first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 function openPriceModal(itemName, current) {
@@ -1056,7 +1060,7 @@ function renderRecommend(dir, j, fromCache) {
   const note = j.note ? '<div class="note">' + esc(j.note) + '</div>' : '';
   const tag = fromCache ? ' (本地快取)' : (j.cached ? ' (伺服快取)' : '');
   result.innerHTML = '<div style="margin:4px 0;font-size:11px;color:#2db87a">' + esc(j.label || dir) + tag + '</div>' + (picks || '<span style="color:#888">沒有推薦</span>') + note;
-  highlightChips((j.picks || []).map(p => p.name));
+  highlightChips((j.picks || []).map(p => p.name), { scroll: true });
 }
 
 async function fetchRecommend(btn, dir) {

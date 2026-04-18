@@ -61,8 +61,18 @@ async function handleEvent(ev, env) {
         `SELECT 1 FROM pending_close WHERE group_id = ? AND admin_id = ?`
       ).bind(groupId, userId).first();
       if (pc) {
-        const hit = matchTaskByHint(tasks, text.trim());
+        const t0 = text.trim();
+        const allHit = /^(全部|都|兩個都|所有|都要|都結|全結|全部結算|都結算|兩個|三個|四個|五個)(結算|結單|結|算|吧|喔|啦|。|\.)*$/.test(t0.replace(/\s+/g, ''));
+        const hit = matchTaskByHint(tasks, t0);
         await env.DB.prepare(`DELETE FROM pending_close WHERE group_id = ? AND admin_id = ?`).bind(groupId, userId).run();
+        if (allHit) {
+          let rt = replyToken;
+          for (const tk of tasks) {
+            await doCloseTask(env, tk, rt);
+            rt = `push:${groupId}`; // 第 2 筆以後改 push
+          }
+          return;
+        }
         if (hit) {
           await doCloseTask(env, hit, replyToken);
           return;
