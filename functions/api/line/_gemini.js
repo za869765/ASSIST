@@ -102,11 +102,16 @@ export async function geminiClassifyTask(apiKey, taskNames, text) {
 // 任務模式下，從使用者訊息抽出結構化欄位
 // taskName 為任務主題（例：「飲料」「便當」「晚餐」）
 // 回傳 { data: { 品項, 甜度, 冰塊, ... }, note, price, confidence }
-export async function geminiExtract(apiKey, taskName, userText, knownData = {}) {
+export async function geminiExtract(apiKey, taskName, userText, knownData = {}, itemNoFields = {}) {
   if (!apiKey) return null;
   const hasKnown = knownData && Object.keys(knownData).length > 0;
+  const noFieldsJson = JSON.stringify(itemNoFields || {});
+  const noFieldsHint = (itemNoFields && Object.keys(itemNoFields).length)
+    ? `\n\n⚠️ 品項不適用欄位知識庫（跨任務累積學習；若本次品項在此清單內，該欄位「不要列進 missing、不要追問、也不要強填」，直接視為不存在）：${noFieldsJson}
+     同系列品項可延伸：例如「冬瓜青茶」若標記「甜度」不適用，則「冬瓜檸檬/冬瓜鮮奶/冬瓜茶」等冬瓜系列也視同甜度不適用。`
+    : '';
   const sys = `你是訂單解析助手。任務主題：「${taskName}」。
-從使用者訊息抽出結構化 JSON。先前已知資料：${JSON.stringify(knownData)}
+從使用者訊息抽出結構化 JSON。先前已知資料：${JSON.stringify(knownData)}${noFieldsHint}
 動態決定該任務需要的欄位（例：飲料 → 品項、甜度、冰塊、大小；便當 → 品項、葷素、份量）。
 只抽有把握的欄位，沒提到就不要編造。
 

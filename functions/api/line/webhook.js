@@ -287,7 +287,14 @@ async function collectEntry(env, task, userId, text, replyToken) {
     return;
   }
 
-  const parsed = await geminiExtract(env.GEMINI_API_KEY, task.task_name, text, known);
+  // 撈「品項不適用欄位」知識庫當 Gemini 提示
+  const noFieldsRows = await env.DB.prepare(`SELECT item, field FROM item_no_fields`).all();
+  const itemNoFields = {};
+  for (const r of (noFieldsRows.results || [])) {
+    if (!itemNoFields[r.item]) itemNoFields[r.item] = [];
+    itemNoFields[r.item].push(r.field);
+  }
+  const parsed = await geminiExtract(env.GEMINI_API_KEY, task.task_name, text, known, itemNoFields);
   if (parsed?._error) {
     console.error('[extract error]', parsed._error);
     return; // 靜默，不打擾群組
@@ -358,6 +365,8 @@ async function collectEntry(env, task, userId, text, replyToken) {
   });
   // 成功收單 → 清零否認/亂點計數
   await env.DB.prepare(`DELETE FROM nonsense_strikes WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
+  // 學習：若使用者填了「不適用」欄位，記到 item_no_fields（品項層級，跨任務保留）
+  await learnNoFields(env.DB, parsed.data);
 
   const parts = Object.values(parsed.data).filter(Boolean).join('/');
   const price = parsed.price ? ` $${parsed.price}` : '';
@@ -387,6 +396,21 @@ async function collectEntry(env, task, userId, text, replyToken) {
     reply += `\n${followUp}`;
   }
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
+}
+
+// 學習「品項沒有這個欄位」的規則，跨任務持久保留
+async function learnNoFields(DB, data) {
+  if (!data || typeof data !== 'object') return;
+  const item = data['品項'];
+  if (!item) return;
+  for (const [k, v] of Object.entries(data)) {
+    if (k === '品項') continue;
+    if (typeof v === 'string' && /^(不適用|無|沒有|N\/A|無此選項)$/i.test(v.trim())) {
+      try {
+        await DB.prepare(`INSERT OR IGNORE INTO item_no_fields (item, field) VALUES (?, ?)`).bind(item, k).run();
+      } catch (e) { console.error('[learnNoFields]', e); }
+    }
+  }
 }
 
 function genDownloadToken() {
@@ -608,6 +632,7 @@ async function applyDupDecision(env, taskId, userId, pending, additive, replyTok
     rawText: pending.new_text,
     additive,
   });
+  await learnNoFields(env.DB, data);
   await env.DB.prepare(`DELETE FROM pending_dups WHERE task_id = ? AND user_id = ?`).bind(taskId, userId).run();
   const m = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
   const who = m?.real_name || m?.line_display || userId.slice(0, 6);
@@ -623,7 +648,13 @@ async function applyDupDecision(env, taskId, userId, pending, additive, replyTok
   let followUp = '';
   if (task?.task_name) {
     const known = { ...finalData, ...(row.note ? { 備註: row.note } : {}), ...(row.price ? { 價格: row.price } : {}) };
-    const check = await geminiExtract(env.GEMINI_API_KEY, task.task_name, pending.new_text || '', known);
+    const noFieldsRows = await env.DB.prepare(`SELECT item, field FROM item_no_fields`).all();
+    const itemNoFields = {};
+    for (const r of (noFieldsRows.results || [])) {
+      if (!itemNoFields[r.item]) itemNoFields[r.item] = [];
+      itemNoFields[r.item].push(r.field);
+    }
+    const check = await geminiExtract(env.GEMINI_API_KEY, task.task_name, pending.new_text || '', known, itemNoFields);
     const syn = { '甜度': ['糖度'], '冰塊': ['冰量', '冰度'], '份量': ['大小', '飯量'] };
     const finalKeys = new Set(Object.keys(finalData));
     const stillMissing = (Array.isArray(check?.missing) ? check.missing : [])

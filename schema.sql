@@ -107,6 +107,14 @@ CREATE TABLE IF NOT EXISTS exports (
 );
 CREATE INDEX IF NOT EXISTS idx_exports_task ON exports(task_id);
 
+-- 品項不適用欄位（累積學習；例：珍奶沒有冰塊、素麵沒有葷素）
+CREATE TABLE IF NOT EXISTS item_no_fields (
+  item         TEXT NOT NULL,
+  field        TEXT NOT NULL,
+  created_at   TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (item, field)
+);
+
 -- 同義詞對照（學習累積，給 Gemini 當 few-shot 參考）
 CREATE TABLE IF NOT EXISTS synonyms (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
