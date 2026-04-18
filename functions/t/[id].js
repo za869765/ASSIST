@@ -1,12 +1,24 @@
 // 即時點單看板（server-rendered HTML，5 秒自動刷新）
-export async function onRequestGet({ params, env }) {
+export async function onRequestGet({ params, request, env }) {
   const id = parseInt(params.id, 10);
   if (!id) return new Response('Bad id', { status: 400 });
 
   const task = await env.DB.prepare(
-    `SELECT id, task_name, mode, status, started_at, closed_at FROM tasks WHERE id = ?`
+    `SELECT id, task_name, mode, status, started_at, closed_at, view_token FROM tasks WHERE id = ?`
   ).bind(id).first();
   if (!task) return new Response('Not found', { status: 404 });
+
+  // 結單後：需要 ?k=<view_token> 才可檢視
+  if (task.status === 'closed') {
+    const url = new URL(request.url);
+    const k = url.searchParams.get('k') || '';
+    if (!task.view_token || k !== task.view_token) {
+      return new Response(
+        '<!DOCTYPE html><meta charset="utf-8"><title>已結單</title><style>body{font-family:-apple-system,"PingFang TC",sans-serif;max-width:480px;margin:80px auto;padding:16px;text-align:center;color:#666}</style><h2>🔒 此任務已結單</h2><p>僅管理員可檢視結果，請向管理員索取私人連結。</p>',
+        { status: 403, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+      );
+    }
+  }
 
   const entries = await env.DB.prepare(
     `SELECT e.user_id, e.data_json, e.note, e.price, e.updated_at,

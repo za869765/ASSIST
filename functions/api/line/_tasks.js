@@ -31,10 +31,17 @@ export function matchTaskByHint(tasks, hint) {
   return partial || null;
 }
 
+function genToken() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
 export async function createTask(DB, { groupId, taskName, startedBy }) {
+  const token = genToken();
   const r = await DB.prepare(
-    `INSERT INTO tasks (group_id, task_name, started_by) VALUES (?, ?, ?)`
-  ).bind(groupId, taskName, startedBy).run();
+    `INSERT INTO tasks (group_id, task_name, started_by, view_token) VALUES (?, ?, ?, ?)`
+  ).bind(groupId, taskName, startedBy, token).run();
   return r.meta.last_row_id;
 }
 
