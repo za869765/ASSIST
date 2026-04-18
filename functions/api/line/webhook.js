@@ -484,28 +484,38 @@ async function collectEntry(env, task, userId, text, replyToken) {
     const existingData = JSON.parse(existing.data_json || '{}');
     const itemStr = existingData['品項'] || '';
     const items = itemStr.split(/\s*\+\s*/).filter(Boolean);
-    const target = (parsed.cancel_target || '').trim();
+    let target = (parsed.cancel_target || '').trim();
+    // 若 Gemini 沒給 target，嘗試從訊息裡推斷（針對葷/素關鍵字）
+    if (!target && items.length > 1) {
+      if (/葷/.test(text) && !/素/.test(text)) target = '葷';
+      else if (/素/.test(text) && !/葷/.test(text)) target = '素';
+    }
 
+    const norm = (s) => String(s).replace(/\s+/g, '').replace(/[的那個個份]+$/, '').toLowerCase();
     // 指定取消某項 且 有多項 → 只刪該項
     if (target && items.length > 1) {
-      const norm = (s) => String(s).replace(/\s+/g, '').replace(/[的那個個份]+$/, '').toLowerCase();
       const t = norm(target);
       const matches = (it) => {
         const n = norm(it);
         if (!t || !n) return false;
         if (n.includes(t) || t.includes(n)) return true;
-        // 單字關鍵詞：葷/素 → 匹配含該字的品項
         if (t.length <= 2 && n.includes(t)) return true;
         return false;
       };
       const remaining = items.filter(it => !matches(it));
       if (remaining.length && remaining.length < items.length) {
+        const cancelled = items.filter(it => !remaining.includes(it));
         const newData = { ...existingData, '品項': remaining.join(' + ') };
+        // 若剩單品且 葷素 與剩下品項衝突，修正或清掉
+        if (remaining.length === 1) {
+          if (/葷食/.test(remaining[0])) newData['葷素'] = '葷';
+          else if (/素食/.test(remaining[0])) newData['葷素'] = '素';
+        }
         await env.DB.prepare(
           `UPDATE entries SET data_json = ?, price = NULL, updated_at = datetime('now') WHERE task_id = ? AND user_id = ?`
         ).bind(JSON.stringify(newData), task.id, userId).run();
         await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
-          type: 'text', text: `🗑️ 已取消 ${who} 的「${items.filter(it => !remaining.includes(it)).join('、')}」，剩餘「${remaining.join(' + ')}」，是這樣嗎？`,
+          type: 'text', text: `✅ 已幫 ${who} 取消「${cancelled.join('、')}」，剩下「${remaining.join(' + ')}」`,
         }]);
         return;
       }
@@ -515,7 +525,7 @@ async function collectEntry(env, task, userId, text, replyToken) {
     await env.DB.prepare(`DELETE FROM entries WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
     await env.DB.prepare(`DELETE FROM pending_dups WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
     const oldItem = Object.values(existingData).filter(Boolean).join('/') || '(未辨識)';
-    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `🗑️ 已取消 ${who} 的「${oldItem}」，是這樣嗎？` }]);
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `✅ 已幫 ${who} 取消「${oldItem}」` }]);
     return;
   }
   if (!parsed || !parsed.data || Object.keys(parsed.data).length === 0) {
