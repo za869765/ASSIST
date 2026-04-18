@@ -992,23 +992,27 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
     reply += `\n@${name} ${followUp}`;
   }
   // 同群組其他開啟中任務：若該人在其他任務仍掛請假 → 不合理，清掉並提醒要什麼
+  const pendingMenuMsgs = [];
   if (groupId) {
     const siblings = await env.DB.prepare(
-      `SELECT id, task_name FROM tasks WHERE group_id = ? AND status = 'open' AND id != ?`
+      `SELECT id, task_name, menu_json, mode FROM tasks WHERE group_id = ? AND status = 'open' AND id != ?`
     ).bind(groupId, task.id).all();
     const leaveTasks = [];
     const blankTasks = [];
+    const pendingSibs = [];
     for (const sib of (siblings.results || [])) {
       const row = await env.DB.prepare(
         `SELECT data_json, note FROM entries WHERE task_id = ? AND user_id = ?`
       ).bind(sib.id, userId).first();
-      if (!row) { blankTasks.push(sib.task_name); continue; }
+      if (!row) { blankTasks.push(sib.task_name); pendingSibs.push(sib); continue; }
       const isLeave = row.note === '請假' && (!row.data_json || row.data_json === '{}');
       if (isLeave) {
         await env.DB.prepare(`DELETE FROM entries WHERE task_id = ? AND user_id = ?`).bind(sib.id, userId).run();
         leaveTasks.push(sib.task_name);
+        pendingSibs.push(sib);
       } else if (!row.data_json || row.data_json === '{}') {
         blankTasks.push(sib.task_name);
+        pendingSibs.push(sib);
       }
     }
     const pending = [...leaveTasks, ...blankTasks];
@@ -1017,9 +1021,19 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
         ? `（${leaveTasks.join('、')}原本請假不合理，已清掉）`
         : '';
       reply += `\n@${name} 另外「${pending.join('、')}」要什麼呢？${hint}`;
+      // 附帶 PO 尚未點的任務的菜單照（若有 + 1 分鐘冷卻未到期會自動跳過）
+      for (const sib of pendingSibs) {
+        if (pendingMenuMsgs.length >= 4) break;
+        const msgs = await maybeMenuMessages(env, sib);
+        for (const m of msgs) {
+          if (pendingMenuMsgs.length >= 4) break;
+          pendingMenuMsgs.push(m);
+        }
+      }
     }
   }
-  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: reply }]);
+  const outMsgs = [{ type: 'text', text: reply }, ...pendingMenuMsgs].slice(0, 5);
+  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, outMsgs);
 }
 
 // 學習「品項沒有這個欄位」的規則，跨任務持久保留
