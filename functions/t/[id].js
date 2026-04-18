@@ -370,6 +370,48 @@ body.luxe .del-btn:hover { background: var(--rose); color: var(--luxe-bg); }
 /* 點單成功浮動 toast */
 .luxe-toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); background: linear-gradient(135deg, var(--gold), var(--rose)); color: white; padding: 1.2rem 2.4rem; border-radius: 50px; font-weight: 700; font-size: 16px; z-index: 10000; box-shadow: 0 10px 40px rgba(212,175,55,.6); pointer-events: none; animation: luxeToastFloat 1.4s ease-out forwards; }
 @keyframes luxeToastFloat { 0% { opacity: 0; transform: translate(-50%,-50%) scale(.6); } 15% { opacity: 1; transform: translate(-50%,-50%) scale(1); } 100% { opacity: 0; transform: translate(-50%,-180%) scale(1.1); } }
+
+/* ========== 點單成功震撼彈窗 ========== */
+.success-overlay { position: fixed; inset: 0; background: radial-gradient(circle at center, rgba(45,184,122,.35) 0%, rgba(0,0,0,.75) 70%); backdrop-filter: blur(6px); z-index: 10001; display: flex; align-items: center; justify-content: center; animation: successFade .3s ease-out; cursor: pointer; }
+@keyframes successFade { from { opacity: 0; backdrop-filter: blur(0); } to { opacity: 1; backdrop-filter: blur(6px); } }
+.success-overlay.closing { animation: successFadeOut .35s ease-in forwards; }
+@keyframes successFadeOut { to { opacity: 0; backdrop-filter: blur(0); } }
+.success-card { background: linear-gradient(135deg, #fff 0%, #f0fff7 100%); border-radius: 24px; padding: 32px 36px; max-width: 420px; width: 92vw; text-align: center; box-shadow: 0 30px 80px rgba(0,0,0,.4), 0 0 120px rgba(45,184,122,.4); position: relative; animation: successPop .6s cubic-bezier(.34,1.56,.64,1); overflow: hidden; }
+.success-overlay.closing .success-card { animation: successPopOut .3s ease-in forwards; }
+@keyframes successPop { 0% { opacity: 0; transform: scale(.3) rotate(-10deg); } 60% { transform: scale(1.08) rotate(2deg); } 100% { opacity: 1; transform: scale(1) rotate(0); } }
+@keyframes successPopOut { to { opacity: 0; transform: scale(.8); } }
+.success-card::before { content:''; position:absolute; inset:-50%; background: conic-gradient(from 0deg, transparent, rgba(45,184,122,.25), transparent 30%); animation: successRing 3s linear infinite; pointer-events:none; }
+@keyframes successRing { to { transform: rotate(360deg); } }
+.success-card > * { position: relative; z-index: 1; }
+.success-check { width: 96px; height: 96px; margin: 0 auto 16px; border-radius: 50%; background: linear-gradient(135deg, #2db87a, #34d399); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 56px; font-weight: 900; box-shadow: 0 10px 30px rgba(45,184,122,.5); animation: checkBounce .8s cubic-bezier(.34,1.56,.64,1) .1s backwards; }
+@keyframes checkBounce { 0% { transform: scale(0) rotate(-180deg); } 60% { transform: scale(1.2) rotate(10deg); } 100% { transform: scale(1) rotate(0); } }
+.success-title { font-size: 22px; font-weight: 900; color: #1a5c3e; margin: 0 0 18px; letter-spacing: 1px; animation: titleSlide .5s ease-out .3s backwards; }
+@keyframes titleSlide { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.success-item { font-size: 28px; font-weight: 900; background: linear-gradient(135deg, #2db87a, #10b981); -webkit-background-clip: text; background-clip: text; color: transparent; margin: 0 0 10px; animation: itemZoom .6s cubic-bezier(.34,1.56,.64,1) .4s backwards; word-break: break-word; }
+@keyframes itemZoom { from { opacity: 0; transform: scale(.5); letter-spacing: -5px; } to { opacity: 1; transform: scale(1); letter-spacing: 0; } }
+.success-details { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 14px 0 4px; animation: detailsFade .5s ease-out .6s backwards; }
+@keyframes detailsFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.success-detail { background: rgba(45,184,122,.12); color: #1a5c3e; padding: 6px 14px; border-radius: 999px; font-size: 14px; font-weight: 600; border: 1.5px solid rgba(45,184,122,.3); }
+.success-price { font-size: 20px; font-weight: 900; color: #d97706; margin-top: 8px; }
+.success-hint { font-size: 12px; color: #888; margin-top: 16px; animation: hintFade .4s ease-out 1s backwards; }
+@keyframes hintFade { from { opacity: 0; } to { opacity: 1; } }
+/* 星星爆發 */
+.success-spark { position: absolute; font-size: 24px; pointer-events: none; animation: sparkFly 1.4s ease-out forwards; opacity: 0; }
+@keyframes sparkFly { 0% { opacity: 1; transform: translate(0,0) scale(0); } 30% { opacity: 1; transform: translate(var(--dx), var(--dy)) scale(1.3); } 100% { opacity: 0; transform: translate(calc(var(--dx)*1.8), calc(var(--dy)*1.8)) scale(.3); } }
+body.luxe .success-card { background: linear-gradient(135deg, var(--luxe-card), rgba(26,26,26,.95)); box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 120px rgba(212,175,55,.5); border: 2px solid rgba(212,175,55,.3); }
+body.luxe .success-check { background: linear-gradient(135deg, var(--gold), var(--rose)); color: var(--luxe-bg); box-shadow: 0 10px 30px rgba(212,175,55,.6); }
+body.luxe .success-title { color: var(--gold); }
+body.luxe .success-item { background: linear-gradient(135deg, var(--gold), var(--rose), var(--teal)); -webkit-background-clip: text; background-clip: text; }
+body.luxe .success-detail { background: rgba(212,175,55,.15); color: var(--gold); border-color: rgba(212,175,55,.4); }
+body.luxe .success-price { color: var(--rose); }
+@media (max-width: 480px) {
+  .success-card { padding: 24px 20px; border-radius: 20px; }
+  .success-check { width: 72px; height: 72px; font-size: 42px; margin-bottom: 12px; }
+  .success-title { font-size: 18px; margin-bottom: 12px; }
+  .success-item { font-size: 22px; }
+  .success-detail { font-size: 13px; padding: 5px 12px; }
+  .success-price { font-size: 18px; }
+}
 </style>
 </head>
 <body>
@@ -482,6 +524,48 @@ function showToast(msg) {
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 1400);
+}
+
+function showSuccessPopup({ item, zone, name, sweet, ice, note, price }) {
+  const d = document.createElement('div');
+  d.className = 'success-overlay';
+  const details = [];
+  if (zone) details.push('📍 ' + zone);
+  if (name) details.push('👤 ' + name);
+  if (sweet) details.push('🍬 ' + sweet);
+  if (ice) details.push('🧊 ' + ice);
+  if (note) details.push('📝 ' + note);
+  const priceHtml = price ? \`<div class="success-price">＄\${price}</div>\` : '';
+  d.innerHTML = \`
+    <div class="success-card" role="dialog" aria-label="點單成功">
+      <div class="success-check">✓</div>
+      <h2 class="success-title">點單成功！</h2>
+      <div class="success-item">\${item.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</div>
+      \${details.length ? \`<div class="success-details">\${details.map(t => \`<span class="success-detail">\${t.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</span>\`).join('')}</div>\` : ''}
+      \${priceHtml}
+      <div class="success-hint">點畫面任何位置關閉</div>
+    </div>
+  \`;
+  document.body.appendChild(d);
+  // 星星爆發（8 顆）
+  const card = d.querySelector('.success-card');
+  const sparks = ['⭐','✨','💫','🎉','🌟','✨','💖','🎊'];
+  for (let i = 0; i < 8; i++) {
+    const s = document.createElement('span');
+    s.className = 'success-spark';
+    s.textContent = sparks[i];
+    const angle = (i / 8) * Math.PI * 2;
+    const dist = 140 + Math.random() * 60;
+    s.style.setProperty('--dx', Math.cos(angle) * dist + 'px');
+    s.style.setProperty('--dy', Math.sin(angle) * dist + 'px');
+    s.style.left = '50%'; s.style.top = '30%';
+    s.style.animationDelay = (i * 0.04) + 's';
+    card.appendChild(s);
+  }
+  const close = () => { d.classList.add('closing'); setTimeout(() => d.remove(), 350); };
+  d.addEventListener('click', close);
+  // 2.6 秒後自動關閉
+  setTimeout(() => { if (d.parentNode) close(); }, 2600);
 }
 
 const IS_ADMIN = new URLSearchParams(location.search).get('admin') === '1';
@@ -1054,7 +1138,12 @@ function openOrderModal(itemName, price, isCustom) {
       if (!r.ok) { alert('失敗：' + (j.error || r.status)); okBtn.disabled = false; okBtn.textContent = '送出'; return; }
       localStorage.setItem(LS_LAST_ZONE, zone);
       close();
-      showToast('✓ 已送出：' + itemName);
+      showSuccessPopup({
+        item: itemName,
+        zone,
+        name: memberName || nonMemberName || null,
+        sweet, ice, note, price,
+      });
       await poll();
     } catch (e) { alert('錯誤：' + e.message); okBtn.disabled = false; okBtn.textContent = '送出'; }
   });
