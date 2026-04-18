@@ -611,12 +611,28 @@ async function applyDupDecision(env, taskId, userId, pending, additive, replyTok
   await env.DB.prepare(`DELETE FROM pending_dups WHERE task_id = ? AND user_id = ?`).bind(taskId, userId).run();
   const m = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
   const who = m?.real_name || m?.line_display || userId.slice(0, 6);
-  const row = await env.DB.prepare(`SELECT data_json, price FROM entries WHERE task_id = ? AND user_id = ?`).bind(taskId, userId).first();
-  const parts = Object.values(JSON.parse(row?.data_json || '{}')).filter(Boolean).join('/');
+  const row = await env.DB.prepare(`SELECT data_json, note, price FROM entries WHERE task_id = ? AND user_id = ?`).bind(taskId, userId).first();
+  const finalData = JSON.parse(row?.data_json || '{}');
+  const parts = Object.values(finalData).filter(Boolean).join('/');
   const price = row?.price ? ` $${row.price}` : '';
   const verb = additive ? '加點' : '改為';
   const tail = (!additive && oldItem) ? `（原「${oldItem}」已取消）` : '';
-  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `✓ ${who} ${verb} ${parts}${price}${tail}` }]);
+
+  // 檢查還缺什麼欄位（重新跑 AI 用最終資料當 known）
+  const task = await env.DB.prepare(`SELECT task_name FROM tasks WHERE id = ?`).bind(taskId).first();
+  let followUp = '';
+  if (task?.task_name) {
+    const known = { ...finalData, ...(row.note ? { 備註: row.note } : {}), ...(row.price ? { 價格: row.price } : {}) };
+    const check = await geminiExtract(env.GEMINI_API_KEY, task.task_name, pending.new_text || '', known);
+    const syn = { '甜度': ['糖度'], '冰塊': ['冰量', '冰度'], '份量': ['大小', '飯量'] };
+    const finalKeys = new Set(Object.keys(finalData));
+    const stillMissing = (Array.isArray(check?.missing) ? check.missing : [])
+      .filter(k => !(finalKeys.has(k) || (syn[k] || []).some(s => finalKeys.has(s))));
+    if (stillMissing.length && check?.follow_up) {
+      followUp = `\n不過還差一點資訊～${check.follow_up}`;
+    }
+  }
+  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `✓ ${who} ${verb} ${parts}${price}${tail}${followUp}` }]);
 }
 
 // 反問當事人：要改還是再加一份
