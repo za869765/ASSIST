@@ -117,7 +117,9 @@ async function handleEvent(ev, env) {
     const openTasks = await findOpenTasks(env.DB, groupId);
     const dup = openTasks.find(t => t.task_name === taskName);
     if (dup) {
-      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `「${taskName}」已經在進行中了` }]);
+      const base = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
+      const url = `${base}/t/${dup.url_slug || dup.id}`;
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `「${taskName}」已經在進行中\n即時看板：${url}` }]);
       return;
     }
     const created = await createTask(env.DB, { groupId, taskName, startedBy: userId });
@@ -142,17 +144,21 @@ async function handleEvent(ev, env) {
     const picked = hinted || (tasks.length === 1 ? tasks[0] : null);
     if (!picked) {
       // 多任務且沒指名 → 全部摘要
+      const base = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
       const blocks = [];
       for (const t of tasks) {
         const entries = await listEntries(env.DB, t.id);
-        blocks.push(`📊「${t.task_name}」(${entries.length} 筆)\n${summarizeEntries(entries)}`);
+        const url = `${base}/t/${t.url_slug || t.id}`;
+        blocks.push(`📊「${t.task_name}」(${entries.length} 筆) ${url}\n${summarizeEntries(entries)}`);
       }
       await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: blocks.join('\n\n———\n\n') }]);
       return;
     }
     const entries = await listEntries(env.DB, picked.id);
+    const baseP = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
+    const urlP = `${baseP}/t/${picked.url_slug || picked.id}`;
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-      { type: 'text', text: `📊 任務「${picked.task_name}」目前 ${entries.length} 筆\n\n${summarizeEntries(entries)}` },
+      { type: 'text', text: `📊 任務「${picked.task_name}」目前 ${entries.length} 筆\n即時看板：${urlP}\n\n${summarizeEntries(entries)}` },
     ]);
     return;
   }

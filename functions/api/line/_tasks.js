@@ -3,7 +3,7 @@
 export async function findOpenTask(DB, groupId) {
   if (!DB || !groupId) return null;
   const r = await DB.prepare(
-    `SELECT id, task_name, mode, started_by, started_at
+    `SELECT id, task_name, mode, started_by, started_at, url_slug
        FROM tasks WHERE group_id = ? AND status = 'open'
        ORDER BY id DESC LIMIT 1`
   ).bind(groupId).first();
@@ -13,7 +13,7 @@ export async function findOpenTask(DB, groupId) {
 export async function findOpenTasks(DB, groupId) {
   if (!DB || !groupId) return [];
   const r = await DB.prepare(
-    `SELECT id, task_name, mode, started_by, started_at
+    `SELECT id, task_name, mode, started_by, started_at, url_slug
        FROM tasks WHERE group_id = ? AND status = 'open'
        ORDER BY id DESC`
   ).bind(groupId).all();
