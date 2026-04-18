@@ -503,6 +503,30 @@ async function doCloseTask(env, picked, replyToken) {
 }
 
 async function collectEntry(env, task, userId, text, replyToken, groupId) {
+  // 先檢查是否在回應「挑候選品項」的編號提示
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS pending_menu_pick (task_id INTEGER, user_id TEXT, candidates TEXT, created_at TEXT, PRIMARY KEY(task_id, user_id))`
+  ).run();
+  const pickMatch = String(text || '').trim().match(/^(?:第\s*)?([1-9]\d?)(?:\s*號|\s*項)?[\s!?！？。.~～]*$/);
+  if (pickMatch) {
+    const pendRow = await env.DB.prepare(
+      `SELECT candidates, created_at FROM pending_menu_pick WHERE task_id = ? AND user_id = ?`
+    ).bind(task.id, userId).first();
+    if (pendRow?.candidates) {
+      const age = Date.now() - Date.parse(String(pendRow.created_at).replace(' ', 'T') + 'Z');
+      if (!isNaN(age) && age < 5 * 60_000) {
+        const cands = JSON.parse(pendRow.candidates);
+        const idx = +pickMatch[1] - 1;
+        if (idx >= 0 && idx < cands.length) {
+          const chosen = cands[idx];
+          await env.DB.prepare(`DELETE FROM pending_menu_pick WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
+          // 模擬使用者輸入品項全名，往下走正常寫入流程
+          text = chosen.name;
+        }
+      }
+    }
+  }
+
   // 管理員標「請假」：「新化請假」「北區不吃」→ 該區記 請假，不再追問
   const leave = await tryZoneLeave(env, userId, text);
   if (leave) {
@@ -879,8 +903,13 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
         return;
       } else if (cands.length >= 2) {
         const list = cands.map((c, i) => `${i + 1}. ${c.name}${c.price ? ` $${c.price}` : ''}`).join('\n');
+        // 記下候選清單，5 分鐘內若使用者回「1/2/3」就能對到
+        await env.DB.prepare(
+          `INSERT INTO pending_menu_pick (task_id, user_id, candidates, created_at) VALUES (?, ?, ?, datetime('now'))
+           ON CONFLICT(task_id, user_id) DO UPDATE SET candidates = excluded.candidates, created_at = excluded.created_at`
+        ).bind(task.id, userId, JSON.stringify(cands)).run();
         await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
-          type: 'text', text: `@${askName} 「${itemName}」有多個候選，請挑一個：\n${list}`,
+          type: 'text', text: `@${askName} 「${itemName}」有多個候選，請挑一個（回覆編號）：\n${list}`,
         }]);
         return;
       } else {
