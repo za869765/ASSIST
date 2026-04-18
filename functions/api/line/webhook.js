@@ -190,8 +190,9 @@ async function handleEvent(ev, env) {
 
     const base = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
     const dlUrl = `${base}/d/${token}`;
+    const aggText = buildAggregateText(picked.task_name, entries);
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-      { type: 'text', text: `✅ 任務「${picked.task_name}」已結單（共 ${entries.length} 筆）\n\n${summarizeEntries(entries)}\n\n📎 一次性下載（僅能開啟一次）：\n${dlUrl}` },
+      { type: 'text', text: `✅ 任務「${picked.task_name}」已結單\n\n${aggText}\n\n📎 完整明細（彙總+依品項排序）一次性下載：\n${dlUrl}` },
     ]);
     return;
   }
@@ -303,40 +304,103 @@ function genDownloadToken() {
   return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
 }
 
-// XLSX 要用的 rows（每個 cell 強制文字）
-function buildSheetRows(taskName, entries) {
-  const fieldOrder = [];
-  const parsed = entries.map(e => {
+// 把 entries 正規化成 {name, item, data(其他欄位), note, price} 陣列
+function normalizeParsed(entries) {
+  return entries.map(e => {
     let data = {};
     try { data = JSON.parse(e.data_json || '{}'); } catch {}
-    for (const k of Object.keys(data)) if (!fieldOrder.includes(k)) fieldOrder.push(k);
-    let raws = [];
-    try { raws = JSON.parse(e.raw_texts || '[]'); } catch {}
-    return { e, data, raws };
-  });
-  const rows = [];
-  rows.push([`任務：${taskName}　筆數：${parsed.length}　匯出：${new Date().toISOString().replace('T', ' ').slice(0, 19)}`]);
-  rows.push([]);
-  rows.push(['#', '姓名', ...fieldOrder, '備註', '價格', '原始發言', '最後更新']);
-  let total = 0;
-  parsed.forEach(({ e, data, raws }, i) => {
     const name = e.real_name || e.line_display || (e.user_id ? e.user_id.slice(0, 6) : '');
-    rows.push([
-      String(i + 1),
-      name,
-      ...fieldOrder.map(k => data[k] == null ? '' : String(data[k])),
-      e.note || '',
-      e.price != null ? String(e.price) : '',
-      Array.isArray(raws) ? raws.join(' | ') : '',
-      e.updated_at || '',
-    ]);
-    total += e.price || 0;
+    const item = data['品項'] || '';
+    const rest = { ...data }; delete rest['品項'];
+    return { name, item, data, rest, note: e.note || '', price: e.price, updated: e.updated_at };
   });
-  if (total) {
-    rows.push([]);
-    rows.push(['', '合計', ...fieldOrder.map(() => ''), '', String(total), '', '']);
-  }
+}
+
+// 產生多段 XLSX rows：① 訂購彙總（對店家）② 明細（依品項排序，發餐用）
+function buildSheetRows(taskName, entries) {
+  const parsed = normalizeParsed(entries);
+
+  // 彙總：品項 → 份數、備註(含人名)、小計
+  const groups = {};
+  parsed.forEach(p => {
+    const key = p.item || '(未辨識)';
+    if (!groups[key]) groups[key] = { count: 0, notes: [], total: 0, people: [] };
+    const g = groups[key];
+    g.count += 1;
+    g.total += p.price || 0;
+    g.people.push(p.name);
+    // 把備註與「非品項」欄位一起當修飾（方便店家看）
+    const modParts = [];
+    for (const k of Object.keys(p.rest)) {
+      if (p.rest[k]) modParts.push(`${k}:${p.rest[k]}`);
+    }
+    if (p.note) modParts.push(p.note);
+    if (modParts.length) g.notes.push(`${p.name}（${modParts.join('、')}）`);
+  });
+
+  const rows = [];
+  rows.push([`任務：${taskName}　總筆數：${parsed.length}　匯出：${new Date().toISOString().replace('T', ' ').slice(0, 19)}`]);
+  rows.push([]);
+
+  // ① 訂購彙總
+  rows.push(['■ 訂購彙總（對店家）']);
+  rows.push(['品項', '份數', '備註 / 特殊要求', '小計']);
+  let grandCount = 0, grandTotal = 0;
+  Object.keys(groups)
+    .sort((a, b) => groups[b].count - groups[a].count || a.localeCompare(b, 'zh-Hant'))
+    .forEach(k => {
+      const g = groups[k];
+      rows.push([k, String(g.count), g.notes.join('；'), g.total ? String(g.total) : '']);
+      grandCount += g.count;
+      grandTotal += g.total;
+    });
+  rows.push(['合計', String(grandCount), '', grandTotal ? String(grandTotal) : '']);
+  rows.push([]);
+
+  // ② 明細：依品項排序（相同品項排一起），方便發餐
+  const restFields = [];
+  parsed.forEach(p => { for (const k of Object.keys(p.rest)) if (!restFields.includes(k)) restFields.push(k); });
+  rows.push(['■ 明細（依品項排序，發餐用）']);
+  rows.push(['品項', '姓名', ...restFields, '備註', '金額']);
+  const sorted = [...parsed].sort((a, b) => {
+    const ai = a.item || '~'; const bi = b.item || '~';
+    if (ai !== bi) return ai.localeCompare(bi, 'zh-Hant');
+    return a.name.localeCompare(b.name, 'zh-Hant');
+  });
+  sorted.forEach(p => {
+    rows.push([
+      p.item || '(未辨識)',
+      p.name,
+      ...restFields.map(k => p.rest[k] == null ? '' : String(p.rest[k])),
+      p.note || '',
+      p.price != null ? String(p.price) : '',
+    ]);
+  });
+
   return rows;
+}
+
+// 產生對店家的彙總文字（給 LINE 群組訊息）
+function buildAggregateText(taskName, entries) {
+  const parsed = normalizeParsed(entries);
+  const groups = {};
+  parsed.forEach(p => {
+    const key = p.item || '(未辨識)';
+    if (!groups[key]) groups[key] = { count: 0, total: 0 };
+    groups[key].count += 1;
+    groups[key].total += p.price || 0;
+  });
+  const lines = Object.keys(groups)
+    .sort((a, b) => groups[b].count - groups[a].count || a.localeCompare(b, 'zh-Hant'))
+    .map(k => {
+      const g = groups[k];
+      const price = g.total ? ` ＄${g.total}` : '';
+      return `・${k} x${g.count}${price}`;
+    });
+  const totalCount = parsed.length;
+  const totalPrice = parsed.reduce((s, p) => s + (p.price || 0), 0);
+  const totalLine = `合計：${totalCount} 份${totalPrice ? `　＄${totalPrice}` : ''}`;
+  return `📦「${taskName}」訂購彙總（對店家）\n${lines.join('\n')}\n\n${totalLine}`;
 }
 
 function normalizeVerdict(s) {
