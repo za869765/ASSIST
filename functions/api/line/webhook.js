@@ -515,6 +515,8 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
   if (proxy) {
     userId = proxy.userId;
     text = proxy.text;
+    // 若剩下的文字還帶有人名前綴（例「衛生局 倖妤 +1」→ 剝 zone 後 = 「倖妤 +1」），再剝掉人名
+    text = await stripLeadingPersonName(env, text);
   } else {
     // 沒比對到區 → 再試人名（real_name / line_display）前綴；有比對到就換成那個人
     const person = await tryProxyPerson(env, userId, text);
@@ -1222,6 +1224,35 @@ async function tryZoneLeave(env, userId, text) {
 
 // 管理員代點：偵測「幫南區點素食便當」「衛生局要一個排骨飯」等
 // 回傳 {userId, text} 或 null。userId 會被替換為 zone:<名稱>，text 則是移除代點用詞的點餐內容
+// 僅剝掉文字最前面的人名前綴（不改變 userId）；給 zone 代點後的剩餘文本用
+async function stripLeadingPersonName(env, text) {
+  const trimmed = String(text || '').trim();
+  if (trimmed.length < 3) return trimmed;
+  const rows = await env.DB.prepare(
+    `SELECT real_name, line_display FROM members WHERE user_id NOT LIKE 'zone:%'`
+  ).all();
+  const normName = (s) => String(s || '')
+    .replace(/[\p{Extended_Pictographic}\p{Emoji_Presentation}\uFE0F\u200D]/gu, '')
+    .replace(/[\s·・\.、,，!！?？]+/g, '')
+    .trim();
+  const names = new Set();
+  for (const r of (rows.results || [])) {
+    const rn = normName(r.real_name); const ld = normName(r.line_display);
+    if (rn && rn.length >= 2) names.add(rn);
+    if (ld && ld.length >= 2) names.add(ld);
+  }
+  const sorted = [...names].sort((a, b) => b.length - a.length);
+  for (const nm of sorted) {
+    const re = new RegExp('^[\\s\\p{Extended_Pictographic}\\p{Emoji_Presentation}\\uFE0F\\u200D]*' +
+      nm.split('').map(ch => ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('[\\s\\p{Extended_Pictographic}\\p{Emoji_Presentation}\\uFE0F\\u200D]*') +
+      '[\\s:：,，、]*(.*)$', 'u');
+    const m = trimmed.match(re);
+    if (m) return (m[1] || '').trim() || trimmed;
+  }
+  return trimmed;
+}
+
 // 偵測人名前綴（admin 代點用），例：「倖妤 葷食便當」「倖妤+1」→ 改用該人的 user_id
 async function tryProxyPerson(env, userId, text) {
   const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
