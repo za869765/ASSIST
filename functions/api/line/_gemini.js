@@ -108,7 +108,8 @@ export async function geminiExtract(apiKey, taskName, userText, knownData = {}) 
 從使用者訊息抽出結構化 JSON。先前已知資料：${JSON.stringify(knownData)}
 動態決定該任務需要的欄位（例：飲料 → 品項、甜度、冰塊、大小；便當 → 品項、葷素、份量）。
 只抽有把握的欄位，沒提到就不要編造。合併先前已知 + 這次新抽到的。
-判斷 missing：對此任務「應該要有」但目前仍缺的欄位名稱陣列。
+預設每人一份，除非使用者主動講數量；「份數/數量」不要列入 missing、不要追問。
+判斷 missing：對此任務「應該要有」但目前仍缺的欄位名稱陣列（排除份數/數量）。
 follow_up：若 missing 非空，提一句簡短的追問（繁中、口語、一行內），例：「甜度冰塊要什麼？」「葷的還是素的？」；若 missing 為空則 null。
 
 嚴格回傳 JSON：
