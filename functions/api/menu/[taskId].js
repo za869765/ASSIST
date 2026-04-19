@@ -3,6 +3,7 @@
 //  POST   → 上傳一張照片（multipart/form-data, field 名 "photo"）
 //  DELETE → 刪除單張（body: { photoId }）
 import { geminiParseMenu, geminiOrganizeMenu } from '../line/_gemini.js';
+import { requireAdminPass } from '../line/_lib.js';
 
 function uuid() {
   // 短亂數 id，避免引入 crypto.randomUUID 以相容舊環境
@@ -55,6 +56,21 @@ export async function onRequestPost({ env, params, request }) {
   if (!taskId) return json({ error: 'bad taskId' }, 400);
   if (!env.MENU_BUCKET) return json({ error: 'R2 bucket binding missing' }, 500);
 
+  // bug #4: 原本無 auth 也無速限，外部可連打 10MB 圖燒 Gemini/R2 額度。
+  // 加 admin pass 驗證 + 每分鐘 1 次速限（仿 webhook 端 menu_push_log）。
+  if (!requireAdminPass(request, env)) {
+    return json({ error: 'admin auth required' }, 401);
+  }
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS menu_upload_log (task_id INTEGER PRIMARY KEY, uploaded_at TEXT)`
+  ).run();
+  const cooldown = await env.DB.prepare(
+    `SELECT uploaded_at FROM menu_upload_log WHERE task_id = ? AND uploaded_at > datetime('now','-1 minute')`
+  ).bind(taskId).first();
+  if (cooldown) {
+    return json({ error: '上傳冷卻中（每任務 1/min）' }, 429);
+  }
+
   const task = await env.DB.prepare(`SELECT id, status, group_id FROM tasks WHERE id = ?`).bind(taskId).first();
   if (!task) return json({ error: 'task not found' }, 404);
   if (task.status === 'closed') return json({ error: 'task closed' }, 400);
@@ -84,6 +100,12 @@ export async function onRequestPost({ env, params, request }) {
   await env.DB.prepare(
     `INSERT INTO menu_photos (id, task_id, r2_key, mime, size, items_json) VALUES (?, ?, ?, ?, ?, ?)`
   ).bind(id, taskId, r2Key, mime, bytes.byteLength, JSON.stringify(items)).run();
+
+  // bug #4: 紀錄速限時戳（成功上傳後才寫，失敗不佔冷卻）
+  await env.DB.prepare(
+    `INSERT INTO menu_upload_log (task_id, uploaded_at) VALUES (?, datetime('now'))
+     ON CONFLICT(task_id) DO UPDATE SET uploaded_at = excluded.uploaded_at`
+  ).bind(taskId).run();
 
   // 彙總 + 交 AI 再整理（去重/修名/分類/排序）→ 存為 menu_json
   const agg = await aggregateItems(env.DB, taskId);

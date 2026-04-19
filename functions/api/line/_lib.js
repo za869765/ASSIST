@@ -1,7 +1,22 @@
 // 共用函式：LINE 簽章驗證 / reply / push / profile
 
+// bug #18: signature 比較須 constant-time，避免時間側通道。
+function _ctEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  // 在 length 不同時仍跑完一輪 XOR，避免提早 return 漏資訊
+  const la = a.length, lb = b.length;
+  const len = Math.max(la, lb);
+  let diff = la ^ lb;
+  for (let i = 0; i < len; i++) {
+    diff |= (a.charCodeAt(i % la || 1) ^ b.charCodeAt(i % lb || 1));
+  }
+  return diff === 0 && la === lb;
+}
+
 export async function verifyLineSignature(secret, body, signature) {
   if (!secret || !signature) return false;
+  // 強制 body 必須是字串（避免 undefined/object 算空字串簽章）
+  if (typeof body !== 'string') return false;
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
     'raw', enc.encode(secret),
@@ -10,7 +25,7 @@ export async function verifyLineSignature(secret, body, signature) {
   );
   const sig = await crypto.subtle.sign('HMAC', key, enc.encode(body));
   const b64 = btoa(String.fromCharCode(...new Uint8Array(sig)));
-  return b64 === signature;
+  return _ctEqual(b64, String(signature));
 }
 
 export async function lineReply(token, replyToken, messages) {
@@ -63,6 +78,20 @@ export async function getUserProfile(token, userId) {
 export function isAdmin(userId, env) {
   const list = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
   return list.includes(userId);
+}
+
+// bug #1/#3/#4: 給對外 HTTP API 用的 admin gate（不同於 LINE userId 白名單）。
+// 透過 X-Admin-Pass header 傳遞，比對 ADMIN_PASS env var；兩者都缺直接 deny。
+export function requireAdminPass(request, env) {
+  const expected = String(env.ADMIN_PASS || '').trim();
+  if (!expected) return false; // 沒設 secret 一律拒絕，避免 misconfig 變成裸奔
+  const got = String(request.headers.get('X-Admin-Pass') || '').trim();
+  if (!got) return false;
+  // constant-time
+  if (got.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < got.length; i++) diff |= got.charCodeAt(i) ^ expected.charCodeAt(i);
+  return diff === 0;
 }
 
 // 喚醒詞：開頭出現「小秘書」或「秘書」即可
