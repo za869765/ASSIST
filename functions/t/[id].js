@@ -66,7 +66,7 @@ export async function onRequestGet({ params, request, env }) {
     : '';
 
   const initData = {
-    task: { id: task.id, name: task.task_name },
+    task: { id: task.id, name: task.task_name, mode: task.mode || 'free' },
     zones,
     entries: entries.map(e => ({
       user_id: e.user_id,
@@ -1506,7 +1506,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.4</span>
+  <span style="opacity:.6">v1.0.5</span>
 </div>
 
 <div class="admin-row">
@@ -1518,7 +1518,11 @@ ${tabs}
   `}
 </div>
 
-${closed ? '' : `<details class="menu-card" id="menuCard">
+${closed ? '' : `<label class="menu-mode-toggle" id="menuModeToggle" style="display:flex;align-items:center;gap:8px;margin:8px 0;padding:8px 12px;background:rgba(184,134,11,.08);border:1px solid rgba(184,134,11,.3);border-radius:6px;font-size:14px;cursor:pointer;user-select:none">
+  <input type="checkbox" id="menuModeChk" style="width:16px;height:16px;cursor:pointer">
+  <span>📋 開啟菜單模式（勾選後展開菜單區，可上傳菜單照／管理品項）</span>
+</label>
+<details class="menu-card" id="menuCard" style="display:none">
   <summary>菜單（<span id="menuCount">0</span> 張／品項 <span id="menuItemCount">0</span>）</summary>
   <div class="menu-thumbs" id="menuThumbs"></div>
   <div class="upload-row">
@@ -1526,7 +1530,6 @@ ${closed ? '' : `<details class="menu-card" id="menuCard">
     <input type="file" id="menuFile" accept="image/*" multiple style="display:none">
     <span id="uploadMsg">支援多張；任務結單後自動清除</span>
   </div>
-  <div class="items-list" id="menuItems"></div>
   <div class="menu-summary" id="menuSummary"></div>
   <div class="recommend-bar">
     <div class="recommend-buttons">
@@ -1552,7 +1555,8 @@ ${closed ? '' : `<details class="menu-card" id="menuCard">
     </div>
     <div class="recommend-result" id="recommendResult"></div>
   </div>
-</details>`}
+</details>
+<div class="items-list" id="menuItems" style="margin:10px 0"></div>`}
 
 ${closed ? '' : `<div id="adminBanner" class="admin-banner" style="display:none">🔧 管理員模式：web 紀錄可刪除（× 按鈕）。<a href="?">離開</a></div>`}
 ${closed ? '' : `<div id="editPriceBanner" class="admin-banner" style="display:none">📝 編輯模式：點「品項名稱」或「價格」可以改（OCR 亂碼可在這裡修正）。<a href="?">離開</a></div>`}
@@ -1793,6 +1797,50 @@ ${closed ? '' : 'setInterval(async () => { await poll(); if (typeof loadMenu ===
 
 ${closed ? '' : `
 const TASK_ID = ${task.id};
+
+// 菜單模式 toggle：勾選=menu、取消=free；同時連動 menuCard 顯示
+(function initMenuModeToggle() {
+  const chk = document.getElementById('menuModeChk');
+  const card = document.getElementById('menuCard');
+  if (!chk || !card) return;
+  const initOn = !!(state && state.task && state.task.mode === 'menu');
+  chk.checked = initOn;
+  card.style.display = initOn ? '' : 'none';
+  chk.addEventListener('change', async () => {
+    const target = chk.checked ? 'menu' : 'free';
+    let pass = sessionStorage.getItem('adminPass') || '';
+    if (!pass) {
+      pass = (window.prompt('請輸入管理員密碼') || '').trim();
+      if (!pass) { chk.checked = !chk.checked; return; }
+      sessionStorage.setItem('adminPass', pass);
+    }
+    try {
+      const r = await fetch('/api/t/' + TASK_ID + '/mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Pass': pass },
+        body: JSON.stringify({ mode: target }),
+      });
+      if (r.status === 401) {
+        sessionStorage.removeItem('adminPass');
+        alert('密碼錯誤');
+        chk.checked = !chk.checked;
+        return;
+      }
+      if (!r.ok) {
+        alert('切換失敗：' + r.status);
+        chk.checked = !chk.checked;
+        return;
+      }
+      if (state && state.task) state.task.mode = target;
+      card.style.display = chk.checked ? '' : 'none';
+      if (typeof loadMenu === 'function') loadMenu();
+    } catch (e) {
+      alert('錯誤：' + e.message);
+      chk.checked = !chk.checked;
+    }
+  });
+})();
+
 async function loadMenu() {
   try {
     const r = await fetch('/api/menu/' + TASK_ID);
@@ -1843,7 +1891,9 @@ async function loadMenu() {
       return \`<div class="cat-row"><b>\${esc(cat)}</b>\${its}</div>\`;
     }).join('');
     // 無菜單 fallback
-    const hasItems = (j.items || []).length > 0;
+    // 無菜單模式（mode=free）一律走 fallback chips（葷/素/請假），即使 DB 還有舊菜單品項
+    const isMenuMode = state && state.task && state.task.mode === 'menu';
+    const hasItems = isMenuMode && (j.items || []).length > 0;
     const recBar = document.querySelector('.recommend-bar');
     const leaveRow = '<div class="cat-row" style="margin-top:8px"><span class="item-chip leave-chip" data-name="__leave__"><b class="item-pick">📝 請假</b></span></div>';
     if (!hasItems && IS_DRINK_TASK) {
