@@ -89,6 +89,20 @@ async function handleEvent(ev, env) {
       return;
     }
 
+    // admin 進度三件套：催 / 等 / 匯出
+    if (admin && /^(催|催單|催餐|催一下|提醒|提醒一下)[\s!?！？。.~～]*$/.test(progShort)) {
+      await doRemindMissing(env, tasks, replyToken);
+      return;
+    }
+    if (admin && /^(匯出|匯出清單|下載|下載清單|XLSX|xlsx|excel|EXCEL|Excel)[\s!?！？。.~～]*$/.test(progShort)) {
+      await doExportInProgress(env, tasks, replyToken);
+      return;
+    }
+    if (admin && /^(等|繼續等|再等|等一下|稍等)[\s!?！？。.~～]*$/.test(progShort)) {
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '👌 OK，繼續等～有需要催再跟我說「催」' }]);
+      return;
+    }
+
     // 管理員「全部結算 / 兩個都結算 / 都結」→ 一次結掉所有 open tasks
     const allShort = String(text || '').replace(/[?？!！。.\s]/g, '');
     if (admin && /^(全部|都|兩個都|兩個|三個|四個|五個|所有|都要)(結算|結單|結|算)(吧|喔|啦)?$/.test(allShort)) {
@@ -471,6 +485,8 @@ async function doProgressReport(env, tasks, hintText, replyToken) {
       : `\n✓ 全部 ${allZones.length} 區衛生所已喊`;
   };
 
+  const askLine = '\n\n💬 請回：「催」群組催未回覆者／「等」繼續等／「匯出」下載目前清單';
+
   const hinted = hintText ? matchTaskByHint(tasks, hintText) : null;
   const picked = hinted || (tasks.length === 1 ? tasks[0] : null);
   if (!picked) {
@@ -480,14 +496,44 @@ async function doProgressReport(env, tasks, hintText, replyToken) {
       const url = `${base}/t/${t.url_slug || t.id}`;
       blocks.push(`📊「${t.task_name}」(${entries.length} 筆)\n看板：${url}${missingFor(entries)}\n\n${summarizeEntries(entries)}`);
     }
-    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: blocks.join('\n\n———\n\n') }]);
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: blocks.join('\n\n———\n\n') + askLine }]);
     return;
   }
   const entries = await listEntries(env.DB, picked.id);
   const url = `${base}/t/${picked.url_slug || picked.id}`;
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-    { type: 'text', text: `📊 任務「${picked.task_name}」目前 ${entries.length} 筆\n看板：${url}${missingFor(entries)}\n\n${summarizeEntries(entries)}` },
+    { type: 'text', text: `📊 任務「${picked.task_name}」目前 ${entries.length} 筆\n看板：${url}${missingFor(entries)}\n\n${summarizeEntries(entries)}${askLine}` },
   ]);
+}
+
+// admin 進度三件套：催 / 等 / 匯出
+async function doRemindMissing(env, tasks, replyToken) {
+  const zoneRow = await env.DB.prepare(
+    `SELECT name FROM zones WHERE enabled = 1 AND name != '衛生局' ORDER BY sort_order ASC, name ASC`
+  ).all();
+  const allZones = (zoneRow.results || []).map(z => z.name);
+  const filled = new Set();
+  for (const t of tasks) {
+    const entries = await listEntries(env.DB, t.id);
+    entries.forEach(e => { if (e.zone) filled.add(e.zone); });
+  }
+  const missing = allZones.filter(z => !filled.has(z));
+  if (!missing.length) {
+    await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '✓ 全部衛生所都已回覆，不用催了 👍' }]);
+    return;
+  }
+  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+    type: 'text',
+    text: `📣 提醒：以下 ${missing.length} 區衛生所還沒回覆，請趕快點餐或請假～\n\n${missing.map(z => '• ' + z).join('\n')}\n\n📝 範例：「葷」「素」「請假」「+1」`,
+  }]);
+}
+
+async function doExportInProgress(env, tasks, replyToken) {
+  const base = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
+  const lines = tasks.map(t => `📊「${t.task_name}」\n${base}/api/t/${t.url_slug || t.id}/export`);
+  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
+    type: 'text', text: `📥 進行中清單下載（XLSX）：\n\n${lines.join('\n\n')}\n\n（任務尚未結單，僅匯出當前狀態）`,
+  }]);
 }
 
 async function doCloseTask(env, picked, replyToken) {

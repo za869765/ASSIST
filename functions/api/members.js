@@ -10,6 +10,21 @@ export async function onRequestGet({ env }) {
   return Response.json({ members: row.results || [] });
 }
 
+// 編輯成員真實姓名（admin/zones inline 編輯用）
+// body: { user_id, real_name }
+export async function onRequestPatch({ request, env }) {
+  let body;
+  try { body = await request.json(); } catch { return new Response('Bad JSON', { status: 400 }); }
+  const user_id = String(body?.user_id || '').trim();
+  const real_name = String(body?.real_name ?? '').trim();
+  if (!user_id) return new Response('user_id required', { status: 400 });
+  // 空字串就清空 real_name（XLSX fallback 回 line_display）；非空才更新
+  const r = await env.DB.prepare(
+    `UPDATE members SET real_name = ? WHERE user_id = ?`
+  ).bind(real_name || null, user_id).run();
+  return Response.json({ ok: true, user_id, real_name: real_name || null, changes: r.meta?.changes || 0 });
+}
+
 // 刪除成員（清掉名單裡不在編制的閒雜帳號）
 // 同時清掉該成員在進行中任務的點餐紀錄，避免殘留
 export async function onRequestDelete({ request, env }) {

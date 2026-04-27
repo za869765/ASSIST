@@ -154,14 +154,22 @@ function renderMembers() {
   document.getElementById('memSummary').textContent = \`共 \${MEMBERS.length} 人（未分區：\${unassigned}）\`;
   tbody.innerHTML = '';
   for (const m of MEMBERS) {
-    const name = m.real_name || m.line_display || '(未命名)';
+    const realName = m.real_name || '';
+    const lineDisp = m.line_display || '';
     const dt = (m.last_seen_at || '').slice(0, 16);
     const isSynth = String(m.user_id || '').startsWith('zone:');
     const tr = document.createElement('tr');
     const optHtml = ['<option value="">（未分區）</option>', ...zonesOn.map(z => \`<option value="\${esc(z.name)}">\${esc(zoneLabel(z))}</option>\`)].join('');
-    const delCell = isSynth ? '<td></td>' : \`<td><button class="del-mem" data-uid="\${esc(m.user_id)}" data-name="\${esc(name)}" title="刪除此成員">×</button></td>\`;
+    const delCell = isSynth ? '<td></td>' : \`<td><button class="del-mem" data-uid="\${esc(m.user_id)}" data-name="\${esc(realName || lineDisp)}" title="刪除此成員">×</button></td>\`;
+    // 姓名欄：可編輯 input（real_name），底下小字顯示 LINE 暱稱（提示用）；isSynth 不可編輯
+    const nameCell = isSynth
+      ? \`<td>\${esc(realName || lineDisp || '(代點)')} <small style="color:#888">[代點]</small></td>\`
+      : \`<td>
+          <input class="name-edit" type="text" value="\${esc(realName)}" placeholder="\${esc(lineDisp || '請輸入真實姓名')}" data-uid="\${esc(m.user_id)}" style="width:90%;padding:4px 6px;font-size:13px;border:1px solid #ccc6;border-radius:4px;background:transparent;color:inherit">
+          \${realName && lineDisp && realName !== lineDisp ? \`<br><small style="color:#888">LINE：\${esc(lineDisp)}</small>\` : ''}
+        </td>\`;
     tr.innerHTML = \`
-      <td>\${esc(name)}\${isSynth ? ' <small style="color:#888">[代點]</small>' : ''}</td>
+      \${nameCell}
       <td class="uid">\${esc(m.user_id)}</td>
       <td><select class="zone-pick">\${optHtml}</select></td>
       <td><small>\${esc(dt)}</small></td>
@@ -169,6 +177,28 @@ function renderMembers() {
     const sel = tr.querySelector('select');
     sel.value = m.zone || '';
     sel.addEventListener('change', () => tagMember(m.user_id, sel.value));
+    const nameInput = tr.querySelector('.name-edit');
+    if (nameInput) {
+      nameInput.addEventListener('blur', async () => {
+        const newName = nameInput.value.trim();
+        if (newName === (realName || '')) return;
+        nameInput.disabled = true;
+        try {
+          const r = await fetch('/api/members', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: m.user_id, real_name: newName }),
+          });
+          if (r.ok) {
+            m.real_name = newName || null;
+            msg('已更新姓名 ✓');
+          } else msg('姓名更新失敗', true);
+        } finally { nameInput.disabled = false; }
+      });
+      nameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); nameInput.blur(); }
+      });
+    }
     const btn = tr.querySelector('.del-mem');
     if (btn) {
       btn.addEventListener('click', async () => {
