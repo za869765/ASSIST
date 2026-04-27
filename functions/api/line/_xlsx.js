@@ -203,7 +203,10 @@ export function buildXLSX(sheetName, rows, extraMerges = []) {
   const totalWidth = rawWidths.reduce((a, b) => a + b, 0);
   const A4_WIDTH = 78;
   const scale = totalWidth > A4_WIDTH ? (A4_WIDTH / totalWidth) : 1;
-  const cols = rawWidths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${(w * scale).toFixed(1)}" customWidth="1"/>`).join('');
+  // 隱藏實際內容右側的所有欄（讓 Excel 開檔不再看到大片空白格子）
+  const HIDE_COL_END = 16384;
+  const cols = rawWidths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${(w * scale).toFixed(1)}" customWidth="1"/>`).join('')
+    + `<col min="${rawWidths.length + 1}" max="${HIDE_COL_END}" hidden="1" width="0"/>`;
 
   // 最大欄數：用來把「主標題 / ■ 區塊標題」跨欄合併到滿版
   const maxCols = rows.reduce((m, r) => Math.max(m, r.length), 1);
