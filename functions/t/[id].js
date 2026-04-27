@@ -1506,7 +1506,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.6</span>
+  <span style="opacity:.6">v1.0.7</span>
 </div>
 
 <div class="admin-row">
@@ -1566,7 +1566,7 @@ ${closed ? '' : `<div id="editPriceBanner" class="admin-banner" style="display:n
 <div class="particles" id="luxeParticles" aria-hidden="true"></div>
 
 <script>
-// XSS 防護：JSON.stringify 後再把 `<` `-->` `]]>` 與 LS/PS 換成 \u 跳脫字串，避免從 <script> 逃出
+// XSS guard: escape script-closing sequences in JSON to prevent breaking out of script tag
 const INITIAL = ${JSON.stringify(initData).replace(/</g, '\\u003c').replace(/-->/g, '--\\u003e').replace(/\]\]>/g, ']]\\u003e').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')};
 let state = INITIAL;
 
