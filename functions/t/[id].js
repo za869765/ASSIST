@@ -763,13 +763,19 @@ h2.zone small {
   text-transform: uppercase;
 }
 
-/* entry list — 清單樣式，間距收細 */
-ul { list-style: none; padding: 0; margin: 0 0 2px; }
+/* entry list — 與 zone 標題視覺成組：縮排 + 虛線左邊 + 下方留白
+   避免下一個 zone header 太貼近上一個 entry，讓使用者誤以為該 entry 屬下一區 */
+ul {
+  list-style: none;
+  padding: 0 0 0 14px;
+  margin: 2px 0 14px 4px;
+  border-left: 1px dashed rgba(201,169,97,.28);
+}
 li {
   display: grid;
   grid-template-columns: 88px 1fr auto;
   gap: 10px;
-  padding: 5px 12px 5px 14px;
+  padding: 5px 10px;
   border: none;
   border-bottom: 1px solid var(--line-soft);
   border-radius: 0;
@@ -1517,7 +1523,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.11</span>
+  <span style="opacity:.6">v1.0.12</span>
 </div>
 
 <div class="admin-row">
