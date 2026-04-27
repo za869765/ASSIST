@@ -819,6 +819,15 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
       else if (/(^|[^一二三四五六七八九十百千])葷(?!素)/.test(text) && !/素/.test(text)) { parsed.data['品項'] = '葷食便當'; parsed.data['葷素'] = '葷'; }
       else if (/素(?!食便當|食)/.test(text) && !/葷/.test(text)) { parsed.data['品項'] = '素食便當'; parsed.data['葷素'] = '素'; }
     }
+    // 葷/素便當變體 normalize：「葷」、「葷/葷食便當」、「葷食便當/葷」等→「葷食便當」（素同理）
+    if (taskIsBento && parsed.data['品項']) {
+      const norm = normalizeBentoItem(parsed.data['品項']);
+      if (norm) {
+        parsed.data['品項'] = norm;
+        // 品項已是完整名稱，葷素欄位多餘，避免 entryBody 展開成「葷食便當 / 葷」
+        delete parsed.data['葷素'];
+      }
+    }
   }
   if (parsed?.nonsense) {
     await handleNonsense(env, task, userId, text, replyToken, parsed.follow_up, !!existing);
@@ -903,6 +912,20 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
       if (!hasFoodVerb && !touchesMenu) {
         console.log('[off-topic silent]', text);
         return; // 不回覆，讓群組聊天不被 bot 打擾
+      }
+    }
+    // 無菜單模式：嚴格只認便當相關名詞與 +1/加一 等加點意圖；其他閒聊一律沉默
+    const hasMenu = Array.isArray(menuItems) && menuItems.length;
+    if (!hasMenu && !existing && looksLikeItem) {
+      const tNorm = tClean.replace(/\s+/g, '');
+      const isBentoTerm = !!normalizeBentoItem(tNorm);
+      const isAddOne = /^(\+|＋)\s*1?$/.test(tNorm)
+        || /(加|多|再)\s*[一12]/.test(tNorm)
+        || /^(加點|加上|加一|再加|再來|多加|多一|多點|多要|多來|累加|追加|外加)/.test(tNorm)
+        || /^(可以|能不能|麻煩|請)?(再|多|加)/.test(tNorm);
+      if (!isBentoTerm && !isAddOne && !parsed?.follow_up) {
+        console.log('[no-menu off-topic silent]', text);
+        return;
       }
     }
     if (looksLikeItem) {
@@ -1250,6 +1273,19 @@ function buildAggregateText(taskName, entries) {
   const totalPrice = parsed.reduce((s, p) => s + (p.price || 0), 0);
   const totalLine = `合計：${totalCount} 份${totalPrice ? `　＄${totalPrice}` : ''}`;
   return `📦「${taskName}」訂購彙總（對店家）\n${lines.join('\n')}\n\n${totalLine}`;
+}
+
+// 葷/素便當變體 → 統一為「葷食便當」/「素食便當」
+// 例：「葷」「葷食」「葷食便當」「葷/葷食便當」「葷食便當/葷」「葷／葷食」皆 → 葷食便當
+function normalizeBentoItem(item) {
+  if (!item) return null;
+  const parts = String(item).split(/\s*[\/／、,，+＋]\s*/).map(s => s.trim()).filter(Boolean);
+  if (!parts.length) return null;
+  const isMeat = (s) => /^(葷|葷食|葷食便當)$/.test(s);
+  const isVeg = (s) => /^(素|素食|素食便當)$/.test(s);
+  if (parts.every(isMeat)) return '葷食便當';
+  if (parts.every(isVeg)) return '素食便當';
+  return null;
 }
 
 function normalizeVerdict(s) {

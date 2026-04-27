@@ -1561,10 +1561,7 @@ ${closed ? '' : `<div id="editPriceBanner" class="admin-banner" style="display:n
 <div class="particles" id="luxeParticles" aria-hidden="true"></div>
 
 <script>
-/* bug #2: JSON.stringify 不會 escape "</script>" "<!--" "]]>" 等序列。
-   使用者顯示名 / 訂單備註 / OCR 抽值可能含這些字元 → 直接內嵌 <script> 即可被
-   惡意 LINE 顯示名 "</script><img src=x onerror=alert(1)>" 逃出 script tag。
-   這裡逐個替換成 \\u 跳脫等價字串，瀏覽器解析 script 邊界不再被打斷。 */
+// XSS 防護：JSON.stringify 後再把 `<` `-->` `]]>` 與 LS/PS 換成 \u 跳脫字串，避免從 <script> 逃出
 const INITIAL = ${JSON.stringify(initData).replace(/</g, '\\u003c').replace(/-->/g, '--\\u003e').replace(/\]\]>/g, ']]\\u003e').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')};
 let state = INITIAL;
 

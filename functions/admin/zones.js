@@ -34,6 +34,9 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid #eee4; }
 .uid { font-family: monospace; font-size: 10px; color: #888; word-break: break-all; max-width: 180px; }
 .zone-pick { padding: 3px 5px; font-size: 12px; }
+.del-mem { padding: 2px 8px; font-size: 13px; line-height: 1.2; color: #fff; background: #d4543a; border: 1px solid #b14328; border-radius: 4px; cursor: pointer; }
+.del-mem:hover { background: #b14328; }
+.del-mem:disabled { opacity: .5; cursor: wait; }
 details { margin: 10px 0; }
 summary { cursor: pointer; padding: 6px 0; font-weight: 600; font-size: 14px; }
 </style>
@@ -53,7 +56,7 @@ summary { cursor: pointer; padding: 6px 0; font-weight: 600; font-size: 14px; }
 <details open>
 <summary id="memSummary">載入中…</summary>
 <table id="members">
-  <thead><tr><th>姓名</th><th>LINE ID</th><th>區</th><th>上次出現</th></tr></thead>
+  <thead><tr><th>姓名</th><th>LINE ID</th><th>區</th><th>上次出現</th><th>操作</th></tr></thead>
   <tbody></tbody>
 </table>
 </details>
@@ -106,18 +109,64 @@ function renderZones() {
   });
 }
 
+// 管理動作共用：第一次需要密碼時 prompt，之後存 sessionStorage 重複使用
+async function adminFetch(url, opts) {
+  let pass = sessionStorage.getItem('adminPass') || '';
+  if (!pass) {
+    pass = (window.prompt('請輸入管理員密碼') || '').trim();
+    if (!pass) throw new Error('cancelled');
+    sessionStorage.setItem('adminPass', pass);
+  }
+  const headers = Object.assign({}, opts.headers || {}, { 'X-Admin-Pass': pass });
+  const r = await fetch(url, Object.assign({}, opts, { headers }));
+  if (r.status === 401) {
+    sessionStorage.removeItem('adminPass');
+    throw new Error('密碼錯誤');
+  }
+  return r;
+}
+
 async function saveZones() {
-  const r = await fetch('/api/zones', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ zones: ZONES }),
-  });
+  let r;
+  try {
+    r = await adminFetch('/api/zones', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ zones: ZONES }),
+    });
+  } catch (e) {
+    msg('儲存取消／失敗：' + e.message, true);
+    return;
+  }
   if (r.ok) {
     ORIGINAL = snapshot(ZONES);
     updateDirty();
     msg('已儲存 ✓');
     renderMembers();
   } else msg('儲存失敗', true);
+}
+
+async function deleteMember(user_id, name) {
+  if (!window.confirm('確定刪除「' + name + '」？\\n（會一併清掉該帳號在進行中任務的點餐紀錄）')) return;
+  let r;
+  try {
+    r = await adminFetch('/api/members', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id }),
+    });
+  } catch (e) {
+    msg('刪除取消／失敗：' + e.message, true);
+    return;
+  }
+  if (r.ok) {
+    MEMBERS = MEMBERS.filter(m => m.user_id !== user_id);
+    renderMembers();
+    msg('已刪除 ✓');
+  } else {
+    const t = await r.text();
+    msg('刪除失敗：' + t, true);
+  }
 }
 
 function msg(t, err) {
@@ -139,14 +188,24 @@ function renderMembers() {
     const isSynth = String(m.user_id || '').startsWith('zone:');
     const tr = document.createElement('tr');
     const optHtml = ['<option value="">（未分區）</option>', ...zonesOn.map(z => \`<option value="\${esc(z.name)}">\${esc(zoneLabel(z))}</option>\`)].join('');
+    const delCell = isSynth ? '<td></td>' : \`<td><button class="del-mem" data-uid="\${esc(m.user_id)}" data-name="\${esc(name)}" title="刪除此成員">×</button></td>\`;
     tr.innerHTML = \`
       <td>\${esc(name)}\${isSynth ? ' <small style="color:#888">[代點]</small>' : ''}</td>
       <td class="uid">\${esc(m.user_id)}</td>
       <td><select class="zone-pick">\${optHtml}</select></td>
-      <td><small>\${esc(dt)}</small></td>\`;
+      <td><small>\${esc(dt)}</small></td>
+      \${delCell}\`;
     const sel = tr.querySelector('select');
     sel.value = m.zone || '';
     sel.addEventListener('change', () => tagMember(m.user_id, sel.value));
+    const btn = tr.querySelector('.del-mem');
+    if (btn) {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true; btn.textContent = '…';
+        try { await deleteMember(btn.dataset.uid, btn.dataset.name); }
+        finally { btn.disabled = false; btn.textContent = '×'; }
+      });
+    }
     tbody.appendChild(tr);
   }
 }
