@@ -109,35 +109,12 @@ function renderZones() {
   });
 }
 
-// 管理動作共用：第一次需要密碼時 prompt，之後存 sessionStorage 重複使用
-async function adminFetch(url, opts) {
-  let pass = sessionStorage.getItem('adminPass') || '';
-  if (!pass) {
-    pass = (window.prompt('請輸入管理員密碼') || '').trim();
-    if (!pass) throw new Error('cancelled');
-    sessionStorage.setItem('adminPass', pass);
-  }
-  const headers = Object.assign({}, opts.headers || {}, { 'X-Admin-Pass': pass });
-  const r = await fetch(url, Object.assign({}, opts, { headers }));
-  if (r.status === 401) {
-    sessionStorage.removeItem('adminPass');
-    throw new Error('密碼錯誤');
-  }
-  return r;
-}
-
 async function saveZones() {
-  let r;
-  try {
-    r = await adminFetch('/api/zones', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ zones: ZONES }),
-    });
-  } catch (e) {
-    msg('儲存取消／失敗：' + e.message, true);
-    return;
-  }
+  const r = await fetch('/api/zones', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ zones: ZONES }),
+  });
   if (r.ok) {
     ORIGINAL = snapshot(ZONES);
     updateDirty();
@@ -148,17 +125,11 @@ async function saveZones() {
 
 async function deleteMember(user_id, name) {
   if (!window.confirm('確定刪除「' + name + '」？\\n（會一併清掉該帳號在進行中任務的點餐紀錄）')) return;
-  let r;
-  try {
-    r = await adminFetch('/api/members', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id }),
-    });
-  } catch (e) {
-    msg('刪除取消／失敗：' + e.message, true);
-    return;
-  }
+  const r = await fetch('/api/members', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id }),
+  });
   if (r.ok) {
     MEMBERS = MEMBERS.filter(m => m.user_id !== user_id);
     renderMembers();

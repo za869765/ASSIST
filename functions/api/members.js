@@ -1,6 +1,4 @@
 // 成員列表（含 LINE userId、姓名、目前區）
-import { requireAdminPass } from './line/_lib.js';
-
 export async function onRequestGet({ env }) {
   // 排除代點的 synthetic 成員（user_id 以 'zone:' 開頭）
   const row = await env.DB.prepare(
@@ -13,11 +11,8 @@ export async function onRequestGet({ env }) {
 }
 
 // 刪除成員（清掉名單裡不在編制的閒雜帳號）
-// 需 X-Admin-Pass header；同時清掉該成員在進行中任務的點餐紀錄，避免殘留
+// 同時清掉該成員在進行中任務的點餐紀錄，避免殘留
 export async function onRequestDelete({ request, env }) {
-  if (!requireAdminPass(request, env)) {
-    return new Response('admin auth required', { status: 401 });
-  }
   let body;
   try { body = await request.json(); } catch { return new Response('Bad JSON', { status: 400 }); }
   const user_id = String(body?.user_id || '').trim();

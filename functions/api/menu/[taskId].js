@@ -3,7 +3,6 @@
 //  POST   → 上傳一張照片（multipart/form-data, field 名 "photo"）
 //  DELETE → 刪除單張（body: { photoId }）
 import { geminiParseMenu, geminiOrganizeMenu } from '../line/_gemini.js';
-import { requireAdminPass } from '../line/_lib.js';
 
 function uuid() {
   // 短亂數 id，避免引入 crypto.randomUUID 以相容舊環境
@@ -56,11 +55,7 @@ export async function onRequestPost({ env, params, request }) {
   if (!taskId) return json({ error: 'bad taskId' }, 400);
   if (!env.MENU_BUCKET) return json({ error: 'R2 bucket binding missing' }, 500);
 
-  // bug #4: 原本無 auth 也無速限，外部可連打 10MB 圖燒 Gemini/R2 額度。
-  // 加 admin pass 驗證 + 每分鐘 1 次速限（仿 webhook 端 menu_push_log）。
-  if (!requireAdminPass(request, env)) {
-    return json({ error: 'admin auth required' }, 401);
-  }
+  // 用戶要求拿掉密碼；保留每分鐘 1 次速限避免外部燒 Gemini/R2 額度
   await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS menu_upload_log (task_id INTEGER PRIMARY KEY, uploaded_at TEXT)`
   ).run();

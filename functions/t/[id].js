@@ -1510,7 +1510,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.8</span>
+  <span style="opacity:.6">v1.0.9</span>
 </div>
 
 <div class="admin-row">
@@ -1812,24 +1812,12 @@ const TASK_ID = ${task.id};
   card.style.display = initOn ? '' : 'none';
   chk.addEventListener('change', async () => {
     const target = chk.checked ? 'menu' : 'free';
-    let pass = sessionStorage.getItem('adminPass') || '';
-    if (!pass) {
-      pass = (window.prompt('請輸入管理員密碼') || '').trim();
-      if (!pass) { chk.checked = !chk.checked; return; }
-      sessionStorage.setItem('adminPass', pass);
-    }
     try {
       const r = await fetch('/api/t/' + TASK_ID + '/mode', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Admin-Pass': pass },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode: target }),
       });
-      if (r.status === 401) {
-        sessionStorage.removeItem('adminPass');
-        alert('密碼錯誤');
-        chk.checked = !chk.checked;
-        return;
-      }
       if (!r.ok) {
         alert('切換失敗：' + r.status);
         chk.checked = !chk.checked;

@@ -1,6 +1,4 @@
 // 全域分區設定：讀取 / 批次覆寫
-import { requireAdminPass } from './line/_lib.js';
-
 export async function onRequestGet({ env }) {
   const row = await env.DB.prepare(
     `SELECT name, capacity, enabled, sort_order FROM zones ORDER BY sort_order ASC, name ASC`
@@ -9,11 +7,7 @@ export async function onRequestGet({ env }) {
 }
 
 export async function onRequestPost({ request, env }) {
-  // bug #3: 原本無 auth，且先 DELETE 全表再 INSERT，{zones:[]} 即可清空。
-  // 加 admin pass 驗證；改 upsert + 軟刪除（用 enabled=0 標記未列入的 zone），不再硬刪。
-  if (!requireAdminPass(request, env)) {
-    return new Response('admin auth required', { status: 401 });
-  }
+  // 用戶要求拿掉密碼：upsert + 軟刪除（用 enabled=0 標記未列入的 zone），不再硬刪
   let body;
   try { body = await request.json(); } catch { return new Response('Bad JSON', { status: 400 }); }
   const zones = Array.isArray(body?.zones) ? body.zones : null;
