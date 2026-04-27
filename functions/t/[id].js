@@ -1527,7 +1527,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.15</span>
+  <span style="opacity:.6">v1.0.16</span>
 </div>
 
 <div class="admin-row">
@@ -1716,12 +1716,25 @@ let currentRecHits = new Set();
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 function entryBody(e) {
+  const data = e.data || {};
+  // 便當品項一律 collapse：data 任一欄位含「葷食/素食」變體 → 顯示對應便當名（不再展開葷素）
+  const isMeat = (s) => /^(葷|葷食|葷食便當)$/.test(String(s || '').trim());
+  const isVeg = (s) => /^(素|素食|素食便當)$/.test(String(s || '').trim());
+  const vals = Object.values(data).flatMap(v =>
+    typeof v === 'object' && v ? Object.values(v) : [v]
+  ).map(v => String(v ?? '').trim()).filter(Boolean);
+  if (vals.length && vals.every(isMeat)) return '葷食便當';
+  if (vals.length && vals.every(isVeg)) return '素食便當';
+  // 部分標準便當 + 其他附屬欄位：仍 collapse 成便當名稱（忽略葷素附註）
+  const itemRaw = data['品項'] || data['item'] || data['Item'] || data['名稱'] || '';
+  if (itemRaw === '葷食便當' || itemRaw === '素食便當') return itemRaw;
+
   const flat = (v) => {
     if (v == null || v === '') return '';
     if (typeof v === 'object') return Object.values(v).map(flat).filter(Boolean).join('/');
     return String(v);
   };
-  const parts = Object.values(e.data || {}).map(flat).filter(Boolean).join(' / ');
+  const parts = Object.values(data).map(flat).filter(Boolean).join(' / ');
   if (parts) return parts;
   if (e.note === '請假' || e.note === '不吃') return e.note;
   return '(未辨識)';
