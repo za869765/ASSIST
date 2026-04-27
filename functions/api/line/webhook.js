@@ -951,6 +951,30 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
     delete parsed.data['葷素'];
   }
 
+  // 無菜單便當任務：最終品項只能是「葷食便當」或「素食便當」，其他一律不回應
+  // Gemini 偶爾把 key 取成 'item' 而非 '品項'，或把閒聊抽出莫名品項 → 統一在這裡擋
+  {
+    const hasMenu = Array.isArray(menuItems) && menuItems.length;
+    const taskIsBento = /便當|飯|自助餐|餐盒|盒餐|簡餐|套餐|早午餐|午餐|晚餐|午晚餐|主食|主餐|正餐|團膳|商業午餐|輕食|熱食|麵食|麵線|拉麵|烏龍麵|粥品|火鍋|鍋物|韓式|日式|西式|排餐|漢堡|義大利麵|壽司|三明治|咖哩|燴飯|炒飯|滷味|鹽酥/.test(task.task_name || '');
+    if (!hasMenu && taskIsBento && parsed?.data) {
+      // 把非標品項欄位（如 Gemini 把 key 取成 item）reflow 進「品項」並 normalize
+      if (!parsed.data['品項']) {
+        for (const k of ['item', 'Item', '名稱', '餐點', 'food', 'name']) {
+          if (parsed.data[k]) { parsed.data['品項'] = parsed.data[k]; delete parsed.data[k]; break; }
+        }
+      }
+      const norm = parsed.data['品項'] ? normalizeBentoItem(parsed.data['品項']) : null;
+      if (norm) {
+        parsed.data['品項'] = norm;
+        delete parsed.data['葷素'];
+      } else {
+        // 不是葷食/素食便當 → silent，不寫入也不回覆
+        console.log('[no-menu non-bento silent]', text, '->', parsed.data['品項']);
+        return;
+      }
+    }
+  }
+
   // 菜單模式：非白名單品項需模糊比對；多候選/未命中 → 追問，不寫入
   // 注意：admin 也要受限（admin 裁定應走明確流程，不是自動 bypass）
   if (Array.isArray(menuItems) && menuItems.length && parsed?.data?.品項) {

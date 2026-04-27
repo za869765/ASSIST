@@ -116,12 +116,13 @@ export function buildXLSX(sheetName, rows) {
   const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 <numFmts count="1"><numFmt numFmtId="49" formatCode="@"/></numFmts>
-<fonts count="5">
+<fonts count="6">
 <font><sz val="11"/><name val="Calibri"/></font>
 <font><sz val="18"/><b/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
 <font><sz val="12"/><b/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
 <font><sz val="11"/><b/><color rgb="FF1F2937"/><name val="Calibri"/></font>
 <font><sz val="11"/><b/><color rgb="FF78350F"/><name val="Calibri"/></font>
+<font><sz val="11"/><b/><color rgb="FFD4543A"/><name val="Calibri"/></font>
 </fonts>
 <fills count="6">
 <fill><patternFill patternType="none"/></fill>
@@ -144,7 +145,7 @@ export function buildXLSX(sheetName, rows) {
 <border><right style="double"><color rgb="FFB8860B"/></right><bottom style="double"><color rgb="FFB8860B"/></bottom></border>
 </borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="20">
+<cellXfs count="23">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
 <xf numFmtId="49" fontId="1" fillId="2" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
@@ -165,6 +166,9 @@ export function buildXLSX(sheetName, rows) {
 <xf numFmtId="49" fontId="0" fillId="0" borderId="7" xfId="0" applyNumberFormat="1" applyBorder="1"/>
 <xf numFmtId="49" fontId="0" fillId="0" borderId="8" xfId="0" applyNumberFormat="1" applyBorder="1"/>
 <xf numFmtId="49" fontId="0" fillId="0" borderId="9" xfId="0" applyNumberFormat="1" applyBorder="1"/>
+<xf numFmtId="49" fontId="5" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+<xf numFmtId="49" fontId="5" fillId="0" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+<xf numFmtId="49" fontId="5" fillId="0" borderId="4" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
 </cellXfs>
 </styleSheet>`;
 
@@ -216,6 +220,8 @@ export function buildXLSX(sheetName, rows) {
 
   const merges = [];
   let prevStyle = 0;
+  // 素食列：把資料列 styleId 5/11/12 改成紅色粗體變體 20/21/22
+  const VEG_MAP = { 5: 20, 11: 21, 12: 22 };
   const sheetRowsArr = rows.map((row, rIdx) => {
     const style = classify(row, rIdx, prevStyle);
     prevStyle = style;
@@ -227,6 +233,8 @@ export function buildXLSX(sheetName, rows) {
       padded = row.concat(Array(maxCols - row.length).fill(''));
       merges.push(`A${r}:${lastColLetter}${r}`);
     }
+    // 整列素食：訂購彙總／明細裡 row[0] === '素食便當' → 整列改紅色粗體
+    const isVegRow = style === 5 && /^素食便當\b|素食/.test(String(row[0] || '').trim()) && String(row[0] || '').trim() === '素食便當';
     const cells = padded.map((v, cIdx) => {
       const ref = `${colLetter(cIdx + 1)}${r}`;
       const text = xmlEscape(v == null ? '' : String(v));
@@ -237,6 +245,7 @@ export function buildXLSX(sheetName, rows) {
         if (cIdx === 0) cellStyle = variant.left;
         else if (cIdx === padded.length - 1) cellStyle = variant.right;
       }
+      if (isVegRow && VEG_MAP[cellStyle]) cellStyle = VEG_MAP[cellStyle];
       return `<c r="${ref}" t="inlineStr" s="${cellStyle}"><is><t xml:space="preserve">${text}</t></is></c>`;
     }).join('');
     return `<row r="${r}"${rowAttrs}>${cells}</row>`;
