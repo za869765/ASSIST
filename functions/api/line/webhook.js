@@ -1204,6 +1204,9 @@ function genDownloadToken() {
 }
 
 // 把 entries 正規化成 {name, item, data(其他欄位), note, price} 陣列
+// Gemini 偶爾把 key 取成 item / Item / 名稱 / 餐點 / food / name 而不是「品項」
+// → 這裡按優先順序 fallback，並從 rest 一併剝除這些 key，避免 XLSX 多冒一欄重複的 item
+const ITEM_KEYS = ['品項', 'item', 'Item', '名稱', '餐點', 'food', 'name'];
 export function normalizeParsed(entries) {
   return entries.map(e => {
     let data = {};
@@ -1211,15 +1214,26 @@ export function normalizeParsed(entries) {
     const rawName = e.real_name || e.line_display || (e.user_id ? e.user_id.slice(0, 6) : '');
     // 看板下單會加 🌐 前綴做來源識別；XLSX 給店家看不需要這個符號
     const name = String(rawName).replace(/^🌐\s*/, '');
-    const item = data['品項'] || '';
-    const rest = { ...data }; delete rest['品項'];
+    let item = '';
+    for (const k of ITEM_KEYS) { if (data[k]) { item = String(data[k]); break; } }
+    // 葷/素變體 → 統一便當名稱（修舊資料的「葷食便當/葷」這種重複展開）
+    const norm = normalizeBentoItem(item);
+    if (norm) item = norm;
+    const rest = { ...data };
+    for (const k of ITEM_KEYS) delete rest[k];
+    // item 已 normalize 成「葷食便當」/「素食便當」時，再把多餘的「葷素」清掉
+    if (norm) delete rest['葷素'];
     return { name, item, data, rest, note: e.note || '', price: e.price, updated: e.updated_at, zone: e.zone || '' };
   });
 }
 
-// 產生多段 XLSX rows：① 訂購彙總（對店家）② 明細（依品項排序，發餐用）
+// 產生多段 XLSX rows：① 訂購彙總 ② 明細 ③ 請假名單（如有）
+// 請假/不吃 不計入「總筆數」「訂購彙總」「明細」，獨立列在第三段表格
 export function buildSheetRows(taskName, entries) {
-  const parsed = normalizeParsed(entries);
+  const all = normalizeParsed(entries);
+  const isLeave = (p) => p.note === '請假' || p.note === '不吃';
+  const parsed = all.filter(p => !isLeave(p));
+  const leaves = all.filter(p => isLeave(p));
 
   // 彙總：品項 → 份數、備註(含人名)、小計
   const groups = {};
@@ -1242,7 +1256,7 @@ export function buildSheetRows(taskName, entries) {
   });
 
   const rows = [];
-  rows.push([`任務：${taskName}　總筆數：${parsed.length}`]);
+  rows.push([`任務：${taskName}　訂購：${parsed.length}　請假：${leaves.length}`]);
   rows.push([]);
 
   // ① 訂購彙總
@@ -1287,12 +1301,27 @@ export function buildSheetRows(taskName, entries) {
     ]);
   });
 
+  // ③ 請假名單（不計入訂購）
+  if (leaves.length) {
+    rows.push([]);
+    rows.push([`■ 請假名單（${leaves.length} 人，不計入訂購）`]);
+    rows.push(['姓名', '區', '備註', '時間']);
+    const sortedLeaves = [...leaves].sort((a, b) => (a.zone || '~').localeCompare(b.zone || '~', 'zh-Hant') || a.name.localeCompare(b.name, 'zh-Hant'));
+    sortedLeaves.forEach(p => {
+      rows.push([p.name, p.zone || '', p.note || '請假', String(p.updated || '').slice(0, 16)]);
+    });
+  }
+
   return rows;
 }
 
 // 產生對店家的彙總文字（給 LINE 群組訊息）
+// 請假/不吃 不計入訂購（獨立列「請假 N 人」資訊）
 function buildAggregateText(taskName, entries) {
-  const parsed = normalizeParsed(entries);
+  const all = normalizeParsed(entries);
+  const isLeave = (p) => p.note === '請假' || p.note === '不吃';
+  const parsed = all.filter(p => !isLeave(p));
+  const leaveCount = all.length - parsed.length;
   const groups = {};
   parsed.forEach(p => {
     const key = p.item || '(未辨識)';
@@ -1309,7 +1338,8 @@ function buildAggregateText(taskName, entries) {
     });
   const totalCount = parsed.length;
   const totalPrice = parsed.reduce((s, p) => s + (p.price || 0), 0);
-  const totalLine = `合計：${totalCount} 份${totalPrice ? `　＄${totalPrice}` : ''}`;
+  const leaveTail = leaveCount ? `　（請假 ${leaveCount} 人，不計入）` : '';
+  const totalLine = `合計：${totalCount} 份${totalPrice ? `　＄${totalPrice}` : ''}${leaveTail}`;
   return `📦「${taskName}」訂購彙總（對店家）\n${lines.join('\n')}\n\n${totalLine}`;
 }
 
