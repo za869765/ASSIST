@@ -457,6 +457,20 @@ async function handleEvent(ev, env) {
 
 async function doProgressReport(env, tasks, hintText, replyToken) {
   const base = env.PUBLIC_BASE_URL || 'https://assist-gcl.pages.dev';
+  // 預先撈一次啟用 zones（排除衛生局：駐點區不限人數，不算「衛生所要喊」對象）
+  const zoneRow = await env.DB.prepare(
+    `SELECT name FROM zones WHERE enabled = 1 AND name != '衛生局' ORDER BY sort_order ASC, name ASC`
+  ).all();
+  const allZones = (zoneRow.results || []).map(z => z.name);
+  const missingFor = (entries) => {
+    const filled = new Set(entries.filter(e => e.zone).map(e => e.zone));
+    const missing = allZones.filter(z => !filled.has(z));
+    if (!allZones.length) return '';
+    return missing.length
+      ? `\n⏳ 還沒喊（${missing.length}/${allZones.length}）：${missing.join('、')}`
+      : `\n✓ 全部 ${allZones.length} 區衛生所已喊`;
+  };
+
   const hinted = hintText ? matchTaskByHint(tasks, hintText) : null;
   const picked = hinted || (tasks.length === 1 ? tasks[0] : null);
   if (!picked) {
@@ -464,7 +478,7 @@ async function doProgressReport(env, tasks, hintText, replyToken) {
     for (const t of tasks) {
       const entries = await listEntries(env.DB, t.id);
       const url = `${base}/t/${t.url_slug || t.id}`;
-      blocks.push(`📊「${t.task_name}」(${entries.length} 筆) ${url}\n${summarizeEntries(entries)}`);
+      blocks.push(`📊「${t.task_name}」(${entries.length} 筆)\n看板：${url}${missingFor(entries)}\n\n${summarizeEntries(entries)}`);
     }
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: blocks.join('\n\n———\n\n') }]);
     return;
@@ -472,7 +486,7 @@ async function doProgressReport(env, tasks, hintText, replyToken) {
   const entries = await listEntries(env.DB, picked.id);
   const url = `${base}/t/${picked.url_slug || picked.id}`;
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-    { type: 'text', text: `📊 任務「${picked.task_name}」目前 ${entries.length} 筆\n即時看板：${url}\n\n${summarizeEntries(entries)}` },
+    { type: 'text', text: `📊 任務「${picked.task_name}」目前 ${entries.length} 筆\n看板：${url}${missingFor(entries)}\n\n${summarizeEntries(entries)}` },
   ]);
 }
 
