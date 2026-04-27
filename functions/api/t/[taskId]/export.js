@@ -8,11 +8,17 @@ export async function onRequestGet({ env, params }) {
   const taskId = +params.taskId;
   if (!taskId) return new Response('bad taskId', { status: 400 });
   const task = await env.DB.prepare(
-    `SELECT id, task_name FROM tasks WHERE id = ?`
+    `SELECT id, task_name, mode FROM tasks WHERE id = ?`
   ).bind(taskId).first();
   if (!task) return new Response('not found', { status: 404 });
   const entries = await listEntries(env.DB, taskId);
-  const rows = buildSheetRows(task.task_name, entries);
+  // 撈 zone sort_order 給 buildSheetRows 排序
+  const zoneRow = await env.DB.prepare(
+    `SELECT name, sort_order FROM zones`
+  ).all();
+  const zoneOrder = {};
+  for (const z of (zoneRow.results || [])) zoneOrder[z.name] = z.sort_order;
+  const rows = buildSheetRows(task.task_name, entries, { mode: task.mode, zoneOrder });
   const bytes = buildXLSX(task.task_name.slice(0, 31) || 'sheet', rows);
   const stamp = new Date().toISOString().slice(0, 10);
   const filename = encodeURIComponent(`${task.task_name}_${stamp}.xlsx`);

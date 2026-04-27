@@ -578,7 +578,13 @@ async function doRemindMissing(env, tasks, replyToken) {
   if (untaggedCount > 0) {
     text += `\n⚠️ 標 ★ 的 ${untaggedCount} 區因該成員從未在此群組發過話，bot 無法 @ 推播；請該員主動點餐／請假。`;
   }
-  text += '\n📝 回覆範例：「葷」「素」「請假」「+1」';
+  // 無菜單便當：禮貌提醒葷／素選項
+  const hasFreeTask = tasks.some(t => t.mode === 'free');
+  if (hasFreeTask) {
+    text += '\n\n🍱 請問各位是「葷食便當」還是「素食便當」呢？\n　 有吃素的同仁可直接回「素」～\n　 若不吃也請告訴我們「請假」，謝謝大家 🙏';
+  } else {
+    text += '\n📝 回覆範例：「葷」「素」「請假」「+1」';
+  }
 
   const msg = { type: 'text', text };
   if (mentionees.length) msg.mention = { mentionees };
@@ -612,7 +618,11 @@ async function doCloseTask(env, picked, replyToken) {
   const entries = await listEntries(env.DB, picked.id);
   await closeTask(env.DB, picked.id, env.MENU_BUCKET);
 
-  const rows = buildSheetRows(picked.task_name, entries);
+  // 撈 zone sort_order 給 buildSheetRows 排序（衛生局 → 在局 → 一般衛生所 sort_order）
+  const zoneRow = await env.DB.prepare(`SELECT name, sort_order FROM zones`).all();
+  const zoneOrder = {};
+  for (const z of (zoneRow.results || [])) zoneOrder[z.name] = z.sort_order;
+  const rows = buildSheetRows(picked.task_name, entries, { mode: picked.mode, zoneOrder });
   const bytes = buildXLSX(picked.task_name.slice(0, 31) || 'sheet', rows);
   const token = genDownloadToken();
   const filename = `${picked.task_name}_${new Date().toISOString().slice(0, 10)}.xlsx`;
@@ -1332,7 +1342,14 @@ export function normalizeParsed(entries) {
 
 // 產生多段 XLSX rows：① 訂購彙總 ② 明細 ③ 請假名單（如有）
 // 請假/不吃 不計入「總筆數」「訂購彙總」「明細」，獨立列在第三段表格
-export function buildSheetRows(taskName, entries) {
+// opts.mode = 'free' → 拿掉小計／金額欄（無菜單便當沒價格）
+// opts.zoneOrder = { '衛生局': 0, '楠西區': 1, ... } → 自訂 zone 排序權重
+export function buildSheetRows(taskName, entries, opts = {}) {
+  const noPrice = opts.mode === 'free';
+  const zoneOrder = opts.zoneOrder || {};
+  const IN_OFFICE = new Set(['楠西區', '南化區', '左鎮區', '新市區']);
+  const zoneTier = (z) => z === '衛生局' ? 0 : (IN_OFFICE.has(z) ? 1 : 2);
+  const zoneSort = (z) => zoneOrder[z] != null ? zoneOrder[z] : 9999;
   const all = normalizeParsed(entries);
   const isLeave = (p) => p.note === '請假' || p.note === '不吃';
   const parsed = all.filter(p => !isLeave(p));
@@ -1364,17 +1381,23 @@ export function buildSheetRows(taskName, entries) {
 
   // ① 訂購彙總
   rows.push(['■ 訂購彙總（對店家）']);
-  rows.push(['品項', '份數', '備註 / 特殊要求', '小計']);
+  rows.push(noPrice
+    ? ['品項', '份數', '備註 / 特殊要求']
+    : ['品項', '份數', '備註 / 特殊要求', '小計']);
   let grandCount = 0, grandTotal = 0;
   Object.keys(groups)
     .sort((a, b) => groups[b].count - groups[a].count || a.localeCompare(b, 'zh-Hant'))
     .forEach(k => {
       const g = groups[k];
-      rows.push([k, String(g.count), g.notes.join('；'), g.total ? String(g.total) : '']);
+      rows.push(noPrice
+        ? [k, String(g.count), g.notes.join('；')]
+        : [k, String(g.count), g.notes.join('；'), g.total ? String(g.total) : '']);
       grandCount += g.count;
       grandTotal += g.total;
     });
-  rows.push(['合計', String(grandCount), '', grandTotal ? String(grandTotal) : '']);
+  rows.push(noPrice
+    ? ['合計', String(grandCount), '']
+    : ['合計', String(grandCount), '', grandTotal ? String(grandTotal) : '']);
   rows.push([]);
 
   // ② 明細：依品項排序（相同品項排一起），方便發餐
@@ -1388,23 +1411,29 @@ export function buildSheetRows(taskName, entries) {
     }
   });
   rows.push(['■ 明細（依品項排序，發餐用）']);
-  rows.push(['品項', '區', '姓名', ...restFields, '備註', '金額']);
+  rows.push(noPrice
+    ? ['品項', '區', '姓名', ...restFields, '備註']
+    : ['品項', '區', '姓名', ...restFields, '備註', '金額']);
+  // 同品項內排序：衛生局 → 在局 4 區 → 一般衛生所（依 sort_order）→ 同 tier 依姓名
   const sorted = [...parsed].sort((a, b) => {
     const ai = a.item || '~'; const bi = b.item || '~';
     if (ai !== bi) return ai.localeCompare(bi, 'zh-Hant');
-    const az = a.zone || '~'; const bz = b.zone || '~';
-    if (az !== bz) return az.localeCompare(bz, 'zh-Hant');
+    const at = zoneTier(a.zone || ''), bt = zoneTier(b.zone || '');
+    if (at !== bt) return at - bt;
+    const ao = zoneSort(a.zone || ''), bo = zoneSort(b.zone || '');
+    if (ao !== bo) return ao - bo;
     return a.name.localeCompare(b.name, 'zh-Hant');
   });
   sorted.forEach(p => {
-    rows.push([
+    const baseRow = [
       p.item || '(未辨識)',
       p.zone || '',
       p.name,
       ...restFields.map(k => p.rest[k] == null ? '' : String(p.rest[k])),
       p.note || '',
-      p.price != null ? String(p.price) : '',
-    ]);
+    ];
+    if (!noPrice) baseRow.push(p.price != null ? String(p.price) : '');
+    rows.push(baseRow);
   });
 
   // ③ 請假名單（不計入訂購）
