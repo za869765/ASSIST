@@ -524,21 +524,35 @@ async function doRemindMissing(env, tasks, replyToken) {
     return;
   }
 
-  // 對每個 missing zone 找該區已 tag 過的真人（排除代點 zone:* synthetic）
+  // 對每個 missing zone 收集：
+  //   1) 已 tag 到該區的真人（曾在群組發過話，bot 有 user_id 可 mention）
+  //   2) 沒 tag 但 roster 預載該區真名（bot 無 user_id，只能純文字提示）
   const perZone = [];
   for (const z of missing) {
     const rs = await env.DB.prepare(
       `SELECT user_id, real_name, line_display FROM members
         WHERE zone = ? AND user_id NOT LIKE 'zone:%' ORDER BY last_seen_at DESC`
     ).bind(z).all();
-    perZone.push({ zone: z, members: (rs.results || []) });
+    const members = rs.results || [];
+    let rosterNames = [];
+    if (!members.length) {
+      try {
+        const rr = await env.DB.prepare(
+          `SELECT real_name FROM roster WHERE zone = ? AND user_id IS NULL ORDER BY id`
+        ).bind(z).all();
+        rosterNames = (rr.results || []).map(r => r.real_name).filter(Boolean);
+      } catch {}
+    }
+    perZone.push({ zone: z, members, rosterNames });
   }
 
   // 組訊息＋mention 物件（index 用 JS string length = UTF-16 code units，與 LINE 規範一致）
   let text = `📣 提醒：以下 ${missing.length} 區衛生所還沒回覆～\n\n`;
   const mentionees = [];
-  for (const { zone, members } of perZone) {
+  let untaggedCount = 0;
+  for (const { zone, members, rosterNames } of perZone) {
     if (members.length) {
+      // 有 user_id → 真的 @
       let line = '• ';
       for (let i = 0; i < members.length; i++) {
         const m = members[i];
@@ -551,9 +565,18 @@ async function doRemindMissing(env, tasks, replyToken) {
       }
       line += `（${zone}）\n`;
       text += line;
+    } else if (rosterNames.length) {
+      // 沒 user_id 但 roster 有預載真名 → 純文字提示
+      text += `• ${zone}（${rosterNames.join('、')}，請主動回覆）\n`;
+      untaggedCount++;
     } else {
-      text += `• ${zone}（尚未指派人員，請到看板分區設定 tag）\n`;
+      // 完全沒資料
+      text += `• ${zone}（待指派）\n`;
+      untaggedCount++;
     }
+  }
+  if (untaggedCount > 0) {
+    text += `\n⚠️ 標 ★ 的 ${untaggedCount} 區因該成員從未在此群組發過話，bot 無法 @ 推播；請該員主動點餐／請假。`;
   }
   text += '\n📝 回覆範例：「葷」「素」「請假」「+1」';
 
