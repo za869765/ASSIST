@@ -209,19 +209,10 @@ export function buildXLSX(sheetName, rows, extraMerges = []) {
   const maxCols = rows.reduce((m, r) => Math.max(m, r.length), 1);
   const lastColLetter = colLetter(maxCols);
 
-  // A4 直式一頁大約 48 列（預設行高）。若 content 能塞進單頁就加「金色雙線大外框」；
-  // 超過單頁就不畫（否則第一頁收不到底邊，反而醜）
-  const SINGLE_PAGE_CAP = 46;
-  const FRAME_BOTTOM = 48;
-  const singlePage = rows.length <= SINGLE_PAGE_CAP;
-
-  // style → { left, right } 變體索引：同樣底色/字色，但左/右換成「金色雙線 + 其餘薄灰」
-  const EDGE_MAP = { 3: { left: 7, right: 8 }, 4: { left: 9, right: 10 }, 5: { left: 11, right: 12 }, 6: { left: 13, right: 14 } };
-
   const merges = [...extraMerges];
   let prevStyle = 0;
-  // 素食列：把資料列 styleId 5/11/12 改成紅色粗體變體 20/21/22
-  const VEG_MAP = { 5: 20, 11: 21, 12: 22 };
+  // 素食列：把資料列 styleId 5 改成紅色粗體變體 20（中間 cell；左右 21/22 已不再使用）
+  const VEG_MAP = { 5: 20 };
   const sheetRowsArr = rows.map((row, rIdx) => {
     const style = classify(row, rIdx, prevStyle);
     prevStyle = style;
@@ -234,47 +225,18 @@ export function buildXLSX(sheetName, rows, extraMerges = []) {
       merges.push(`A${r}:${lastColLetter}${r}`);
     }
     // 整列素食：訂購彙總／明細裡 row[0] === '素食便當' → 整列改紅色粗體
-    const isVegRow = style === 5 && /^素食便當\b|素食/.test(String(row[0] || '').trim()) && String(row[0] || '').trim() === '素食便當';
+    const isVegRow = style === 5 && String(row[0] || '').trim() === '素食便當';
     const cells = padded.map((v, cIdx) => {
       const ref = `${colLetter(cIdx + 1)}${r}`;
       const text = xmlEscape(v == null ? '' : String(v));
-      // 邊緣 cell 改用「+金色左/右外框」的變體；style=2 自帶完整金框不動；多頁時不套邊緣變體
       let cellStyle = style;
-      const variant = EDGE_MAP[style];
-      if (singlePage && variant && padded.length > 1) {
-        if (cIdx === 0) cellStyle = variant.left;
-        else if (cIdx === padded.length - 1) cellStyle = variant.right;
-      }
       if (isVegRow && VEG_MAP[cellStyle]) cellStyle = VEG_MAP[cellStyle];
       return `<c r="${ref}" t="inlineStr" s="${cellStyle}"><is><t xml:space="preserve">${text}</t></is></c>`;
     }).join('');
     return `<row r="${r}"${rowAttrs}>${cells}</row>`;
   });
 
-  // 單頁才畫 padding：把金色雙線左/右延伸到頁尾並在底部收邊；多頁直接跳過，避免跨頁斷邊
-  const paddingRowsArr = [];
-  if (singlePage) {
-    for (let rr = rows.length + 1; rr <= FRAME_BOTTOM; rr++) {
-      const isBottom = rr === FRAME_BOTTOM;
-      const cellStrs = [];
-      for (let c = 1; c <= maxCols; c++) {
-        let s;
-        if (isBottom) {
-          if (c === 1) s = 18;              // BL
-          else if (c === maxCols) s = 19;   // BR
-          else s = 17;                      // 底邊
-        } else {
-          if (c === 1) s = 15;              // 左邊
-          else if (c === maxCols) s = 16;   // 右邊
-          else s = 1;                       // 中間空白，不畫線
-        }
-        cellStrs.push(`<c r="${colLetter(c)}${rr}" t="inlineStr" s="${s}"><is><t xml:space="preserve"></t></is></c>`);
-      }
-      paddingRowsArr.push(`<row r="${rr}">${cellStrs.join('')}</row>`);
-    }
-  }
-
-  const sheetRows = sheetRowsArr.join('') + paddingRowsArr.join('');
+  const sheetRows = sheetRowsArr.join('');
   const mergeCellsXml = merges.length
     ? `<mergeCells count="${merges.length}">${merges.map(m => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>`
     : '';
