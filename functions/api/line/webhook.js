@@ -756,6 +756,18 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
   // 例：胡惠香自己發「胡惠香：素食」→ 剝成「素食」→ normalizeBentoItem 補成「素食便當」
   text = await stripLeadingPersonName(env, text);
 
+  // 早期閒聊守門：明顯非餐點訊息（含考試/好玩/互動/看不懂/聊天/休假...）→ 全程 silent
+  // 不論有無 existing entry 都不該被當「換成」處理
+  {
+    const tNorm = String(text || '').replace(/\s+/g, '');
+    const hasFoodVerb = /吃|喝|要點|要訂|要吃|要喝|餐|便當|飯|麵|湯|食|葷|素|加[一1]|多[一1]|再[一1]|\+\s*1|＋\s*1|請假|不吃|沒訂|不點|不要|取消|改成|換成|改|換/.test(tNorm);
+    const offTopicHint = /剪|燙|染|頭髮|短髮|長髮|看醫生|休假|放假|聊|抱|愛|玩|看電影|睡覺|起床|下班|上班|遲到|早退|放鬆|累|忙|生氣|心情|天氣|下雨|放心|開心|無聊|生病|感冒|頭痛|肚子痛|考試|好玩|互動|看不懂|沒聽懂|帥|美|哈哈|呵呵|嘻嘻|哎/.test(tNorm);
+    if (!hasFoodVerb && offTopicHint) {
+      console.log('[off-topic silent early]', text);
+      return;
+    }
+  }
+
   // 若此人在此任務有待確認的 pending_dup，且這次訊息能辨識成「加/改」→ 直接處理
   const pending = await env.DB.prepare(
     `SELECT new_text, new_data, new_note, new_price FROM pending_dups WHERE task_id = ? AND user_id = ?`
