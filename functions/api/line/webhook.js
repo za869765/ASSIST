@@ -507,6 +507,7 @@ async function doProgressReport(env, tasks, hintText, replyToken) {
 }
 
 // admin 進度三件套：催 / 等 / 匯出
+// 「催」會用 LINE mention API 真的 @ 該區已 tag 的成員（要先在 admin/zones 把人對到區）
 async function doRemindMissing(env, tasks, replyToken) {
   const zoneRow = await env.DB.prepare(
     `SELECT name FROM zones WHERE enabled = 1 AND name != '衛生局' ORDER BY sort_order ASC, name ASC`
@@ -522,10 +523,43 @@ async function doRemindMissing(env, tasks, replyToken) {
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: '✓ 全部衛生所都已回覆，不用催了 👍' }]);
     return;
   }
-  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{
-    type: 'text',
-    text: `📣 提醒：以下 ${missing.length} 區衛生所還沒回覆，請趕快點餐或請假～\n\n${missing.map(z => '• ' + z).join('\n')}\n\n📝 範例：「葷」「素」「請假」「+1」`,
-  }]);
+
+  // 對每個 missing zone 找該區已 tag 過的真人（排除代點 zone:* synthetic）
+  const perZone = [];
+  for (const z of missing) {
+    const rs = await env.DB.prepare(
+      `SELECT user_id, real_name, line_display FROM members
+        WHERE zone = ? AND user_id NOT LIKE 'zone:%' ORDER BY last_seen_at DESC`
+    ).bind(z).all();
+    perZone.push({ zone: z, members: (rs.results || []) });
+  }
+
+  // 組訊息＋mention 物件（index 用 JS string length = UTF-16 code units，與 LINE 規範一致）
+  let text = `📣 提醒：以下 ${missing.length} 區衛生所還沒回覆～\n\n`;
+  const mentionees = [];
+  for (const { zone, members } of perZone) {
+    if (members.length) {
+      let line = '• ';
+      for (let i = 0; i < members.length; i++) {
+        const m = members[i];
+        const display = m.real_name || m.line_display || zone;
+        const tag = '@' + display;
+        if (i > 0) line += ' ';
+        const idxInText = text.length + line.length;
+        mentionees.push({ index: idxInText, length: tag.length, type: 'user', userId: m.user_id });
+        line += tag;
+      }
+      line += `（${zone}）\n`;
+      text += line;
+    } else {
+      text += `• ${zone}（尚未指派人員，請到看板分區設定 tag）\n`;
+    }
+  }
+  text += '\n📝 回覆範例：「葷」「素」「請假」「+1」';
+
+  const msg = { type: 'text', text };
+  if (mentionees.length) msg.mention = { mentionees };
+  await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [msg]);
 }
 
 async function doExportInProgress(env, tasks, replyToken) {
