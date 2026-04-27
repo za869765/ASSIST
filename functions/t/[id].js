@@ -687,34 +687,38 @@ body.is-edit-price h1::after {
 }
 
 /* ===== 5. 看板（zones + entries）===== */
+/* 已點 = 鮮明金色 + 較粗左框；未填 = 灰暗色 + 細左框；間距收細，整體偏清單樣式 */
 h2.zone {
   font-family: var(--f-zh);
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
-  margin: 20px 0 8px;
-  padding: 10px 0 10px 14px;
+  margin: 6px 0 2px;
+  padding: 5px 0 5px 10px;
   color: var(--gold);
-  background: transparent;
-  border-left: 2px solid var(--gold);
-  border-bottom: 1px solid var(--line-soft);
+  background: rgba(201,169,97,.06);
+  border-left: 3px solid var(--gold);
+  border-bottom: none;
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   gap: 10px;
-  letter-spacing: .06em;
-  transition: all .25s;
+  letter-spacing: .04em;
+  transition: background .2s;
 }
-h2.zone:first-of-type { margin-top: 14px; }
-h2.zone:hover { background: rgba(201,169,97,.05); padding-left: 18px; }
+h2.zone:first-of-type { margin-top: 8px; }
+h2.zone:hover { background: rgba(201,169,97,.12); }
 h2.zone.none {
   color: var(--wine);
   border-left-color: var(--wine);
-  background: rgba(176,141,122,.05);
+  background: rgba(176,141,122,.10);
 }
 h2.zone.empty {
   color: var(--text-dim);
   font-weight: 400;
-  border-left-color: var(--text-dim);
+  border-left: 1px solid rgba(160,160,160,.25);
+  background: transparent;
+  opacity: .55;
+  padding: 4px 0 4px 12px;
 }
 h2.zone small {
   color: var(--text-muted);
@@ -752,25 +756,25 @@ h2.zone small {
   text-transform: uppercase;
 }
 
-/* entry list */
-ul { list-style: none; padding: 0; margin: 0 0 4px; }
+/* entry list — 清單樣式，間距收細 */
+ul { list-style: none; padding: 0; margin: 0 0 2px; }
 li {
   display: grid;
-  grid-template-columns: 92px 1fr auto;
-  gap: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--line-soft);
-  border-radius: 2px;
-  background: var(--bg-card);
+  grid-template-columns: 88px 1fr auto;
+  gap: 10px;
+  padding: 5px 12px 5px 14px;
+  border: none;
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: transparent;
   align-items: center;
-  margin-bottom: 4px;
-  transition: all .2s;
-  backdrop-filter: blur(4px);
+  margin: 0;
+  transition: background .15s;
 }
+li:last-child { border-bottom: none; }
 li:hover {
-  background: rgba(26,21,16,.85);
-  border-color: var(--line);
-  transform: translateX(2px);
+  background: rgba(201,169,97,.05);
+  transform: none;
 }
 
 .uid-row {
@@ -1506,7 +1510,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.7</span>
+  <span style="opacity:.6">v1.0.8</span>
 </div>
 
 <div class="admin-row">
