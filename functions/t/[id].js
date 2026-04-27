@@ -414,7 +414,7 @@ h1 {
 }
 
 /* ===== items-list：chip 系統 ===== */
-.menu-card .items-list {
+.items-list {
   margin-top: 16px;
   font-size: 14px;
   color: var(--text);
@@ -423,20 +423,20 @@ h1 {
   padding-right: 2px;
   -webkit-overflow-scrolling: touch;
 }
-.menu-card .items-list::-webkit-scrollbar { width: 3px; }
-.menu-card .items-list::-webkit-scrollbar-thumb { background: var(--gold-dim); border-radius: 2px; }
+.items-list::-webkit-scrollbar { width: 3px; }
+.items-list::-webkit-scrollbar-thumb { background: var(--gold-dim); border-radius: 2px; }
 
-.menu-card .items-list .cat-row {
+.items-list .cat-row {
   margin: 0 0 16px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--line-soft);
 }
-.menu-card .items-list .cat-row:last-child {
+.items-list .cat-row:last-child {
   border-bottom: 0;
   padding-bottom: 0;
   margin-bottom: 0;
 }
-.menu-card .items-list .cat-row > b {
+.items-list .cat-row > b {
   display: block;
   margin: 0 0 10px;
   background: transparent;
@@ -448,7 +448,7 @@ h1 {
   padding-left: 16px;
   position: relative;
 }
-.menu-card .items-list .cat-row > b::before {
+.items-list .cat-row > b::before {
   content: '';
   position: absolute;
   left: 0; top: 50%;
@@ -456,7 +456,7 @@ h1 {
   background: var(--gold);
 }
 
-.menu-card .items-list span {
+.items-list span {
   display: inline-flex;
   align-items: center;
   padding: 12px 14px;
@@ -468,38 +468,38 @@ h1 {
   font-family: var(--f-zh);
   transition: all .2s;
 }
-.menu-card .items-list .item-chip {
+.items-list .item-chip {
   cursor: pointer;
   user-select: none;
   position: relative;
   gap: 6px;
 }
-.menu-card .items-list .item-chip:hover {
+.items-list .item-chip:hover {
   border-color: var(--gold);
   background: rgba(201,169,97,.08);
   transform: translateY(-1px);
   box-shadow: 0 4px 14px rgba(201,169,97,.2);
 }
-.menu-card .items-list .item-chip:active { transform: translateY(0) scale(.98); }
+.items-list .item-chip:active { transform: translateY(0) scale(.98); }
 
-.menu-card .items-list .item-chip.leave-chip {
+.items-list .item-chip.leave-chip {
   border-color: rgba(194,112,112,.35);
   background: rgba(194,112,112,.08);
 }
-.menu-card .items-list .item-chip.leave-chip:hover {
+.items-list .item-chip.leave-chip:hover {
   border-color: var(--danger);
   background: rgba(194,112,112,.14);
   box-shadow: 0 4px 14px rgba(194,112,112,.22);
 }
-.menu-card .items-list .item-chip.leave-chip .item-pick { color: var(--danger); }
+.items-list .item-chip.leave-chip .item-pick { color: var(--danger); }
 
-.menu-card .items-list .item-chip .item-pick {
+.items-list .item-chip .item-pick {
   color: var(--gold);
   font-weight: 500;
   font-size: 14.5px;
   letter-spacing: .02em;
 }
-.menu-card .items-list .item-chip .price-edit {
+.items-list .item-chip .price-edit {
   color: var(--wine);
   font-family: var(--f-num);
   font-size: 15px;
@@ -508,11 +508,11 @@ h1 {
   font-variant-numeric: tabular-nums;
   letter-spacing: .04em;
 }
-.menu-card .items-list span b { font-weight: 600; }
+.items-list span b { font-weight: 600; }
 
 /* 熱度標記 */
-.menu-card .items-list .item-chip b[style*="d4543a"],
-.menu-card .items-list .item-chip .hot-count {
+.items-list .item-chip b[style*="d4543a"],
+.items-list .item-chip .hot-count {
   color: var(--wine) !important;
   font-family: var(--f-num);
   font-size: 13px;
@@ -521,7 +521,7 @@ h1 {
 }
 
 /* AI 推薦命中 */
-.menu-card .items-list .item-chip.rec-hit {
+.items-list .item-chip.rec-hit {
   background: linear-gradient(135deg, rgba(201,169,97,.25) 0%, rgba(232,201,121,.15) 100%);
   border-color: var(--gold);
   box-shadow: 0 0 0 2px var(--gold), 0 0 28px rgba(201,169,97,.55);
@@ -529,7 +529,7 @@ h1 {
   animation: recPop .5s cubic-bezier(.34,1.56,.64,1);
   z-index: 2;
 }
-.menu-card .items-list .item-chip.rec-hit::before {
+.items-list .item-chip.rec-hit::before {
   content: '';
   position: absolute;
   top: -5px; right: -5px;
@@ -539,31 +539,31 @@ h1 {
   box-shadow: 0 0 14px var(--gold);
   animation: dotPulse 1.4s ease-in-out infinite;
 }
-.menu-card .items-list .item-chip.rec-hit .item-pick { color: #FFF4D4; font-weight: 600; }
-.menu-card .items-list .item-chip.rec-hit .price-edit { color: var(--gold-bright); }
+.items-list .item-chip.rec-hit .item-pick { color: #FFF4D4; font-weight: 600; }
+.items-list .item-chip.rec-hit .price-edit { color: var(--gold-bright); }
 @keyframes recPop { 0% { transform: scale(.7); } 60% { transform: scale(1.08) translateY(-4px); } 100% { transform: translateY(-2px); } }
 @keyframes dotPulse { 0%,100% { transform: scale(1); opacity:.9; } 50% { transform: scale(1.5); opacity:.4; } }
 
 /* 新增菜單外品項的 chip */
-.menu-card .items-list .item-chip.add-custom {
+.items-list .item-chip.add-custom {
   background: rgba(176,141,122,.08) !important;
   border: 1px dashed var(--wine) !important;
 }
-.menu-card .items-list .item-chip.add-custom .item-pick {
+.items-list .item-chip.add-custom .item-pick {
   color: var(--wine) !important;
 }
 
 /* 編輯模式（同時可改名稱與價格） */
-body.is-edit-price .menu-card .items-list .item-chip {
+body.is-edit-price .items-list .item-chip {
   cursor: pointer;
 }
-body.is-edit-price .menu-card .items-list .item-chip .item-pick {
+body.is-edit-price .items-list .item-chip .item-pick {
   padding: 2px 8px;
   border-radius: 2px;
   border: 1px dashed rgba(201,169,97,.6);
   background: rgba(201,169,97,.1);
 }
-body.is-edit-price .menu-card .items-list .price-edit {
+body.is-edit-price .items-list .price-edit {
   cursor: pointer;
   pointer-events: auto;
   background: rgba(201,169,97,.18);
@@ -573,9 +573,9 @@ body.is-edit-price .menu-card .items-list .price-edit {
   color: var(--gold-bright);
   text-decoration: none;
 }
-body.is-edit-price .menu-card .items-list .price-edit:hover,
-body.is-edit-price .menu-card .items-list .price-edit:active,
-body.is-edit-price .menu-card .items-list .item-chip .item-pick:hover {
+body.is-edit-price .items-list .price-edit:hover,
+body.is-edit-price .items-list .price-edit:active,
+body.is-edit-price .items-list .item-chip .item-pick:hover {
   background: var(--gold); color: var(--bg);
 }
 body.is-edit-price h1::after {
@@ -1510,14 +1510,14 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.9</span>
+  <span style="opacity:.6">v1.0.10</span>
 </div>
 
 <div class="admin-row">
-  <a class="admin-toggle" href="/admin/zones" target="_blank">🔧 管理員</a>
+  <a id="adminLink" class="admin-toggle" href="/admin/zones" target="_blank">🔧 管理員</a>
   ${closed ? '' : `
-  <a class="admin-toggle" href="?admin=1">🗑 刪除模式</a>
-  <a class="admin-toggle" href="?edit=1">📝 編輯模式</a>
+  <a id="adminDelToggle" class="admin-toggle menu-only" href="?admin=1">🗑 刪除模式</a>
+  <a id="adminEditToggle" class="admin-toggle menu-only" href="?edit=1">📝 編輯模式</a>
   <a class="admin-toggle" href="/api/t/${task.id}/export">📊 匯出 XLSX</a>
   `}
 </div>
@@ -1802,7 +1802,28 @@ ${closed ? '' : 'setInterval(async () => { await poll(); if (typeof loadMenu ===
 ${closed ? '' : `
 const TASK_ID = ${task.id};
 
-// 菜單模式 toggle：勾選=menu、取消=free；同時連動 menuCard 顯示
+// 管理員按鈕：進入 /admin/zones 前 prompt 一次 1234，session 內通過後不再問
+(function initAdminGate() {
+  const link = document.getElementById('adminLink');
+  if (!link) return;
+  link.addEventListener('click', (e) => {
+    if (sessionStorage.getItem('adminUnlocked') === '1') return;
+    const pass = (window.prompt('請輸入管理員密碼') || '').trim();
+    if (pass === '1234') {
+      sessionStorage.setItem('adminUnlocked', '1');
+      return;
+    }
+    e.preventDefault();
+    if (pass) alert('密碼錯誤');
+  });
+})();
+
+// 菜單模式 toggle：勾選=menu、取消=free；同時連動 menuCard 與 menu-only 按鈕顯示
+function syncMenuOnlyButtons(isMenu) {
+  document.querySelectorAll('.menu-only').forEach(el => {
+    el.style.display = isMenu ? '' : 'none';
+  });
+}
 (function initMenuModeToggle() {
   const chk = document.getElementById('menuModeChk');
   const card = document.getElementById('menuCard');
@@ -1810,6 +1831,7 @@ const TASK_ID = ${task.id};
   const initOn = !!(state && state.task && state.task.mode === 'menu');
   chk.checked = initOn;
   card.style.display = initOn ? '' : 'none';
+  syncMenuOnlyButtons(initOn);
   chk.addEventListener('change', async () => {
     const target = chk.checked ? 'menu' : 'free';
     try {
@@ -1825,6 +1847,7 @@ const TASK_ID = ${task.id};
       }
       if (state && state.task) state.task.mode = target;
       card.style.display = chk.checked ? '' : 'none';
+      syncMenuOnlyButtons(chk.checked);
       if (typeof loadMenu === 'function') loadMenu();
     } catch (e) {
       alert('錯誤：' + e.message);
