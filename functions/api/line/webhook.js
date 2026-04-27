@@ -1388,15 +1388,18 @@ export function buildSheetRows(taskName, entries) {
     }
   });
   rows.push(['■ 明細（依品項排序，發餐用）']);
-  rows.push(['品項', '姓名', ...restFields, '備註', '金額']);
+  rows.push(['品項', '區', '姓名', ...restFields, '備註', '金額']);
   const sorted = [...parsed].sort((a, b) => {
     const ai = a.item || '~'; const bi = b.item || '~';
     if (ai !== bi) return ai.localeCompare(bi, 'zh-Hant');
+    const az = a.zone || '~'; const bz = b.zone || '~';
+    if (az !== bz) return az.localeCompare(bz, 'zh-Hant');
     return a.name.localeCompare(b.name, 'zh-Hant');
   });
   sorted.forEach(p => {
     rows.push([
       p.item || '(未辨識)',
+      p.zone || '',
       p.name,
       ...restFields.map(k => p.rest[k] == null ? '' : String(p.rest[k])),
       p.note || '',
