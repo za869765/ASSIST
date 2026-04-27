@@ -752,6 +752,9 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
       text = person.text;
     }
   }
+  // 任何人（含本人自報名）都可用「<姓名>: <內容>」格式，剝掉自稱讓 Gemini 專注看內容
+  // 例：胡惠香自己發「胡惠香：素食」→ 剝成「素食」→ normalizeBentoItem 補成「素食便當」
+  text = await stripLeadingPersonName(env, text);
 
   // 若此人在此任務有待確認的 pending_dup，且這次訊息能辨識成「加/改」→ 直接處理
   const pending = await env.DB.prepare(

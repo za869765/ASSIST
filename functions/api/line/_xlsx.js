@@ -214,8 +214,10 @@ export function buildXLSX(sheetName, rows, extraMerges = []) {
 
   const merges = [...extraMerges];
   let prevStyle = 0;
-  // 素食列：把資料列 styleId 5 改成紅色粗體變體 20（中間 cell；左右 21/22 已不再使用）
-  const VEG_MAP = { 5: 20 };
+  // 素食列：把資料列 styleId 5/11/12 改成紅色粗體變體 20/21/22
+  const VEG_MAP = { 5: 20, 11: 21, 12: 22 };
+  // 內容區套金色雙線左右大邊（不延伸到 padding row），最後一列下方再補底邊
+  const EDGE_MAP = { 3: { left: 7, right: 8 }, 4: { left: 9, right: 10 }, 5: { left: 11, right: 12 }, 6: { left: 13, right: 14 } };
   const sheetRowsArr = rows.map((row, rIdx) => {
     const style = classify(row, rIdx, prevStyle);
     prevStyle = style;
@@ -227,19 +229,37 @@ export function buildXLSX(sheetName, rows, extraMerges = []) {
       padded = row.concat(Array(maxCols - row.length).fill(''));
       merges.push(`A${r}:${lastColLetter}${r}`);
     }
-    // 整列素食：訂購彙總／明細裡 row[0] === '素食便當' → 整列改紅色粗體
     const isVegRow = style === 5 && String(row[0] || '').trim() === '素食便當';
     const cells = padded.map((v, cIdx) => {
       const ref = `${colLetter(cIdx + 1)}${r}`;
       const text = xmlEscape(v == null ? '' : String(v));
       let cellStyle = style;
+      // 邊緣 cell 套「+金色左/右框」變體（style=2 自帶完整金框，不變）
+      const variant = EDGE_MAP[style];
+      if (variant && padded.length > 1) {
+        if (cIdx === 0) cellStyle = variant.left;
+        else if (cIdx === padded.length - 1) cellStyle = variant.right;
+      }
       if (isVegRow && VEG_MAP[cellStyle]) cellStyle = VEG_MAP[cellStyle];
       return `<c r="${ref}" t="inlineStr" s="${cellStyle}"><is><t xml:space="preserve">${text}</t></is></c>`;
     }).join('');
     return `<row r="${r}"${rowAttrs}>${cells}</row>`;
   });
 
-  const sheetRows = sheetRowsArr.join('');
+  // 在最後一個內容 row 下方加一條金色 double 底邊（左 LB ↘ 右 RB），收外框
+  // 不再強拉到 48 列，只多 1 行底邊，避免右上大塊空白
+  const bottomRowIdx = rows.length + 1;
+  const bottomCells = [];
+  for (let c = 1; c <= maxCols; c++) {
+    let s;
+    if (c === 1) s = 18;             // LB 收角
+    else if (c === maxCols) s = 19;  // RB 收角
+    else s = 17;                     // 底邊
+    bottomCells.push(`<c r="${colLetter(c)}${bottomRowIdx}" t="inlineStr" s="${s}"><is><t xml:space="preserve"></t></is></c>`);
+  }
+  const bottomRow = `<row r="${bottomRowIdx}" ht="6" customHeight="1">${bottomCells.join('')}</row>`;
+
+  const sheetRows = sheetRowsArr.join('') + bottomRow;
   const mergeCellsXml = merges.length
     ? `<mergeCells count="${merges.length}">${merges.map(m => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>`
     : '';
