@@ -18,8 +18,8 @@ export async function onRequestGet({ env, params }) {
   ).all();
   const zoneOrder = {};
   for (const z of (zoneRow.results || [])) zoneOrder[z.name] = z.sort_order;
-  const rows = buildSheetRows(task.task_name, entries, { mode: task.mode, zoneOrder });
-  const bytes = buildXLSX(task.task_name.slice(0, 31) || 'sheet', rows);
+  const sheet = buildSheetRows(task.task_name, entries, { mode: task.mode, zoneOrder });
+  const bytes = buildXLSX(task.task_name.slice(0, 31) || 'sheet', sheet.rows, sheet.mergeRanges);
   const stamp = new Date().toISOString().slice(0, 10);
   const filename = encodeURIComponent(`${task.task_name}_${stamp}.xlsx`);
   return new Response(bytes, {

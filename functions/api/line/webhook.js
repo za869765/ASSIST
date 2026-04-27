@@ -622,8 +622,8 @@ async function doCloseTask(env, picked, replyToken) {
   const zoneRow = await env.DB.prepare(`SELECT name, sort_order FROM zones`).all();
   const zoneOrder = {};
   for (const z of (zoneRow.results || [])) zoneOrder[z.name] = z.sort_order;
-  const rows = buildSheetRows(picked.task_name, entries, { mode: picked.mode, zoneOrder });
-  const bytes = buildXLSX(picked.task_name.slice(0, 31) || 'sheet', rows);
+  const sheet = buildSheetRows(picked.task_name, entries, { mode: picked.mode, zoneOrder });
+  const bytes = buildXLSX(picked.task_name.slice(0, 31) || 'sheet', sheet.rows, sheet.mergeRanges);
   const token = genDownloadToken();
   const filename = `${picked.task_name}_${new Date().toISOString().slice(0, 10)}.xlsx`;
   const contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -1060,6 +1060,15 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
       parsed.data = { 品項: tClean };
       // 繼續往下走正常寫入流程（不 return）
     } else {
+      // 閒聊守門：follow_up 之前先確認文字像不像跟餐點有關
+      // 沒餐點動詞／關鍵字、又看起來在問非餐點的事 → silent，不要追問品項
+      const tNorm = String(text || '').replace(/\s+/g, '');
+      const hasFoodVerb = /吃|喝|要點|要訂|要吃|要喝|餐|便當|飯|麵|湯|粥|食|葷|素|加[一1]|多[一1]|再[一1]|\+1|＋1|請假|不吃|沒訂/.test(tNorm);
+      const offTopicHint = /剪|燙|染|頭髮|短髮|長髮|看醫生|休假|放假|聊|抱|愛|玩|看電影|睡覺|起床|下班|上班|遲到|早退|放鬆|累|忙|生氣|心情|天氣|下雨|放心|開心|無聊|生病|感冒|頭痛|肚子痛/.test(tNorm);
+      if (!hasFoodVerb || offTopicHint) {
+        console.log('[off-topic ignore follow_up]', text);
+        return;
+      }
       if (parsed?.follow_up) {
         const mInfo = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
         const askName = mInfo?.real_name || mInfo?.line_display || userId.slice(0, 6);
@@ -1376,11 +1385,15 @@ export function buildSheetRows(taskName, entries, opts = {}) {
   });
 
   const rows = [];
+  const mergeRanges = []; // 訂購彙總「備註/特殊要求」要跨欄合併到下排明細「備註」同寬
   rows.push([`任務：${taskName}　訂購：${parsed.length}　請假：${leaves.length}`]);
   rows.push([]);
 
   // ① 訂購彙總
   rows.push(['■ 訂購彙總（對店家）']);
+  // 訂購彙總「備註欄」只 1 欄，下排明細是「備註(D)+金額(E)」2 欄；
+  // 為了視覺對齊，無菜單時把彙總「備註(C)」合併到 D；有菜單時合併 C:D（不含小計）
+  const summaryHeaderRow = rows.length + 1; // 1-indexed
   rows.push(noPrice
     ? ['品項', '份數', '備註 / 特殊要求']
     : ['品項', '份數', '備註 / 特殊要求', '小計']);
@@ -1398,6 +1411,15 @@ export function buildSheetRows(taskName, entries, opts = {}) {
   rows.push(noPrice
     ? ['合計', String(grandCount), '']
     : ['合計', String(grandCount), '', grandTotal ? String(grandTotal) : '']);
+  const summaryEndRow = rows.length; // 1-indexed = 合計列
+  // 合併 C:D（無菜單時 D 是明細的金額位，無小計）
+  // 有菜單時也合併 C:D，把備註拉寬與明細「備註」對齊；「小計」維持 D（會被覆蓋）
+  // 注意：有菜單時 D 本身有「小計」資料，合併會吃掉。所以只在 noPrice 時做。
+  if (noPrice) {
+    for (let r = summaryHeaderRow; r <= summaryEndRow; r++) {
+      mergeRanges.push(`C${r}:D${r}`);
+    }
+  }
   rows.push([]);
 
   // ② 明細：依品項排序（相同品項排一起），方便發餐
@@ -1447,8 +1469,9 @@ export function buildSheetRows(taskName, entries, opts = {}) {
     });
   }
 
-  return rows;
+  return { rows, mergeRanges };
 }
+
 
 // 產生對店家的彙總文字（給 LINE 群組訊息）
 // 請假/不吃 不計入訂購（獨立列「請假 N 人」資訊）

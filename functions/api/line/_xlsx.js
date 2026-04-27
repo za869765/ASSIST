@@ -86,7 +86,7 @@ function colLetter(n) {
 
 // rows: string[][]，sheetName: string
 // 回傳 Uint8Array（xlsx 檔內容）
-export function buildXLSX(sheetName, rows) {
+export function buildXLSX(sheetName, rows, extraMerges = []) {
   const enc = new TextEncoder();
   const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -218,7 +218,7 @@ export function buildXLSX(sheetName, rows) {
   // style → { left, right } 變體索引：同樣底色/字色，但左/右換成「金色雙線 + 其餘薄灰」
   const EDGE_MAP = { 3: { left: 7, right: 8 }, 4: { left: 9, right: 10 }, 5: { left: 11, right: 12 }, 6: { left: 13, right: 14 } };
 
-  const merges = [];
+  const merges = [...extraMerges];
   let prevStyle = 0;
   // 素食列：把資料列 styleId 5/11/12 改成紅色粗體變體 20/21/22
   const VEG_MAP = { 5: 20, 11: 21, 12: 22 };
