@@ -692,11 +692,12 @@ h2.zone {
   font-family: var(--f-zh);
   font-size: 13.5px;
   font-weight: 600;
-  margin: 6px 0 2px;
-  padding: 5px 0 5px 10px;
+  margin: 18px 0 4px;
+  padding: 6px 10px 6px 12px;
   color: var(--gold);
   background: rgba(201,169,97,.06);
   border-left: 3px solid var(--gold);
+  border-top: 1px solid rgba(201,169,97,.18);
   border-bottom: none;
   display: flex;
   justify-content: space-between;
@@ -705,20 +706,23 @@ h2.zone {
   letter-spacing: .04em;
   transition: background .2s;
 }
-h2.zone:first-of-type { margin-top: 8px; }
+h2.zone:first-of-type { margin-top: 10px; }
 h2.zone:hover { background: rgba(201,169,97,.12); }
 h2.zone.none {
   color: var(--wine);
   border-left-color: var(--wine);
+  border-top-color: rgba(176,141,122,.3);
   background: rgba(176,141,122,.10);
 }
 h2.zone.empty {
   color: var(--text-dim);
   font-weight: 400;
   border-left: 1px solid rgba(160,160,160,.25);
+  border-top: 1px solid rgba(160,160,160,.10);
   background: transparent;
   opacity: .55;
-  padding: 4px 0 4px 12px;
+  padding: 5px 0 5px 12px;
+  margin: 14px 0 4px;
 }
 h2.zone.leave {
   border-left-color: #fcd34d;
@@ -1523,7 +1527,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.12</span>
+  <span style="opacity:.6">v1.0.13</span>
 </div>
 
 <div class="admin-row">
