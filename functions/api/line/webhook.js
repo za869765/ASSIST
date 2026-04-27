@@ -1391,30 +1391,35 @@ export function buildSheetRows(taskName, entries, opts = {}) {
 
   // ① 訂購彙總
   rows.push(['■ 訂購彙總（對店家）']);
-  // 訂購彙總「備註欄」只 1 欄，下排明細是「備註(D)+金額(E)」2 欄；
-  // 為了視覺對齊，無菜單時把彙總「備註(C)」合併到 D；有菜單時合併 C:D（不含小計）
+  // 訂購彙總「備註欄」原本只 1 欄（C），下排明細「備註」在 D 欄（無菜單）／D 欄（有菜單）
+  // 視覺對齊：無菜單時把彙總「備註(C)」合併 C:D，與下排明細備註同寬
+  // OOXML 規範：被合併的所有 cell 都必須存在，所以彙總每列要先補空 cell 到 D 欄
+  const summaryFullCols = noPrice ? 4 : 5; // 與明細同欄數
+  const padToFull = (arr) => {
+    const out = [...arr];
+    while (out.length < summaryFullCols) out.push('');
+    return out;
+  };
   const summaryHeaderRow = rows.length + 1; // 1-indexed
-  rows.push(noPrice
+  rows.push(padToFull(noPrice
     ? ['品項', '份數', '備註 / 特殊要求']
-    : ['品項', '份數', '備註 / 特殊要求', '小計']);
+    : ['品項', '份數', '備註 / 特殊要求', '小計']));
   let grandCount = 0, grandTotal = 0;
   Object.keys(groups)
     .sort((a, b) => groups[b].count - groups[a].count || a.localeCompare(b, 'zh-Hant'))
     .forEach(k => {
       const g = groups[k];
-      rows.push(noPrice
+      rows.push(padToFull(noPrice
         ? [k, String(g.count), g.notes.join('；')]
-        : [k, String(g.count), g.notes.join('；'), g.total ? String(g.total) : '']);
+        : [k, String(g.count), g.notes.join('；'), g.total ? String(g.total) : '']));
       grandCount += g.count;
       grandTotal += g.total;
     });
-  rows.push(noPrice
+  rows.push(padToFull(noPrice
     ? ['合計', String(grandCount), '']
-    : ['合計', String(grandCount), '', grandTotal ? String(grandTotal) : '']);
+    : ['合計', String(grandCount), '', grandTotal ? String(grandTotal) : '']));
   const summaryEndRow = rows.length; // 1-indexed = 合計列
-  // 合併 C:D（無菜單時 D 是明細的金額位，無小計）
-  // 有菜單時也合併 C:D，把備註拉寬與明細「備註」對齊；「小計」維持 D（會被覆蓋）
-  // 注意：有菜單時 D 本身有「小計」資料，合併會吃掉。所以只在 noPrice 時做。
+  // 合併「備註/特殊要求」C:D（無菜單；有菜單時 D 是小計欄，不合併）
   if (noPrice) {
     for (let r = summaryHeaderRow; r <= summaryEndRow; r++) {
       mergeRanges.push(`C${r}:D${r}`);
