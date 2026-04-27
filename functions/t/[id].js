@@ -720,6 +720,13 @@ h2.zone.empty {
   opacity: .55;
   padding: 4px 0 4px 12px;
 }
+h2.zone.leave {
+  border-left-color: #fcd34d;
+  background: rgba(252,211,77,.08);
+}
+h2.zone small.cap-ordered { color: #4ade80 !important; font-weight: 600; }
+h2.zone small.cap-empty   { color: #ff6b6b !important; font-weight: 600; }
+h2.zone small.cap-leave   { color: #fcd34d !important; font-weight: 600; }
 h2.zone small {
   color: var(--text-muted);
   font-family: var(--f-en);
@@ -1510,7 +1517,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.10</span>
+  <span style="opacity:.6">v1.0.11</span>
 </div>
 
 <div class="admin-row">
@@ -1736,10 +1743,20 @@ function render() {
     if (g.list.length === 0 && isUnassigned) continue; // 未分區沒人就不顯示
     const filled = g.list.length > 0;
     if (!isUnassigned && filled) filledZones++;
+    // 狀態：有人訂餐=綠、全部請假=黃、沒人=紅
+    const isLeaveEntry = (e) => e.note === '請假' || e.note === '不吃';
+    const hasOrder = g.list.some(e => !isLeaveEntry(e));
+    const allLeave = g.list.length > 0 && g.list.every(isLeaveEntry);
+    let statusCls = '';
+    if (!isUnassigned) {
+      if (g.list.length === 0) statusCls = 'cap-empty';
+      else if (allLeave) statusCls = 'cap-leave';
+      else if (hasOrder) statusCls = 'cap-ordered';
+    }
     const capNote = !isUnassigned && g.zone.capacity > 0
-      ? (g.list.length >= g.zone.capacity ? \`<small>✓ \${g.list.length}/\${g.zone.capacity}</small>\` : \`<small>\${g.list.length}/\${g.zone.capacity}</small>\`)
-      : (!isUnassigned && g.zone.capacity === 0 ? \`<small>\${g.list.length} 人（不限）</small>\` : '');
-    const headerClass = isUnassigned ? 'zone none' : (g.list.length === 0 ? 'zone empty' : 'zone');
+      ? (g.list.length >= g.zone.capacity ? \`<small class="\${statusCls}">✓ \${g.list.length}/\${g.zone.capacity}</small>\` : \`<small class="\${statusCls}">\${g.list.length}/\${g.zone.capacity}</small>\`)
+      : (!isUnassigned && g.zone.capacity === 0 ? \`<small class="\${statusCls}">\${g.list.length} 人（不限）</small>\` : '');
+    const headerClass = isUnassigned ? 'zone none' : (g.list.length === 0 ? 'zone empty' : (allLeave ? 'zone leave' : 'zone'));
     const emptyTag = (!isUnassigned && g.list.length === 0) ? ' <span style="color:#bbb;font-style:italic;font-weight:400;">(未填)</span>' : '';
     const IN_OFFICE_ZONES = ['楠西區', '南化區', '左鎮區', '新市區'];
     const inOfficeTag = IN_OFFICE_ZONES.includes(g.zone.name)
