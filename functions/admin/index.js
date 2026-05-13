@@ -7,7 +7,7 @@ export async function onRequestGet() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ASSIST 管理後台</title>
-<meta name="version" content="v1.0.27">
+<meta name="version" content="v1.0.28">
 <style>
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -53,6 +53,25 @@ small.note { color: #888; font-size: 11px; }
 .tasks-row td { font-size: 12px; }
 .dl-link { display: inline-block; padding: 2px 8px; font-size: 11px; background: #e3f2fd; color: #1565c0; border-radius: 4px; text-decoration: none; margin: 1px 2px; }
 .dl-link.expired { background: #eceff1; color: #999; }
+.detail-btn { display: inline-block; padding: 2px 8px; font-size: 11px; background: #fff3e0; color: #e65100; border: none; border-radius: 4px; cursor: pointer; margin: 1px 2px; font-family: inherit; }
+.detail-btn:hover { background: #ffe0b2; }
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 100; align-items: flex-start; justify-content: center; padding: 32px 16px; overflow-y: auto; }
+.modal-overlay.show { display: flex; }
+.modal-box { background: var(--bg, #fff); color: inherit; max-width: 760px; width: 100%; border-radius: 10px; padding: 18px 22px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); position: relative; max-height: calc(100vh - 64px); overflow-y: auto; }
+@media (prefers-color-scheme: dark) { .modal-box { background: #1e1e1e; } }
+.modal-close { position: absolute; top: 10px; right: 12px; background: transparent; border: none; font-size: 22px; cursor: pointer; color: #888; padding: 4px 10px; }
+.modal-close:hover { color: #333; }
+.modal-title { font-size: 17px; margin: 0 0 4px; padding-right: 32px; font-weight: 700; }
+.modal-meta { font-size: 12px; color: #888; margin-bottom: 12px; }
+.modal-summary { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; padding: 10px 12px; background: #f7f7f733; border-radius: 6px; margin-bottom: 12px; }
+.modal-summary b { color: #607d8b; font-weight: 500; margin-right: 4px; }
+.zone-block { margin-bottom: 14px; }
+.zone-head { font-size: 13px; font-weight: 700; color: #2db87a; padding: 4px 0; border-bottom: 1px solid #ddd4; margin-bottom: 4px; }
+.entry-row { font-size: 13px; padding: 6px 0; border-bottom: 1px solid #eee2; }
+.entry-row b { color: inherit; font-weight: 600; }
+.entry-data { color: #555; font-size: 12px; margin-left: 4px; }
+.entry-note { color: #d4543a; font-size: 11px; margin-left: 4px; }
+.entry-price { color: #2db87a; font-size: 12px; font-weight: 600; float: right; }
 </style>
 </head>
 <body>
@@ -69,7 +88,7 @@ small.note { color: #888; font-size: 11px; }
   <h1>🛠 ASSIST 管理後台
     <button onclick="doLogout()" style="font-size:12px">登出</button>
   </h1>
-  <div class="sub">v1.0.27 · LINE Bot 統一維護</div>
+  <div class="sub">v1.0.28 · LINE Bot 統一維護</div>
 
   <div class="tabs">
     <button class="tab active" data-tab="overview">總覽</button>
@@ -123,7 +142,7 @@ small.note { color: #888; font-size: 11px; }
       <small class="note" id="tasksCount"></small>
     </div>
     <table id="taskTable">
-      <thead><tr><th>任務</th><th>群組</th><th>狀態</th><th>筆數</th><th>建立</th><th>結單</th><th>下載</th></tr></thead>
+      <thead><tr><th>任務</th><th>群組</th><th>狀態</th><th>筆數</th><th>建立</th><th>結單</th><th>詳情</th><th>下載</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -134,7 +153,7 @@ small.note { color: #888; font-size: 11px; }
       <b>D1 binding</b><div>DB → assist_db</div>
       <b>分區設定</b><div><a class="zone-link" href="/admin/zones">/admin/zones</a></div>
       <b>Webhook URL</b><div><code id="webhookUrl">—</code></div>
-      <b>後台版本</b><div>v1.0.27</div>
+      <b>後台版本</b><div>v1.0.28</div>
     </div>
     <h2>💡 LINE 指令備忘</h2>
     <ul style="font-size:13px;line-height:1.8;color:#666">
@@ -142,6 +161,13 @@ small.note { color: #888; font-size: 11px; }
       <li><code>TAQ 小秘書 ping</code> — 環境摘要（管理員限定）</li>
       <li>群組裡輸入「秘書 開始統計飲料」開新任務</li>
     </ul>
+  </div>
+</div>
+
+<div class="modal-overlay" id="taskModal" onclick="if(event.target===this)closeTaskModal()">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeTaskModal()">×</button>
+    <div id="taskModalBody">載入中…</div>
   </div>
 </div>
 
@@ -354,11 +380,91 @@ async function loadTasks(status) {
       <td>\${t.entry_count || 0}</td>
       <td><small>\${esc((t.started_at || '').slice(0, 16))}</small></td>
       <td><small>\${esc((t.closed_at || '').slice(0, 16))}</small></td>
+      <td><button class="detail-btn" onclick="openTaskDetail(\${t.id})">📋 查看</button></td>
       <td>\${exps}</td>
     </tr>\`;
   });
-  document.querySelector('#taskTable tbody').innerHTML = rows.join('') || '<tr><td colspan="7" style="text-align:center;color:#999">尚無任務</td></tr>';
+  document.querySelector('#taskTable tbody').innerHTML = rows.join('') || '<tr><td colspan="8" style="text-align:center;color:#999">尚無任務</td></tr>';
 }
+
+// ========== 任務詳情 modal（純查看，不改 task.status，不碰 LINE） ==========
+async function openTaskDetail(id) {
+  const modal = document.getElementById('taskModal');
+  const body = document.getElementById('taskModalBody');
+  body.innerHTML = '<div style="padding:24px;text-align:center;color:#888">載入中…</div>';
+  modal.classList.add('show');
+  document.body.style.overflow = 'hidden';
+
+  const r = await api('/api/admin/tasks/' + id);
+  if (!r.ok) {
+    body.innerHTML = '<div class="msg error" style="padding:20px">載入失敗（HTTP ' + r.status + '）</div>';
+    return;
+  }
+  const j = await r.json();
+  const t = j.task;
+  const entries = j.entries || [];
+  const sum = j.summary || {};
+
+  const byZone = {};
+  for (const e of entries) {
+    const z = e.zone || '(未分區)';
+    (byZone[z] = byZone[z] || []).push(e);
+  }
+  const zoneKeys = Object.keys(byZone).sort();
+
+  const stBadge = t.status === 'open'
+    ? '<span class="badge b-info">進行中</span>'
+    : '<span class="badge b-mute">已結單</span>';
+  const modeBadge = t.mode === 'menu'
+    ? '<span class="badge b-info" style="font-size:11px">菜單</span>'
+    : '<span class="badge b-mute" style="font-size:11px">自由</span>';
+  const groupLabel = t.group_alias || (t.group_id || '').slice(0, 16) + '…';
+
+  let html = '';
+  html += \`<h3 class="modal-title">\${esc(t.task_name)} <small style="color:#999;font-weight:400">#\${t.id}</small></h3>\`;
+  html += \`<div class="modal-meta">\${stBadge} \${modeBadge} · 群組：\${esc(groupLabel)}<br>建立：\${esc((t.started_at || '').slice(0, 16))}\${t.closed_at ? ' · 結單：' + esc(t.closed_at.slice(0, 16)) : ''}</div>\`;
+
+  html += '<div class="modal-summary">';
+  html += \`<div><b>總筆數</b>\${sum.entry_count || 0}</div>\`;
+  if (sum.total_price) html += \`<div><b>總金額</b>$\${sum.total_price}</div>\`;
+  for (const [z, n] of Object.entries(sum.zone_counts || {})) {
+    html += \`<div><b>\${esc(z)}</b>\${n}</div>\`;
+  }
+  html += '</div>';
+
+  if (entries.length === 0) {
+    html += '<div style="text-align:center;color:#999;padding:20px">尚無任何訂單</div>';
+  } else {
+    for (const z of zoneKeys) {
+      html += \`<div class="zone-block"><div class="zone-head">\${esc(z)}（\${byZone[z].length}）</div>\`;
+      for (const e of byZone[z]) {
+        const dataStr = Object.entries(e.data || {})
+          .filter(([, v]) => v !== '' && v !== null && v !== undefined)
+          .map(([k, v]) => \`\${esc(k)}：\${esc(v)}\`).join(' / ');
+        html += '<div class="entry-row">';
+        if (e.price) html += \`<span class="entry-price">$\${e.price}</span>\`;
+        html += \`<b>\${esc(e.name)}</b>\`;
+        if (dataStr) html += \`<span class="entry-data">\${dataStr}</span>\`;
+        if (e.note) html += \`<span class="entry-note">📝 \${esc(e.note)}</span>\`;
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+  }
+
+  body.innerHTML = html;
+}
+
+function closeTaskModal() {
+  document.getElementById('taskModal').classList.remove('show');
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('taskModal').classList.contains('show')) {
+    closeTaskModal();
+  }
+});
 
 // ========== 啟動 ==========
 (async function init() {
