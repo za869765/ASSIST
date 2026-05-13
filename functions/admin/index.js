@@ -7,7 +7,7 @@ export async function onRequestGet() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ASSIST 管理後台</title>
-<meta name="version" content="v1.0.34">
+<meta name="version" content="v1.0.35">
 <style>
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -95,7 +95,7 @@ small.note { color: #888; font-size: 11px; }
   <h1>🛠 ASSIST 管理後台
     <button onclick="doLogout()" style="font-size:12px">登出</button>
   </h1>
-  <div class="sub">v1.0.34 · LINE Bot 統一維護</div>
+  <div class="sub">v1.0.35 · LINE Bot 統一維護</div>
 
   <div class="tabs">
     <button class="tab active" data-tab="overview">總覽</button>
@@ -156,15 +156,19 @@ small.note { color: #888; font-size: 11px; }
   </div>
 
   <div id="members" class="panel">
-    <h2>👥 全部成員（members 表）</h2>
-    <small class="note">所有與 bot 互動過的 LINE 用戶。real_name 可直接編輯（離開欄位自動存）。</small>
-    <div class="add-row" style="margin:10px 0">
-      <input id="memberSearch" type="text" placeholder="搜尋（姓名 / userId / 暱稱）" oninput="renderAllMembers()" style="flex:1">
+    <h2>👥 成員管理</h2>
+    <div class="add-row" style="margin:10px 0;gap:10px">
+      <label style="font-size:13px;color:#888">模式：</label>
+      <select id="memberGroupSelect" onchange="onMemberGroupChange()" style="padding:5px 8px;font-size:13px;flex:1;max-width:300px;border:1px solid #ccc6;border-radius:4px;background:transparent;color:inherit">
+        <option value="">— 全部成員（全域 members 表）—</option>
+      </select>
+      <input id="memberSearch" type="text" placeholder="搜尋（姓名 / userId / 暱稱）" oninput="renderAllMembers()" style="flex:1;min-width:180px">
       <small class="note" id="memberCount"></small>
     </div>
+    <div id="memberModeBanner" style="padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:8px"></div>
     <div class="msg" id="memberMsg"></div>
     <table id="memberTable">
-      <thead><tr><th>姓名 (real_name)</th><th>LINE 暱稱</th><th>LINE userId</th><th>分區</th><th>最後出現</th><th>操作</th></tr></thead>
+      <thead><tr><th>姓名</th><th>LINE 暱稱</th><th>LINE userId</th><th>分區</th><th>最後</th><th>操作</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -175,7 +179,7 @@ small.note { color: #888; font-size: 11px; }
       <b>D1 binding</b><div>DB → assist_db</div>
       <b>分區設定</b><div><a class="zone-link" href="/admin/zones">/admin/zones</a></div>
       <b>Webhook URL</b><div><code id="webhookUrl">—</code></div>
-      <b>後台版本</b><div>v1.0.34</div>
+      <b>後台版本</b><div>v1.0.35</div>
     </div>
     <h2>💡 LINE 指令備忘</h2>
     <ul style="font-size:13px;line-height:1.8;color:#666">
@@ -597,9 +601,10 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ========== 全部成員 ==========
+// ========== 成員管理（全域 / per-group 雙模式）==========
 let ALL_MEMBERS = [];
 let ZONES_CACHE = [];
+let CURRENT_GROUP_ID = ''; // '' = 全域模式；非空 = 該 group_id 的 per-group 編輯
 
 async function loadZonesCache() {
   try {
@@ -610,13 +615,39 @@ async function loadZonesCache() {
   } catch {}
 }
 
-async function loadAllMembers() {
-  if (ZONES_CACHE.length === 0) await loadZonesCache();
-  const r = await api('/api/members');
-  if (!r.ok) { showMsg('memberMsg', '載入失敗', true); return; }
+async function loadGroupOptionsForMembers() {
+  const r = await api('/api/admin/groups');
+  if (!r.ok) return;
   const j = await r.json();
-  ALL_MEMBERS = j.members || [];
-  renderAllMembers();
+  const groups = j.groups || [];
+  const sel = document.getElementById('memberGroupSelect');
+  const opts = ['<option value="">— 全部成員（全域 members 表）—</option>'];
+  for (const g of groups) {
+    const sid = (g.group_id || '').slice(0, 8) + '…';
+    const label = g.alias ? g.alias + '（' + sid + '）' : sid;
+    opts.push(\`<option value="\${esc(g.group_id)}">\${esc(label)}</option>\`);
+  }
+  sel.innerHTML = opts.join('');
+}
+
+function onMemberGroupChange() {
+  CURRENT_GROUP_ID = document.getElementById('memberGroupSelect').value || '';
+  loadMembersPane();
+}
+
+function updateMemberModeBanner() {
+  const b = document.getElementById('memberModeBanner');
+  if (!CURRENT_GROUP_ID) {
+    b.innerHTML = '<span class="badge b-warn">⚠ 全域編輯</span> 修改 real_name / zone 會影響「所有群組」的 fallback。要做某群獨立設定請切換上方下拉。';
+    b.style.background = '#fff3e022';
+    b.style.border = '1px solid #ffe0b2';
+  } else {
+    const sel = document.getElementById('memberGroupSelect');
+    const label = sel.options[sel.selectedIndex]?.text || '此群組';
+    b.innerHTML = '<span class="badge b-ok">✓ 群組編輯</span> 在「' + esc(label) + '」內的設定，只影響此群。空值 → fallback 全域 members。';
+    b.style.background = '#e8f5e922';
+    b.style.border = '1px solid #c8e6c9';
+  }
 }
 
 function zoneOptionsHtml(currentZone) {
@@ -628,23 +659,72 @@ function zoneOptionsHtml(currentZone) {
   return html;
 }
 
+async function loadAllMembers() {
+  if (ZONES_CACHE.length === 0) await loadZonesCache();
+  await loadGroupOptionsForMembers();
+  await loadMembersPane();
+}
+
+async function loadMembersPane() {
+  updateMemberModeBanner();
+  if (CURRENT_GROUP_ID) {
+    const r = await api('/api/admin/group-members?group_id=' + encodeURIComponent(CURRENT_GROUP_ID));
+    if (!r.ok) { showMsg('memberMsg', '載入失敗', true); return; }
+    const j = await r.json();
+    ALL_MEMBERS = (j.members || []).map(m => ({
+      user_id: m.user_id,
+      name_val: m.group_real_name || '',
+      name_ph:  m.global_real_name || m.line_display || '(未填)',
+      line_display: m.line_display || '',
+      zone_val: m.group_zone || '',
+      zone_fallback: m.global_zone ? '(全域 ' + m.global_zone + ')' : '',
+      has_override: !!(m.group_real_name || m.group_zone),
+      last_at: m.last_entry_at || '',
+      _searchable: [m.group_real_name, m.global_real_name, m.line_display, m.user_id].filter(Boolean).join(' ').toLowerCase(),
+    }));
+  } else {
+    const r = await api('/api/members');
+    if (!r.ok) { showMsg('memberMsg', '載入失敗', true); return; }
+    const j = await r.json();
+    ALL_MEMBERS = (j.members || []).map(m => ({
+      user_id: m.user_id,
+      name_val: m.real_name || '',
+      name_ph:  m.line_display || '(未填)',
+      line_display: m.line_display || '',
+      zone_val: m.zone || '',
+      zone_fallback: '',
+      has_override: false,
+      last_at: m.last_seen_at || '',
+      _searchable: [m.real_name, m.line_display, m.user_id].filter(Boolean).join(' ').toLowerCase(),
+    }));
+  }
+  renderAllMembers();
+}
+
 function renderAllMembers() {
   const q = (document.getElementById('memberSearch').value || '').trim().toLowerCase();
-  const filtered = q ? ALL_MEMBERS.filter(m =>
-    (m.real_name || '').toLowerCase().includes(q)
-    || (m.line_display || '').toLowerCase().includes(q)
-    || (m.user_id || '').toLowerCase().includes(q)
-  ) : ALL_MEMBERS;
+  const filtered = q ? ALL_MEMBERS.filter(m => m._searchable.includes(q)) : ALL_MEMBERS;
   document.getElementById('memberCount').textContent = \`共 \${filtered.length} / \${ALL_MEMBERS.length} 位\`;
+  const isPerGroup = !!CURRENT_GROUP_ID;
   const rows = filtered.map(m => {
-    const last = (m.last_seen_at || '').slice(0, 16);
+    const last = (m.last_at || '').slice(0, 16);
+    const overrideTag = m.has_override ? '<span class="badge b-info" style="font-size:9px;margin-left:4px">override</span>' : '';
+    const actionBtn = isPerGroup
+      ? \`<button class="danger" style="font-size:11px;padding:3px 8px" onclick="clearMemberOverride('\${esc(m.user_id)}')">✖ 清</button>\`
+      : \`<button class="danger" style="font-size:11px;padding:3px 8px" onclick="delMember('\${esc(m.user_id)}', '\${(m.name_val || m.line_display || '').replace(/'/g, '&#39;')}')">🗑 刪除</button>\`;
     return \`<tr>
-      <td><input type="text" value="\${esc(m.real_name || '')}" placeholder="(未填)" data-uid="\${esc(m.user_id)}" class="member-real-name" style="width:140px;padding:4px 6px;font-size:13px;border:1px solid #ccc6;border-radius:4px;background:transparent;color:inherit"></td>
-      <td><small>\${esc(m.line_display || '')}</small></td>
+      <td>
+        <input type="text" value="\${esc(m.name_val)}" placeholder="\${esc(m.name_ph)}" data-uid="\${esc(m.user_id)}" class="member-real-name" style="width:140px;padding:4px 6px;font-size:13px;border:1px solid #ccc6;border-radius:4px;background:transparent;color:inherit">
+        \${overrideTag}
+      </td>
+      <td><small>\${esc(m.line_display)}</small></td>
       <td class="uid">\${esc(m.user_id)}</td>
-      <td><select data-uid="\${esc(m.user_id)}" class="member-zone" style="padding:4px 6px;font-size:13px;border:1px solid #ccc6;border-radius:4px;background:transparent;color:inherit">\${zoneOptionsHtml(m.zone)}</select></td>
+      <td>
+        <select data-uid="\${esc(m.user_id)}" class="member-zone" style="padding:4px 6px;font-size:13px;border:1px solid #ccc6;border-radius:4px;background:transparent;color:inherit">\${zoneOptionsHtml(m.zone_val)}</select>
+        \${m.zone_fallback ? '<small style="color:#aaa;margin-left:4px">' + esc(m.zone_fallback) + '</small>' : ''}
+      </td>
       <td><small>\${esc(last)}</small></td>
-      <td><button class="danger" style="font-size:11px;padding:3px 8px" onclick="delMember('\${esc(m.user_id)}', '\${esc(m.real_name || m.line_display || '').replace(/'/g, '&#39;')}')">🗑 刪除</button></td>
+      <td>\${actionBtn}</td>
     </tr>\`;
   });
   document.querySelector('#memberTable tbody').innerHTML = rows.join('') || '<tr><td colspan="6" style="text-align:center;color:#999">查無結果</td></tr>';
@@ -653,17 +733,14 @@ function renderAllMembers() {
     inp.addEventListener('blur', async () => {
       const uid = inp.dataset.uid;
       const v = inp.value.trim();
-      const r = await fetch('/api/members', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: uid, real_name: v }),
-      });
-      if (r.ok) {
+      const ok = await patchMember(uid, { real_name: v });
+      if (ok) {
         showMsg('memberMsg', '已更新姓名 ' + (v || '(清空)'));
         const found = ALL_MEMBERS.find(m => m.user_id === uid);
-        if (found) found.real_name = v || null;
-      } else {
-        showMsg('memberMsg', '姓名更新失敗', true);
+        if (found) {
+          found.name_val = v;
+          found.has_override = isPerGroup ? !!(v || found.zone_val) : false;
+        }
       }
     });
   });
@@ -672,20 +749,49 @@ function renderAllMembers() {
     sel.addEventListener('change', async () => {
       const uid = sel.dataset.uid;
       const v = sel.value;
-      const r = await fetch('/api/members', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: uid, zone: v }),
-      });
-      if (r.ok) {
-        showMsg('memberMsg', '已更新分區 → ' + (v || '(未分區)'));
+      const ok = await patchMember(uid, { zone: v });
+      if (ok) {
+        showMsg('memberMsg', '已更新分區 → ' + (v || '(清空)'));
         const found = ALL_MEMBERS.find(m => m.user_id === uid);
-        if (found) found.zone = v || null;
-      } else {
-        showMsg('memberMsg', '分區更新失敗', true);
+        if (found) {
+          found.zone_val = v;
+          found.has_override = isPerGroup ? !!(found.name_val || v) : false;
+        }
       }
     });
   });
+}
+
+async function patchMember(uid, fields) {
+  const body = CURRENT_GROUP_ID
+    ? { group_id: CURRENT_GROUP_ID, user_id: uid, ...fields }
+    : { user_id: uid, ...fields };
+  const url = CURRENT_GROUP_ID ? '/api/admin/group-members' : '/api/members';
+  const r = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Pass': PASS },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    showMsg('memberMsg', '更新失敗（' + r.status + '）', true);
+    return false;
+  }
+  return true;
+}
+
+async function clearMemberOverride(uid) {
+  if (!confirm('清除此成員在本群的 override（姓名 + 分區）？\\n清除後該成員此群內顯示會 fallback 全域 members。')) return;
+  const r = await fetch('/api/admin/group-members', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Pass': PASS },
+    body: JSON.stringify({ group_id: CURRENT_GROUP_ID, user_id: uid }),
+  });
+  if (r.ok) {
+    showMsg('memberMsg', '已清除 override');
+    loadMembersPane();
+  } else {
+    showMsg('memberMsg', '清除失敗', true);
+  }
 }
 
 async function delMember(uid, name) {
