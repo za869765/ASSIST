@@ -7,7 +7,7 @@ export async function onRequestGet() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ASSIST 管理後台</title>
-<meta name="version" content="v1.0.30">
+<meta name="version" content="v1.0.31">
 <style>
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -73,6 +73,12 @@ small.note { color: #888; font-size: 11px; }
 .entry-note { color: #d4543a; font-size: 11px; margin-left: 4px; }
 .entry-price { color: #2db87a; font-size: 12px; font-weight: 600; float: right; }
 .entry-uid { font-family: monospace; font-size: 10px; color: #999; margin-top: 2px; word-break: break-all; }
+.group-members-row td { background: #f8f8f822; padding: 8px 14px; border-bottom: 2px solid #ddd4; }
+.group-members-row table { width: 100%; font-size: 12px; }
+.group-members-row th { font-size: 11px; color: #888; font-weight: 500; }
+.group-members-row td { padding: 4px 6px; }
+.expand-btn { padding: 3px 10px; font-size: 11px; background: #e3f2fd; color: #1565c0; border: 1px solid #bbdefb; border-radius: 4px; cursor: pointer; font-family: inherit; }
+.expand-btn:hover { background: #bbdefb; }
 </style>
 </head>
 <body>
@@ -89,13 +95,14 @@ small.note { color: #888; font-size: 11px; }
   <h1>🛠 ASSIST 管理後台
     <button onclick="doLogout()" style="font-size:12px">登出</button>
   </h1>
-  <div class="sub">v1.0.30 · LINE Bot 統一維護</div>
+  <div class="sub">v1.0.31 · LINE Bot 統一維護</div>
 
   <div class="tabs">
     <button class="tab active" data-tab="overview">總覽</button>
     <button class="tab" data-tab="admins">管理員</button>
     <button class="tab" data-tab="groups">群組</button>
     <button class="tab" data-tab="tasks">歷史任務</button>
+    <button class="tab" data-tab="members">全部成員</button>
     <button class="tab" data-tab="more">其他</button>
   </div>
 
@@ -129,7 +136,7 @@ small.note { color: #888; font-size: 11px; }
     <small class="note">列出所有 bot 進過的群組，可加備註別名、停用某群組（停用後非管理員訊息一律不回應）</small>
     <div class="msg" id="groupMsg"></div>
     <table id="groupTable">
-      <thead><tr><th>群組</th><th>備註別名</th><th>狀態</th><th>任務數</th><th>最後活動</th></tr></thead>
+      <thead><tr><th>群組</th><th>備註別名</th><th>狀態</th><th>任務數</th><th>最後活動</th><th>成員</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -148,13 +155,27 @@ small.note { color: #888; font-size: 11px; }
     </table>
   </div>
 
+  <div id="members" class="panel">
+    <h2>👥 全部成員（members 表）</h2>
+    <small class="note">所有與 bot 互動過的 LINE 用戶。real_name 可直接編輯（離開欄位自動存）。</small>
+    <div class="add-row" style="margin:10px 0">
+      <input id="memberSearch" type="text" placeholder="搜尋（姓名 / userId / 暱稱）" oninput="renderAllMembers()" style="flex:1">
+      <small class="note" id="memberCount"></small>
+    </div>
+    <div class="msg" id="memberMsg"></div>
+    <table id="memberTable">
+      <thead><tr><th>姓名 (real_name)</th><th>LINE 暱稱</th><th>LINE userId</th><th>分區</th><th>最後出現</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
   <div id="more" class="panel">
     <h2>⚙ 其他</h2>
     <div class="kv">
       <b>D1 binding</b><div>DB → assist_db</div>
       <b>分區設定</b><div><a class="zone-link" href="/admin/zones">/admin/zones</a></div>
       <b>Webhook URL</b><div><code id="webhookUrl">—</code></div>
-      <b>後台版本</b><div>v1.0.30</div>
+      <b>後台版本</b><div>v1.0.31</div>
     </div>
     <h2>💡 LINE 指令備忘</h2>
     <ul style="font-size:13px;line-height:1.8;color:#666">
@@ -236,6 +257,7 @@ function showApp() {
   loadAdmins();
   loadGroups();
   loadTasks('all');
+  loadAllMembers();
   document.getElementById('webhookUrl').textContent = location.origin + '/api/line/webhook';
 }
 
@@ -339,9 +361,10 @@ async function loadGroups() {
       <td>\${enabledBadge} <button onclick="toggleGroup('\${esc(g.group_id)}', \${g.enabled ? 0 : 1})" style="font-size:11px;padding:2px 8px">切換</button></td>
       <td><small>\${g.task_total} 個（進行 \${g.open_count}）</small></td>
       <td><small>\${esc(dt)}</small></td>
+      <td><button class="expand-btn" onclick="toggleGroupMembers('\${esc(g.group_id)}', this)">👥 成員</button></td>
     </tr>\`;
   });
-  document.querySelector('#groupTable tbody').innerHTML = rows.join('') || '<tr><td colspan="5" style="text-align:center;color:#999">尚無已知群組（bot 至少要被加入一個群並收到訊息）</td></tr>';
+  document.querySelector('#groupTable tbody').innerHTML = rows.join('') || '<tr><td colspan="6" style="text-align:center;color:#999">尚無已知群組（bot 至少要被加入一個群並收到訊息）</td></tr>';
   document.querySelectorAll('.alias-edit').forEach(inp => {
     inp.addEventListener('blur', async () => {
       const gid = inp.dataset.gid;
@@ -357,6 +380,46 @@ async function toggleGroup(gid, newEnabled) {
   const r = await api('/api/admin/groups', { method: 'PATCH', body: JSON.stringify({ group_id: gid, enabled: !!newEnabled }) });
   if (r.ok) { showMsg('groupMsg', newEnabled ? '已啟用 ✓' : '已停用 ✓'); loadGroups(); }
   else showMsg('groupMsg', '切換失敗', true);
+}
+
+// 群組成員 inline 展開（從 entries 反查曾在該群訂過單的 user_id）
+async function toggleGroupMembers(gid, btn) {
+  const tr = btn.closest('tr');
+  const next = tr.nextElementSibling;
+  if (next && next.classList.contains('group-members-row')) {
+    next.remove();
+    btn.textContent = '👥 成員';
+    return;
+  }
+  btn.textContent = '⏳';
+  const r = await api('/api/admin/groups/' + encodeURIComponent(gid) + '/members');
+  if (!r.ok) { btn.textContent = '👥 成員'; showMsg('groupMsg', '載入成員失敗（' + r.status + '）', true); return; }
+  const j = await r.json();
+  const members = j.members || [];
+  const expandTr = document.createElement('tr');
+  expandTr.className = 'group-members-row';
+  const td = document.createElement('td');
+  td.colSpan = 6;
+  if (members.length === 0) {
+    td.innerHTML = '<small style="color:#999">尚無訂單紀錄</small>';
+  } else {
+    const inner = members.map(m => {
+      const name = m.real_name || m.line_display || '<span style="color:#999">(未綁定)</span>';
+      const last = (m.last_entry_at || '').slice(0, 16);
+      return \`<tr>
+        <td>\${esc(name)}</td>
+        <td class="uid">\${esc(m.user_id)}</td>
+        <td><small>\${esc(m.zone || '')}</small></td>
+        <td><small>\${m.entry_count} 筆</small></td>
+        <td><small>\${esc(last)}</small></td>
+      </tr>\`;
+    }).join('');
+    td.innerHTML = \`<small style="color:#888">共 \${members.length} 位成員（依最後訂單時間）</small>
+      <table><thead><tr><th>姓名</th><th>LINE userId</th><th>區</th><th>訂單數</th><th>最後</th></tr></thead><tbody>\${inner}</tbody></table>\`;
+  }
+  expandTr.appendChild(td);
+  tr.parentNode.insertBefore(expandTr, tr.nextSibling);
+  btn.textContent = '▲ 收合';
 }
 
 // ========== 歷史任務 ==========
@@ -467,6 +530,56 @@ document.addEventListener('keydown', (e) => {
     closeTaskModal();
   }
 });
+
+// ========== 全部成員 ==========
+let ALL_MEMBERS = [];
+
+async function loadAllMembers() {
+  const r = await api('/api/members');
+  if (!r.ok) { showMsg('memberMsg', '載入失敗', true); return; }
+  const j = await r.json();
+  ALL_MEMBERS = j.members || [];
+  renderAllMembers();
+}
+
+function renderAllMembers() {
+  const q = (document.getElementById('memberSearch').value || '').trim().toLowerCase();
+  const filtered = q ? ALL_MEMBERS.filter(m =>
+    (m.real_name || '').toLowerCase().includes(q)
+    || (m.line_display || '').toLowerCase().includes(q)
+    || (m.user_id || '').toLowerCase().includes(q)
+  ) : ALL_MEMBERS;
+  document.getElementById('memberCount').textContent = \`共 \${filtered.length} / \${ALL_MEMBERS.length} 位\`;
+  const rows = filtered.map(m => {
+    const last = (m.last_seen_at || '').slice(0, 16);
+    return \`<tr>
+      <td><input type="text" value="\${esc(m.real_name || '')}" placeholder="(未填)" data-uid="\${esc(m.user_id)}" class="member-real-name" style="width:140px;padding:4px 6px;font-size:13px;border:1px solid #ccc6;border-radius:4px;background:transparent;color:inherit"></td>
+      <td><small>\${esc(m.line_display || '')}</small></td>
+      <td class="uid">\${esc(m.user_id)}</td>
+      <td><small>\${esc(m.zone || '')}</small></td>
+      <td><small>\${esc(last)}</small></td>
+    </tr>\`;
+  });
+  document.querySelector('#memberTable tbody').innerHTML = rows.join('') || '<tr><td colspan="5" style="text-align:center;color:#999">查無結果</td></tr>';
+  document.querySelectorAll('.member-real-name').forEach(inp => {
+    inp.addEventListener('blur', async () => {
+      const uid = inp.dataset.uid;
+      const v = inp.value.trim();
+      const r = await fetch('/api/members', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: uid, real_name: v }),
+      });
+      if (r.ok) {
+        showMsg('memberMsg', '已更新 ' + (v || '(清空)'));
+        const found = ALL_MEMBERS.find(m => m.user_id === uid);
+        if (found) found.real_name = v || null;
+      } else {
+        showMsg('memberMsg', '更新失敗', true);
+      }
+    });
+  });
+}
 
 // ========== 啟動 ==========
 (async function init() {
