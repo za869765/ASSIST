@@ -7,7 +7,7 @@ export async function onRequestGet() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ASSIST 管理後台</title>
-<meta name="version" content="v1.0.31">
+<meta name="version" content="v1.0.32">
 <style>
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -95,7 +95,7 @@ small.note { color: #888; font-size: 11px; }
   <h1>🛠 ASSIST 管理後台
     <button onclick="doLogout()" style="font-size:12px">登出</button>
   </h1>
-  <div class="sub">v1.0.31 · LINE Bot 統一維護</div>
+  <div class="sub">v1.0.32 · LINE Bot 統一維護</div>
 
   <div class="tabs">
     <button class="tab active" data-tab="overview">總覽</button>
@@ -164,7 +164,7 @@ small.note { color: #888; font-size: 11px; }
     </div>
     <div class="msg" id="memberMsg"></div>
     <table id="memberTable">
-      <thead><tr><th>姓名 (real_name)</th><th>LINE 暱稱</th><th>LINE userId</th><th>分區</th><th>最後出現</th></tr></thead>
+      <thead><tr><th>姓名 (real_name)</th><th>LINE 暱稱</th><th>LINE userId</th><th>分區</th><th>最後出現</th><th>操作</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -175,7 +175,7 @@ small.note { color: #888; font-size: 11px; }
       <b>D1 binding</b><div>DB → assist_db</div>
       <b>分區設定</b><div><a class="zone-link" href="/admin/zones">/admin/zones</a></div>
       <b>Webhook URL</b><div><code id="webhookUrl">—</code></div>
-      <b>後台版本</b><div>v1.0.31</div>
+      <b>後台版本</b><div>v1.0.32</div>
     </div>
     <h2>💡 LINE 指令備忘</h2>
     <ul style="font-size:13px;line-height:1.8;color:#666">
@@ -533,13 +533,33 @@ document.addEventListener('keydown', (e) => {
 
 // ========== 全部成員 ==========
 let ALL_MEMBERS = [];
+let ZONES_CACHE = [];
+
+async function loadZonesCache() {
+  try {
+    const r = await fetch('/api/zones');
+    if (!r.ok) return;
+    const j = await r.json();
+    ZONES_CACHE = (j.zones || []).filter(z => z.enabled).map(z => z.name);
+  } catch {}
+}
 
 async function loadAllMembers() {
+  if (ZONES_CACHE.length === 0) await loadZonesCache();
   const r = await api('/api/members');
   if (!r.ok) { showMsg('memberMsg', '載入失敗', true); return; }
   const j = await r.json();
   ALL_MEMBERS = j.members || [];
   renderAllMembers();
+}
+
+function zoneOptionsHtml(currentZone) {
+  const cur = currentZone || '';
+  let html = \`<option value=""\${cur === '' ? ' selected' : ''}>(未分區)</option>\`;
+  // 若目前 zone 不在啟用清單（已軟刪），仍要顯示讓使用者看到
+  const list = cur && !ZONES_CACHE.includes(cur) ? [cur, ...ZONES_CACHE] : ZONES_CACHE;
+  for (const z of list) html += \`<option value="\${esc(z)}"\${z === cur ? ' selected' : ''}>\${esc(z)}</option>\`;
+  return html;
 }
 
 function renderAllMembers() {
@@ -556,11 +576,13 @@ function renderAllMembers() {
       <td><input type="text" value="\${esc(m.real_name || '')}" placeholder="(未填)" data-uid="\${esc(m.user_id)}" class="member-real-name" style="width:140px;padding:4px 6px;font-size:13px;border:1px solid #ccc6;border-radius:4px;background:transparent;color:inherit"></td>
       <td><small>\${esc(m.line_display || '')}</small></td>
       <td class="uid">\${esc(m.user_id)}</td>
-      <td><small>\${esc(m.zone || '')}</small></td>
+      <td><select data-uid="\${esc(m.user_id)}" class="member-zone" style="padding:4px 6px;font-size:13px;border:1px solid #ccc6;border-radius:4px;background:transparent;color:inherit">\${zoneOptionsHtml(m.zone)}</select></td>
       <td><small>\${esc(last)}</small></td>
+      <td><button class="danger" style="font-size:11px;padding:3px 8px" onclick="delMember('\${esc(m.user_id)}', '\${esc(m.real_name || m.line_display || '').replace(/'/g, '&#39;')}')">🗑 刪除</button></td>
     </tr>\`;
   });
-  document.querySelector('#memberTable tbody').innerHTML = rows.join('') || '<tr><td colspan="5" style="text-align:center;color:#999">查無結果</td></tr>';
+  document.querySelector('#memberTable tbody').innerHTML = rows.join('') || '<tr><td colspan="6" style="text-align:center;color:#999">查無結果</td></tr>';
+
   document.querySelectorAll('.member-real-name').forEach(inp => {
     inp.addEventListener('blur', async () => {
       const uid = inp.dataset.uid;
@@ -571,14 +593,51 @@ function renderAllMembers() {
         body: JSON.stringify({ user_id: uid, real_name: v }),
       });
       if (r.ok) {
-        showMsg('memberMsg', '已更新 ' + (v || '(清空)'));
+        showMsg('memberMsg', '已更新姓名 ' + (v || '(清空)'));
         const found = ALL_MEMBERS.find(m => m.user_id === uid);
         if (found) found.real_name = v || null;
       } else {
-        showMsg('memberMsg', '更新失敗', true);
+        showMsg('memberMsg', '姓名更新失敗', true);
       }
     });
   });
+
+  document.querySelectorAll('.member-zone').forEach(sel => {
+    sel.addEventListener('change', async () => {
+      const uid = sel.dataset.uid;
+      const v = sel.value;
+      const r = await fetch('/api/members', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: uid, zone: v }),
+      });
+      if (r.ok) {
+        showMsg('memberMsg', '已更新分區 → ' + (v || '(未分區)'));
+        const found = ALL_MEMBERS.find(m => m.user_id === uid);
+        if (found) found.zone = v || null;
+      } else {
+        showMsg('memberMsg', '分區更新失敗', true);
+      }
+    });
+  });
+}
+
+async function delMember(uid, name) {
+  if (!confirm('確定刪除成員「' + (name || uid) + '」？\\n\\n會同時清除該成員在進行中任務的訂單（已結單任務不動）。')) return;
+  const r = await fetch('/api/members', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: uid }),
+  });
+  if (r.ok) {
+    const j = await r.json().catch(() => ({}));
+    showMsg('memberMsg', '已刪除（清 ' + (j.removed_entries || 0) + ' 筆進行中訂單）');
+    ALL_MEMBERS = ALL_MEMBERS.filter(m => m.user_id !== uid);
+    renderAllMembers();
+  } else {
+    const t = await r.text().catch(() => '');
+    showMsg('memberMsg', '刪除失敗：' + t, true);
+  }
 }
 
 // ========== 啟動 ==========

@@ -10,19 +10,33 @@ export async function onRequestGet({ env }) {
   return Response.json({ members: row.results || [] });
 }
 
-// 編輯成員真實姓名（admin/zones inline 編輯用）
-// body: { user_id, real_name }
+// 編輯成員真實姓名 / 分區（admin/zones / 全部成員分頁 inline 編輯用）
+// body: { user_id, real_name?, zone? } — 只更新有提供的欄位
 export async function onRequestPatch({ request, env }) {
   let body;
   try { body = await request.json(); } catch { return new Response('Bad JSON', { status: 400 }); }
   const user_id = String(body?.user_id || '').trim();
-  const real_name = String(body?.real_name ?? '').trim();
   if (!user_id) return new Response('user_id required', { status: 400 });
-  // 空字串就清空 real_name（XLSX fallback 回 line_display）；非空才更新
+
+  const updates = [];
+  const binds = [];
+  if (Object.prototype.hasOwnProperty.call(body, 'real_name')) {
+    const v = String(body.real_name ?? '').trim();
+    updates.push('real_name = ?');
+    binds.push(v || null);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'zone')) {
+    const v = String(body.zone ?? '').trim();
+    updates.push('zone = ?');
+    binds.push(v || null);
+  }
+  if (updates.length === 0) return new Response('nothing to update', { status: 400 });
+
+  binds.push(user_id);
   const r = await env.DB.prepare(
-    `UPDATE members SET real_name = ? WHERE user_id = ?`
-  ).bind(real_name || null, user_id).run();
-  return Response.json({ ok: true, user_id, real_name: real_name || null, changes: r.meta?.changes || 0 });
+    `UPDATE members SET ${updates.join(', ')} WHERE user_id = ?`
+  ).bind(...binds).run();
+  return Response.json({ ok: true, user_id, changes: r.meta?.changes || 0 });
 }
 
 // 刪除成員（清掉名單裡不在編制的閒雜帳號）
