@@ -166,3 +166,25 @@ export function stripWakeword(text) {
     .replace(/^(?:@|\/|TAQ)?\s*小?秘書\s*[:：,，]?\s*/i, '')
     .trim();
 }
+
+// v1.0.34: per-group 姓名/分區查詢 — group_members 優先，fallback members 全域
+//          (helper 暫供未來使用；webhook.js 內既有 26+ 處 SELECT real_name 暫不替換以縮限風險)
+// 用法：const m = await getMemberDisplay(env.DB, groupId, userId);
+//      回傳 { real_name, line_display, zone, line_avatar } 或 null
+export async function getMemberDisplay(DB, groupId, userId) {
+  if (!DB || !userId) return null;
+  if (!groupId) {
+    return await DB.prepare(
+      `SELECT real_name, line_display, zone, line_avatar FROM members WHERE user_id = ?`
+    ).bind(userId).first();
+  }
+  return await DB.prepare(`
+    SELECT COALESCE(gm.real_name, m.real_name) AS real_name,
+           m.line_display,
+           m.line_avatar,
+           COALESCE(gm.zone, m.zone) AS zone
+      FROM members m
+      LEFT JOIN group_members gm ON gm.group_id = ? AND gm.user_id = m.user_id
+     WHERE m.user_id = ?
+  `).bind(groupId, userId).first();
+}

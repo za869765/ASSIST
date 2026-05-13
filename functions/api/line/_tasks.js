@@ -108,10 +108,17 @@ export async function upsertEntry(DB, { taskId, userId, data, note, price, rawTe
 }
 
 export async function listEntries(DB, taskId) {
+  // per-group: 透過 task.group_id JOIN group_members；COALESCE 成「群組設定優先，全域 fallback」
+  // 結單 XLSX / 進度回覆 / summarizeEntries 都靠這個函式取姓名分區
   const r = await DB.prepare(
-    `SELECT e.user_id, e.data_json, e.note, e.price, e.updated_at, m.line_display, m.real_name, m.zone
+    `SELECT e.user_id, e.data_json, e.note, e.price, e.updated_at,
+            m.line_display,
+            COALESCE(gm.real_name, m.real_name) AS real_name,
+            COALESCE(gm.zone,      m.zone)      AS zone
        FROM entries e
-       LEFT JOIN members m ON m.user_id = e.user_id
+       INNER JOIN tasks t          ON t.id        = e.task_id
+       LEFT JOIN  group_members gm ON gm.group_id = t.group_id AND gm.user_id = e.user_id
+       LEFT JOIN  members m        ON m.user_id   = e.user_id
       WHERE e.task_id = ?
       ORDER BY e.updated_at ASC`
   ).bind(taskId).all();

@@ -2153,6 +2153,16 @@ async function upsertMemberSighting(DB, userId, groupId, token) {
          line_avatar  = COALESCE(excluded.line_avatar, line_avatar),
          last_seen_at = datetime('now')`
     ).bind(userId, display, avatar).run();
+    // v1.0.34: 同步在 group_members 留 last_seen_at 痕跡（real_name/zone 留 NULL 等手動覆寫）
+    if (groupId) {
+      try {
+        await DB.prepare(
+          `INSERT INTO group_members (group_id, user_id, last_seen_at)
+           VALUES (?, ?, datetime('now'))
+           ON CONFLICT(group_id, user_id) DO UPDATE SET last_seen_at = datetime('now')`
+        ).bind(groupId, userId).run();
+      } catch {}
+    }
     // 自動比對 roster：若 LINE 顯示名能唯一對上 roster 的 real_name → 綁定 + 補 zone
     if (display) {
       const existing = await DB.prepare(
