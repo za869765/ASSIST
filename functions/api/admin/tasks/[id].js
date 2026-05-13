@@ -30,9 +30,12 @@ export async function onRequestGet({ params, request, env }) {
   const entries = (entriesRow.results || []).map(e => {
     let data = {};
     try { data = JSON.parse(e.data_json || '{}'); } catch {}
+    // 名稱 fallback：real_name → line_display → data.姓名（看板 web 點單塞進 data_json）→ user_id 前 6 字
+    const dataName = (data && (data['姓名'] || data.name)) || '';
+    const name = e.real_name || e.line_display || dataName || (e.user_id || '').slice(0, 6);
     return {
       user_id: e.user_id,
-      name: e.real_name || e.line_display || (e.user_id || '').slice(0, 6),
+      name,
       zone: e.zone || '',
       data,
       note: e.note || '',
