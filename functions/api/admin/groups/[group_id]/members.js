@@ -9,17 +9,19 @@ export async function onRequestGet({ params, request, env }) {
   const group_id = String(params.group_id || '');
   if (!group_id) return new Response('Bad group_id', { status: 400 });
 
+  // 顯示優先 group_members（per-group 設定），fallback 全域 members
   const row = await env.DB.prepare(`
     SELECT
       e.user_id,
-      m.real_name,
+      COALESCE(gm.real_name, m.real_name) AS real_name,
       m.line_display,
-      m.zone,
+      COALESCE(gm.zone, m.zone)           AS zone,
       COUNT(e.id) AS entry_count,
       MAX(e.updated_at) AS last_entry_at
     FROM entries e
     INNER JOIN tasks t ON t.id = e.task_id
-    LEFT JOIN members m ON m.user_id = e.user_id
+    LEFT JOIN group_members gm ON gm.group_id = t.group_id AND gm.user_id = e.user_id
+    LEFT JOIN members m        ON m.user_id  = e.user_id
     WHERE t.group_id = ?
     GROUP BY e.user_id
     ORDER BY last_entry_at DESC

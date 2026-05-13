@@ -7,7 +7,7 @@ export async function onRequestGet() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ASSIST 管理後台</title>
-<meta name="version" content="v1.0.32">
+<meta name="version" content="v1.0.33">
 <style>
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -95,7 +95,7 @@ small.note { color: #888; font-size: 11px; }
   <h1>🛠 ASSIST 管理後台
     <button onclick="doLogout()" style="font-size:12px">登出</button>
   </h1>
-  <div class="sub">v1.0.32 · LINE Bot 統一維護</div>
+  <div class="sub">v1.0.33 · LINE Bot 統一維護</div>
 
   <div class="tabs">
     <button class="tab active" data-tab="overview">總覽</button>
@@ -175,7 +175,7 @@ small.note { color: #888; font-size: 11px; }
       <b>D1 binding</b><div>DB → assist_db</div>
       <b>分區設定</b><div><a class="zone-link" href="/admin/zones">/admin/zones</a></div>
       <b>Webhook URL</b><div><code id="webhookUrl">—</code></div>
-      <b>後台版本</b><div>v1.0.32</div>
+      <b>後台版本</b><div>v1.0.33</div>
     </div>
     <h2>💡 LINE 指令備忘</h2>
     <ul style="font-size:13px;line-height:1.8;color:#666">
@@ -382,7 +382,7 @@ async function toggleGroup(gid, newEnabled) {
   else showMsg('groupMsg', '切換失敗', true);
 }
 
-// 群組成員 inline 展開（從 entries 反查曾在該群訂過單的 user_id）
+// 群組成員 inline 展開（per-group 編輯：寫進 group_members；空值 fallback 到全域 members）
 async function toggleGroupMembers(gid, btn) {
   const tr = btn.closest('tr');
   const next = tr.nextElementSibling;
@@ -392,7 +392,8 @@ async function toggleGroupMembers(gid, btn) {
     return;
   }
   btn.textContent = '⏳';
-  const r = await api('/api/admin/groups/' + encodeURIComponent(gid) + '/members');
+  if (ZONES_CACHE.length === 0) await loadZonesCache();
+  const r = await api('/api/admin/group-members?group_id=' + encodeURIComponent(gid));
   if (!r.ok) { btn.textContent = '👥 成員'; showMsg('groupMsg', '載入成員失敗（' + r.status + '）', true); return; }
   const j = await r.json();
   const members = j.members || [];
@@ -404,22 +405,87 @@ async function toggleGroupMembers(gid, btn) {
     td.innerHTML = '<small style="color:#999">尚無訂單紀錄</small>';
   } else {
     const inner = members.map(m => {
-      const name = m.real_name || m.line_display || '<span style="color:#999">(未綁定)</span>';
       const last = (m.last_entry_at || '').slice(0, 16);
+      const nameVal = m.group_real_name || '';
+      const namePh = m.global_real_name || m.line_display || '(未填)';
+      const zoneVal = m.group_zone || '';
+      const hasOverride = m.group_real_name || m.group_zone;
+      const overrideTag = hasOverride ? '<span class="badge b-info" style="font-size:9px;margin-left:4px">override</span>' : '';
       return \`<tr>
-        <td>\${esc(name)}</td>
+        <td>
+          <input type="text" value="\${esc(nameVal)}" placeholder="\${esc(namePh)}" data-gid="\${esc(gid)}" data-uid="\${esc(m.user_id)}" class="gm-name" style="width:120px;padding:3px 6px;font-size:12px;border:1px solid #ccc6;border-radius:4px;background:transparent;color:inherit">
+          \${overrideTag}
+        </td>
+        <td><small>\${esc(m.line_display || '')}</small></td>
         <td class="uid">\${esc(m.user_id)}</td>
-        <td><small>\${esc(m.zone || '')}</small></td>
-        <td><small>\${m.entry_count} 筆</small></td>
-        <td><small>\${esc(last)}</small></td>
+        <td>
+          <select data-gid="\${esc(gid)}" data-uid="\${esc(m.user_id)}" class="gm-zone" style="padding:3px 6px;font-size:12px;border:1px solid #ccc6;border-radius:4px;background:transparent;color:inherit">\${zoneOptionsHtml(zoneVal)}</select>
+          <small style="color:#aaa">\${m.global_zone ? '(全域 ' + esc(m.global_zone) + ')' : ''}</small>
+        </td>
+        <td><small>\${m.entry_count} 筆 · \${esc(last)}</small></td>
+        <td>
+          \${hasOverride ? '<button class="danger" style="font-size:10px;padding:2px 6px" onclick="clearGroupMemberOverride(\\'' + esc(gid) + '\\', \\'' + esc(m.user_id) + '\\', this)">清</button>' : ''}
+        </td>
       </tr>\`;
     }).join('');
-    td.innerHTML = \`<small style="color:#888">共 \${members.length} 位成員（依最後訂單時間）</small>
-      <table><thead><tr><th>姓名</th><th>LINE userId</th><th>區</th><th>訂單數</th><th>最後</th></tr></thead><tbody>\${inner}</tbody></table>\`;
+    td.innerHTML = \`<small style="color:#888">共 \${members.length} 位（編輯下面表格 → 自動存進 group_members；空值 fallback 全域）</small>
+      <table>
+        <thead><tr><th>群組姓名</th><th>LINE 暱稱</th><th>userId</th><th>群組分區</th><th>訂單 / 最後</th><th>override</th></tr></thead>
+        <tbody>\${inner}</tbody>
+      </table>\`;
   }
   expandTr.appendChild(td);
   tr.parentNode.insertBefore(expandTr, tr.nextSibling);
   btn.textContent = '▲ 收合';
+
+  // Bind inline editors
+  expandTr.querySelectorAll('.gm-name').forEach(inp => {
+    inp.addEventListener('blur', async () => {
+      const v = inp.value.trim();
+      const ok = await patchGroupMember(inp.dataset.gid, inp.dataset.uid, { real_name: v });
+      if (ok) showMsg('groupMsg', '已更新群組姓名 ' + (v || '(清空 → fallback)'));
+    });
+  });
+  expandTr.querySelectorAll('.gm-zone').forEach(sel => {
+    sel.addEventListener('change', async () => {
+      const ok = await patchGroupMember(sel.dataset.gid, sel.dataset.uid, { zone: sel.value });
+      if (ok) showMsg('groupMsg', '已更新群組分區 → ' + (sel.value || '(清空 → fallback)'));
+    });
+  });
+}
+
+async function patchGroupMember(group_id, user_id, fields) {
+  const r = await fetch('/api/admin/group-members', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Pass': PASS },
+    body: JSON.stringify({ group_id, user_id, ...fields }),
+  });
+  if (!r.ok) {
+    showMsg('groupMsg', 'per-group 更新失敗（' + r.status + '）', true);
+    return false;
+  }
+  return true;
+}
+
+async function clearGroupMemberOverride(gid, uid, btn) {
+  if (!confirm('清除此成員在本群的 override（real_name + zone）？\\n清除後該成員此群內顯示會 fallback 全域 members 設定。')) return;
+  const r = await fetch('/api/admin/group-members', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Pass': PASS },
+    body: JSON.stringify({ group_id: gid, user_id: uid }),
+  });
+  if (!r.ok) { showMsg('groupMsg', '清除失敗', true); return; }
+  showMsg('groupMsg', '已清除 override（再展開可看 fallback 後值）');
+  // 收合該展開區，讓使用者再展開看最新值
+  const expandTr = btn.closest('tr.group-members-row');
+  if (expandTr) {
+    const prevTr = expandTr.previousElementSibling;
+    expandTr.remove();
+    if (prevTr) {
+      const eb = prevTr.querySelector('.expand-btn');
+      if (eb) eb.textContent = '👥 成員';
+    }
+  }
 }
 
 // ========== 歷史任務 ==========

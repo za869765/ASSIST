@@ -18,14 +18,20 @@ export async function onRequestGet({ params, request, env }) {
   `).bind(id).first();
   if (!task) return new Response('Not found', { status: 404 });
 
+  // per-group 顯示：優先讀 group_members（該 task 所屬群組的設定），fallback 全域 members
   const entriesRow = await env.DB.prepare(`
     SELECT e.user_id, e.data_json, e.note, e.price, e.confirmed, e.updated_at,
-           m.real_name, m.line_display, m.zone
+           COALESCE(gm.real_name, m.real_name) AS real_name,
+           m.line_display,
+           COALESCE(gm.zone, m.zone)           AS zone
       FROM entries e
-      LEFT JOIN members m ON m.user_id = e.user_id
+      LEFT JOIN group_members gm ON gm.group_id = ? AND gm.user_id = e.user_id
+      LEFT JOIN members m         ON m.user_id  = e.user_id
      WHERE e.task_id = ?
-     ORDER BY COALESCE(m.zone,'~'), COALESCE(m.real_name, m.line_display, e.user_id), e.updated_at
-  `).bind(id).all();
+     ORDER BY COALESCE(gm.zone, m.zone, '~'),
+              COALESCE(gm.real_name, m.real_name, m.line_display, e.user_id),
+              e.updated_at
+  `).bind(task.group_id, id).all();
 
   const entries = (entriesRow.results || []).map(e => {
     let data = {};
