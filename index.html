@@ -2,8 +2,8 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<title>ASSIST 小秘書 LINE Bot v1.0.26</title>
-<meta name="version" content="v1.0.26">
+<title>ASSIST 小秘書 LINE Bot v1.0.27</title>
+<meta name="version" content="v1.0.27">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   *{box-sizing:border-box}
@@ -25,7 +25,14 @@
 <body>
 
 <h1>🤖 小秘書 LINE Bot</h1>
-<div class="sub">ASSIST — 群組統計自動化助理（M1 階段）</div>
+<div class="sub">ASSIST — 群組統計自動化助理</div>
+
+<div class="card" style="background:linear-gradient(135deg,#2db87a,#249864);color:#fff">
+  <h2 style="color:#fff;margin-bottom:6px">🛠 管理後台</h2>
+  <div style="font-size:13px;opacity:.9;margin-bottom:10px">沒任務時也能維護管理員白名單、群組設定、查歷史任務</div>
+  <a href="/admin" style="display:inline-block;padding:8px 20px;background:#fff;color:#249864;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px">進入後台 →</a>
+  <a href="/admin/zones" style="display:inline-block;padding:8px 16px;background:rgba(255,255,255,.2);color:#fff;border-radius:6px;text-decoration:none;font-size:13px;margin-left:6px">分區設定</a>
+</div>
 
 <div class="card">
   <h2>🩺 服務狀態</h2>
@@ -38,11 +45,8 @@
     <span class="badge b-now">M1 現正進行</span> 基本通：webhook + 白名單 + echo<br>
   </div>
   <ul style="font-size:13px;color:#546e7a;">
-    <li>M2 Gemini 意圖（開始/進度/結單）</li>
-    <li>M3 智慧收集（欄位抽取 + 補問 + 歸一）</li>
-    <li>M4 例外 + OCR（菜單校驗）</li>
-    <li>M5 催促 + 結案（Excel + 問候）</li>
-    <li>M6 後台 UI（名冊 / 歷史）</li>
+    <li>M2 Gemini 意圖 · M3 智慧收集 · M4 OCR · M5 催促/結案 — 已完成</li>
+    <li>M6 後台 UI — v1.0.27 上線 ✓</li>
     <li>M7 泛用驗證</li>
   </ul>
 </div>

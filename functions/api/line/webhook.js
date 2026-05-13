@@ -6,6 +6,7 @@
 import {
   verifyLineSignature, lineReply, isAdmin, isWakeword, stripWakeword,
   getGroupMemberProfile, getUserProfile,
+  getAllAdminIdsCached, isGroupDisabled, touchGroup,
 } from './_lib.js';
 import { geminiChat, geminiExtract, geminiIntent, geminiClassifyTask, geminiSplitTasks } from './_gemini.js';
 import { buildXLSX } from './_xlsx.js';
@@ -44,8 +45,16 @@ async function handleEvent(ev, env) {
     await upsertMemberSighting(env.DB, userId, groupId, env.LINE_CHANNEL_ACCESS_TOKEN);
   }
 
-  const admin = isAdmin(userId, env);
+  // v1.0.27: env ∪ D1 admins（後台新增管理員不必 redeploy，30s TTL 快取）
+  const adminIds = await getAllAdminIdsCached(env, env.DB);
+  const admin = adminIds.includes(userId);
   const hasWake = isWakeword(text);
+
+  // v1.0.27: 群組停用 gate — 非管理員訊息一律 silent，管理員仍可用（避免後台誤停用後無法解鎖）
+  if (groupId) {
+    await touchGroup(env.DB, groupId);
+    if (!admin && await isGroupDisabled(env.DB, groupId)) return;
+  }
 
   // ─── 非喚醒訊息：只有群組 + 該群有 open task 時收集 ───
   if (!hasWake) {
@@ -362,9 +371,9 @@ async function handleEvent(ev, env) {
 
   // ping
   if (/^ping$/i.test(cmd)) {
-    const adminCount = String(env.ADMIN_USER_IDS || '').split(',').filter(Boolean).length;
+    const allAdmins = await getAllAdminIdsCached(env, env.DB);
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-      { type: 'text', text: `🟢 pong\n管理員：${adminCount} 人\nuserId：${userId}\ngroupId：${groupId || '(私聊)'}` },
+      { type: 'text', text: `🟢 pong\n管理員：${allAdmins.length} 人\nuserId：${userId}\ngroupId：${groupId || '(私聊)'}` },
     ]);
     return;
   }
@@ -705,7 +714,8 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
 
   // 管理員代點：「幫南區點素食便當」「永康要一個排骨飯」等，把名字記成該區
   // 先剝掉 admin 代點常用的動作詞前綴（幫/替/代/請/幫忙），避免擋到名字比對
-  const isAdminUser = isAdmin(userId, env);
+  const _admins0 = await getAllAdminIdsCached(env, env.DB);
+  const isAdminUser = _admins0.includes(userId);
   if (isAdminUser) {
     const stripped = text.replace(/^\s*(幫忙|幫|替|代|請)\s*/u, '');
     if (stripped !== text && stripped.trim().length >= 2) text = stripped;
@@ -815,7 +825,7 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
     const oldItem = Object.values(JSON.parse(existing.data_json || '{}')).filter(Boolean).join('/') || '(未辨識)';
 
     if (cnt >= 2) {
-      const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+      const adminIds = await getAllAdminIdsCached(env, env.DB);
       const adminNames = [];
       for (const aid of adminIds) {
         const a = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(aid).first();
@@ -1747,7 +1757,7 @@ async function handleDupPending(env, task, userId, text, parsed, replyToken) {
   const oldItem = oldRow ? (JSON.parse(oldRow.data_json || '{}')['品項'] || '') : '';
   const newItem = Object.values(parsed.data || {}).filter(Boolean).join('/') || text;
 
-  const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const adminIds = await getAllAdminIdsCached(env, env.DB);
   const adminNames = [];
   for (const aid of adminIds) {
     const a = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(aid).first();
@@ -1762,7 +1772,7 @@ async function handleDupPending(env, task, userId, text, parsed, replyToken) {
 // 管理員標「請假」：偵測「新化請假」「北區不吃」「南區跳過」等
 // 回傳 { userId: 'zone:<名>', zoneName } 或 null
 async function tryZoneLeave(env, userId, text) {
-  const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const adminIds = await getAllAdminIdsCached(env, env.DB);
   if (!adminIds.includes(userId)) return null;
 
   const t = String(text || '').trim();
@@ -1821,7 +1831,7 @@ async function stripLeadingPersonName(env, text) {
 
 // 偵測人名前綴（admin 代點用），例：「倖妤 葷食便當」「倖妤+1」→ 改用該人的 user_id
 async function tryProxyPerson(env, userId, text) {
-  const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const adminIds = await getAllAdminIdsCached(env, env.DB);
   if (!adminIds.includes(userId)) return null;
   const trimmed = String(text || '').trim();
   if (trimmed.length < 3) return null;
@@ -1862,7 +1872,7 @@ async function tryProxyPerson(env, userId, text) {
 }
 
 async function tryProxyZone(env, userId, text) {
-  const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const adminIds = await getAllAdminIdsCached(env, env.DB);
   if (!adminIds.includes(userId)) return null;
 
   // 以 zones 表為單一來源（管理員在 /admin/zones 維護）
@@ -2027,7 +2037,7 @@ function isProfane(text) {
 async function handleProfanity(env, task, userId, text, replyToken) {
   const m = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
   const who = m?.real_name || m?.line_display || userId.slice(0, 6);
-  const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const adminIds = await getAllAdminIdsCached(env, env.DB);
   const adminNames = [];
   for (const aid of adminIds) {
     const a = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(aid).first();
@@ -2059,7 +2069,7 @@ async function handleProfanity(env, task, userId, text, replyToken) {
 // 管理員下達：@小秘書 放行 <姓名>、@小秘書 通過 <姓名>、@小秘書 清除 <姓名>
 // 或 admin 直接在群組說「放行兆鑫」「通過 兆鑫」等
 async function tryClearPendingProfanity(env, task, senderUserId, text, replyToken) {
-  const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const adminIds = await getAllAdminIdsCached(env, env.DB);
   if (!adminIds.includes(senderUserId)) return false;
   const m = text.match(/(放行|通過|清除|放過)\s*@?\s*([\u4e00-\u9fa5A-Za-z0-9]+)/);
   if (!m) return false;
@@ -2107,7 +2117,7 @@ async function handleNonsense(env, task, userId, text, replyToken, teaseFromAI, 
     return;
   }
 
-  const adminIds = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const adminIds = await getAllAdminIdsCached(env, env.DB);
   const adminNames = [];
   for (const aid of adminIds) {
     const a = await env.DB.prepare(

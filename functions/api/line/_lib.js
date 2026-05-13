@@ -75,9 +75,66 @@ export async function getUserProfile(token, userId) {
   return r.json();
 }
 
-export function isAdmin(userId, env) {
-  const list = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
-  return list.includes(userId);
+// 從 D1 載入「線上新增」的管理員 userId（v1.0.27+ 後台管理用）
+// 表未存在時回空陣列（向下相容，不破壞既有部署）
+export async function loadDbAdmins(DB) {
+  try {
+    const r = await DB.prepare('SELECT user_id FROM admins').all();
+    return (r.results || []).map(x => x.user_id);
+  } catch {
+    return [];
+  }
+}
+
+// 取得「env CSV ∪ D1 admins」全集，給 webhook 統一比對
+export function allAdminIds(env, dbAdmins = []) {
+  const fromEnv = String(env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  return Array.from(new Set([...fromEnv, ...dbAdmins]));
+}
+
+// 向下相容：未傳 dbAdmins 時等同舊行為（只看 env）
+export function isAdmin(userId, env, dbAdmins) {
+  return allAdminIds(env, dbAdmins || []).includes(userId);
+}
+
+// 30 秒 TTL 快取：合併 env CSV ∪ D1 admins
+// 在後台新增管理員後最慢 30 秒生效（webhook 不必重新部署）
+let _adminCache = { ids: [], expiresAt: 0, envSig: '' };
+
+export async function getAllAdminIdsCached(env, DB) {
+  const now = Date.now();
+  const envSig = String(env?.ADMIN_USER_IDS || '');
+  if (now < _adminCache.expiresAt && _adminCache.envSig === envSig) {
+    return _adminCache.ids;
+  }
+  const dbAdmins = await loadDbAdmins(DB);
+  const all = allAdminIds(env, dbAdmins);
+  _adminCache = { ids: all, expiresAt: now + 30_000, envSig };
+  return all;
+}
+
+// 群組是否被後台停用（非管理員訊息一律 silent）
+// 表未存在時視為啟用，避免新部署炸
+export async function isGroupDisabled(DB, groupId) {
+  if (!groupId) return false;
+  try {
+    const r = await DB.prepare('SELECT enabled FROM groups WHERE group_id = ?').bind(groupId).first();
+    return r ? r.enabled === 0 : false;
+  } catch {
+    return false;
+  }
+}
+
+// 記錄群組活動時間（首次出現自動 insert）
+export async function touchGroup(DB, groupId) {
+  if (!groupId) return;
+  try {
+    await DB.prepare(
+      `INSERT INTO groups (group_id, enabled, first_seen_at, last_active_at)
+       VALUES (?, 1, datetime('now'), datetime('now'))
+       ON CONFLICT(group_id) DO UPDATE SET last_active_at = datetime('now')`
+    ).bind(groupId).run();
+  } catch {}
 }
 
 // bug #1/#3/#4: 給對外 HTTP API 用的 admin gate（不同於 LINE userId 白名單）。

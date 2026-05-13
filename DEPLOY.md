@@ -11,6 +11,8 @@
 ### 2. 匯入 schema
 dashboard → D1 → assist_db → Console，貼入 `schema.sql` 全部內容執行。
 
+> **v1.0.27 升級**：另外執行 `migrations/2026-05-13_admin_backoffice.sql`（新增 `admins`、`groups` 兩張表，給後台管理用）。
+
 ### 3. 建立 Pages 專案
 Pages → Create → Connect to Git → 選 `za869765/ASSIST`
 - Build command: 留空
@@ -19,7 +21,8 @@ Pages → Create → Connect to Git → 選 `za869765/ASSIST`
   - `LINE_CHANNEL_SECRET` = （從 LINE Developers Console「小秘書」Channel 取得）
   - `LINE_CHANNEL_ACCESS_TOKEN` = （同上）
   - `GEMINI_API_KEY` = （從 https://aistudio.google.com/app/apikey 建立；絕對不可 commit 到 repo）
-  - `ADMIN_USER_IDS` = （您本人的 userId，先留空也可以，之後透過 `TAQ 小秘書 我的ID` 取得後再填）
+  - `ADMIN_USER_IDS` = （您本人的 userId，作為「無法被線上刪除」的根管理員；之後可在後台加更多管理員不必 redeploy）
+  - `ADMIN_PASS` = **v1.0.27 起必填**（進入 `/admin` 後台的密碼，建議至少 12 碼隨機字串）
 - Functions → D1 database bindings：
   - Variable name: `DB`
   - D1 database: `assist_db`
@@ -67,3 +70,13 @@ Messaging API 設定頁：
 ---
 
 完成以上即 M1 通關。接下來進 M2（Gemini 意圖解析）。
+
+## 五、v1.0.27 後台（M6 完成）
+
+部署後直接打開 `https://<your-domain>/admin`，輸入 `ADMIN_PASS` 進入。
+
+- **總覽**：服務狀態（含 D1/secrets/admin 統計）
+- **管理員白名單**：env CSV 顯示為「不可刪」，可新增 D1 管理員（30 秒內 webhook 認得，不必 redeploy）
+- **群組設定**：列出 bot 進過的群組，可加備註別名 / 啟用停用（停用後該群非管理員訊息一律 silent）
+- **歷史任務**：列出所有任務（含進行中、已結單），重新下載 Excel 連結
+- 既有 `/admin/zones` 分區頁也可直接從後台首頁進入
