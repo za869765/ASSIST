@@ -7,7 +7,7 @@ export async function onRequestGet() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ASSIST 管理後台</title>
-<meta name="version" content="v1.0.29">
+<meta name="version" content="v1.0.30">
 <style>
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -72,6 +72,7 @@ small.note { color: #888; font-size: 11px; }
 .entry-data { color: #555; font-size: 12px; margin-left: 4px; }
 .entry-note { color: #d4543a; font-size: 11px; margin-left: 4px; }
 .entry-price { color: #2db87a; font-size: 12px; font-weight: 600; float: right; }
+.entry-uid { font-family: monospace; font-size: 10px; color: #999; margin-top: 2px; word-break: break-all; }
 </style>
 </head>
 <body>
@@ -88,7 +89,7 @@ small.note { color: #888; font-size: 11px; }
   <h1>🛠 ASSIST 管理後台
     <button onclick="doLogout()" style="font-size:12px">登出</button>
   </h1>
-  <div class="sub">v1.0.29 · LINE Bot 統一維護</div>
+  <div class="sub">v1.0.30 · LINE Bot 統一維護</div>
 
   <div class="tabs">
     <button class="tab active" data-tab="overview">總覽</button>
@@ -153,7 +154,7 @@ small.note { color: #888; font-size: 11px; }
       <b>D1 binding</b><div>DB → assist_db</div>
       <b>分區設定</b><div><a class="zone-link" href="/admin/zones">/admin/zones</a></div>
       <b>Webhook URL</b><div><code id="webhookUrl">—</code></div>
-      <b>後台版本</b><div>v1.0.29</div>
+      <b>後台版本</b><div>v1.0.30</div>
     </div>
     <h2>💡 LINE 指令備忘</h2>
     <ul style="font-size:13px;line-height:1.8;color:#666">
@@ -446,6 +447,7 @@ async function openTaskDetail(id) {
         html += \`<b>\${esc(e.name)}</b>\`;
         if (dataStr) html += \`<span class="entry-data">\${dataStr}</span>\`;
         if (e.note) html += \`<span class="entry-note">📝 \${esc(e.note)}</span>\`;
+        if (e.user_id) html += \`<div class="entry-uid">\${esc(e.user_id)}</div>\`;
         html += '</div>';
       }
       html += '</div>';
