@@ -8,7 +8,7 @@ export async function onRequestGet({ env, params }) {
   const taskId = +params.taskId;
   if (!taskId) return new Response('bad taskId', { status: 400 });
   const task = await env.DB.prepare(
-    `SELECT id, task_name, mode FROM tasks WHERE id = ?`
+    `SELECT id, task_name, mode, pricing_mode, total_amount, member_subsidy FROM tasks WHERE id = ?`
   ).bind(taskId).first();
   if (!task) return new Response('not found', { status: 404 });
   const entries = await listEntries(env.DB, taskId);
@@ -18,7 +18,12 @@ export async function onRequestGet({ env, params }) {
   ).all();
   const zoneOrder = {};
   for (const z of (zoneRow.results || [])) zoneOrder[z.name] = z.sort_order;
-  const sheet = buildSheetRows(task.task_name, entries, { mode: task.mode, zoneOrder });
+  const sheet = buildSheetRows(task.task_name, entries, {
+    mode: task.mode, zoneOrder,
+    pricing_mode: task.pricing_mode,
+    total_amount: task.total_amount,
+    member_subsidy: task.member_subsidy,
+  });
   const bytes = buildXLSX(task.task_name.slice(0, 31) || 'sheet', sheet.rows, sheet.mergeRanges);
   const stamp = new Date().toISOString().slice(0, 10);
   const filename = encodeURIComponent(`${task.task_name}_${stamp}.xlsx`);

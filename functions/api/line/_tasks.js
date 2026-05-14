@@ -3,7 +3,8 @@
 export async function findOpenTask(DB, groupId) {
   if (!DB || !groupId) return null;
   const r = await DB.prepare(
-    `SELECT id, task_name, mode, started_by, started_at, url_slug
+    `SELECT id, task_name, mode, started_by, started_at, url_slug,
+            pricing_mode, total_amount, member_subsidy
        FROM tasks WHERE group_id = ? AND status = 'open'
        ORDER BY id DESC LIMIT 1`
   ).bind(groupId).first();
@@ -13,7 +14,8 @@ export async function findOpenTask(DB, groupId) {
 export async function findOpenTasks(DB, groupId) {
   if (!DB || !groupId) return [];
   const r = await DB.prepare(
-    `SELECT id, task_name, mode, menu_json, started_by, started_at, url_slug
+    `SELECT id, task_name, mode, menu_json, started_by, started_at, url_slug,
+            pricing_mode, total_amount, member_subsidy
        FROM tasks WHERE group_id = ? AND status = 'open'
        ORDER BY id DESC`
   ).bind(groupId).all();
@@ -110,11 +112,13 @@ export async function upsertEntry(DB, { taskId, userId, data, note, price, rawTe
 export async function listEntries(DB, taskId) {
   // per-group: 透過 task.group_id JOIN group_members；COALESCE 成「群組設定優先，全域 fallback」
   // 結單 XLSX / 進度回覆 / summarizeEntries 都靠這個函式取姓名分區
+  // v1.0.38: 帶 m.is_member 給 computePricing 區分會員/非會員
   const r = await DB.prepare(
     `SELECT e.user_id, e.data_json, e.note, e.price, e.updated_at,
             m.line_display,
             COALESCE(gm.real_name, m.real_name) AS real_name,
-            COALESCE(gm.zone,      m.zone)      AS zone
+            COALESCE(gm.zone,      m.zone)      AS zone,
+            m.is_member
        FROM entries e
        INNER JOIN tasks t          ON t.id        = e.task_id
        LEFT JOIN  group_members gm ON gm.group_id = t.group_id AND gm.user_id = e.user_id

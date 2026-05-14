@@ -14,6 +14,7 @@ import {
   findOpenTask, findOpenTasks, matchTaskByHint,
   createTask, closeTask, upsertEntry, listEntries, summarizeEntries,
 } from './_tasks.js';
+import { computePricing, MODE_LABEL, IDENTITY_LABEL } from './_pricing.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -631,7 +632,12 @@ async function doCloseTask(env, picked, replyToken) {
   const zoneRow = await env.DB.prepare(`SELECT name, sort_order FROM zones`).all();
   const zoneOrder = {};
   for (const z of (zoneRow.results || [])) zoneOrder[z.name] = z.sort_order;
-  const sheet = buildSheetRows(picked.task_name, entries, { mode: picked.mode, zoneOrder });
+  const sheet = buildSheetRows(picked.task_name, entries, {
+    mode: picked.mode, zoneOrder,
+    pricing_mode: picked.pricing_mode,
+    total_amount: picked.total_amount,
+    member_subsidy: picked.member_subsidy,
+  });
   const bytes = buildXLSX(picked.task_name.slice(0, 31) || 'sheet', sheet.rows, sheet.mergeRanges);
   const token = genDownloadToken();
   const filename = `${picked.task_name}_${new Date().toISOString().slice(0, 10)}.xlsx`;
@@ -1499,12 +1505,130 @@ export function buildSheetRows(taskName, entries, opts = {}) {
     });
   }
 
+  // ④⑤⑥ v1.0.38 計價區塊：個人計價 / 團體計價 / 發票 / 非會員清單
+  // pricing_mode 沒提供或 free_bento 時不算（一律 $0，無計價意義）
+  appendPricingBlocks(rows, entries, opts);
+
   return { rows, mergeRanges };
+}
+
+// v1.0.38 4 模式計價 + 發票區塊（請見 _pricing.js 計價規則）
+function appendPricingBlocks(rows, entries, opts) {
+  const pricingMode = opts.pricing_mode;
+  if (!pricingMode || pricingMode === 'free_bento') return;
+
+  const computed = computePricing({
+    pricing_mode: pricingMode,
+    total_amount: opts.total_amount,
+    member_subsidy: opts.member_subsidy,
+  }, entries);
+
+  if (computed.notImplemented) {
+    rows.push([]);
+    rows.push([`■ ${MODE_LABEL[computed.mode] || computed.mode}`]);
+    rows.push([computed.summary?.note || '（結算未實作）']);
+    return;
+  }
+
+  const BASE = 100;
+  const s = computed.summary;
+  const isShared = computed.mode === 'shared';
+
+  // ④ 個人計價表
+  rows.push([]);
+  rows.push([`■ 個人計價（${MODE_LABEL[computed.mode] || computed.mode}）`]);
+  rows.push(isShared
+    ? ['姓名', '分區', '身份', '型態', '人均/差額', '補助', '實收']
+    : ['姓名', '分區', '身份', '菜單價', '基礎應收', '補助', '實收']);
+  for (const x of computed.perEntry) {
+    const e = x.entry;
+    const name = e.real_name || e.line_display || (e.user_id || '').slice(0, 6);
+    const zone = e.zone || '';
+    const identity = IDENTITY_LABEL[x.identity] || x.identity;
+    if (isShared) {
+      let type = '—';
+      if (x.identity === 'member') type = '共餐';
+      else if (x.guest_join && x.guest_bento) type = `共餐＋便當(${x.bento_type})`;
+      else if (x.guest_join) type = '共餐';
+      else if (x.guest_bento) type = `便當(${x.bento_type})`;
+      const base = x.diff;
+      const subsidyAmt = x.identity === 'member' ? Math.max(0, base - x.due) : 0;
+      rows.push([name, zone, identity, type, String(base || 0), String(subsidyAmt || 0), String(x.due || 0)]);
+    } else {
+      const subsidyAmt = x.identity === 'member' ? Math.max(0, x.base - x.due) : 0;
+      rows.push([name, zone, identity, String(x.menu_price || 0), String(x.base || 0), String(subsidyAmt || 0), String(x.due || 0)]);
+    }
+  }
+
+  // ⑤ 團體計價
+  rows.push([]);
+  rows.push(['■ 團體計價']);
+  rows.push(['項目', '人數', '金額']);
+  if (isShared) {
+    const sharedNonMembers = computed.perEntry.filter(x => x.identity === 'non_member' && x.guest_join).length;
+    const bentoOnly = computed.perEntry.filter(x => x.identity === 'non_member' && x.guest_bento && !x.guest_join).length;
+    rows.push(['會員 自付', String(s.member_count), `$${s.member_pay}`]);
+    rows.push(['會員 補助支出', String(s.member_count), `$${s.subsidy_total}`]);
+    rows.push(['非會員 共餐 自付', String(sharedNonMembers), `$${s.non_member_pay}`]);
+    rows.push(['非會員 協助訂便當', String(bentoOnly), `$0`]);
+    rows.push(['合計', String(s.shared_diners + bentoOnly), `$${s.total_payable}`]);
+    rows.push([]);
+    rows.push(['合菜總額', '', `$${s.total_amount}`]);
+    rows.push([`人均（總額 ÷ ${s.shared_diners} 共餐人）`, '', `$${s.per_diner}`]);
+    rows.push([`差額（人均 − $${BASE}）`, '', `$${s.diff}`]);
+  } else {
+    rows.push(['會員 自付', String(s.member_count), `$${s.member_pay}`]);
+    rows.push(['會員 補助支出', String(s.member_count), `$${s.subsidy_total}`]);
+    rows.push(['非會員 自付', String(s.non_member_count), `$${s.non_member_pay}`]);
+    rows.push(['合計', String(s.member_count + s.non_member_count), `$${s.total_payable}`]);
+  }
+
+  // ⑥ 發票（依廠商）
+  rows.push([]);
+  rows.push(['■ 發票（依廠商拆開）']);
+  rows.push(['廠商 / 項目', '金額']);
+  if (isShared) {
+    rows.push([`合菜廠商 發票 A：基本額 $${BASE} × ${s.shared_diners} 共餐人`, `$${s.invoice_a}`]);
+    rows.push([`合菜廠商 發票 B：總額 − 發票 A`, `$${s.invoice_b}`]);
+    if (s.bento_invoice > 0) {
+      rows.push([`便當店 發票：$${BASE} × ${s.bento_count} 訂便當人（獨立）`, `$${s.bento_invoice}`]);
+    }
+  } else {
+    const totalPpl = s.member_count + s.non_member_count;
+    rows.push([`廠商 發票 A：基本額 $${BASE} × ${totalPpl} 人`, `$${s.invoice_a}`]);
+    rows.push([`廠商 發票 B：菜單總額 − 發票 A`, `$${s.invoice_b}`]);
+  }
+
+  // ⑦ 非會員清單（追款 / 點便當份數用）
+  const nonMembers = computed.perEntry.filter(x => x.identity === 'non_member');
+  if (nonMembers.length) {
+    rows.push([]);
+    rows.push([`■ 非會員清單（${nonMembers.length} 人）`]);
+    rows.push(isShared
+      ? ['姓名', '分區', '共餐', '協助訂便當', '便當類型', '自付']
+      : ['姓名', '分區', '菜單價', '自付']);
+    for (const x of nonMembers) {
+      const e = x.entry;
+      const name = e.real_name || e.line_display || (e.user_id || '').slice(0, 6);
+      if (isShared) {
+        rows.push([
+          name, e.zone || '',
+          x.guest_join ? '✓' : '',
+          x.guest_bento ? '✓' : '',
+          x.bento_type || '',
+          `$${x.due}`,
+        ]);
+      } else {
+        rows.push([name, e.zone || '', `$${x.menu_price}`, `$${x.due}`]);
+      }
+    }
+  }
 }
 
 
 // 產生對店家的彙總文字（給 LINE 群組訊息）
 // 請假/不吃 不計入訂購（獨立列「請假 N 人」資訊）
+// v1.0.38: LINE 結算訊息只放品項摘要 + 人頭數，費用細節全進 XLSX
 function buildAggregateText(taskName, entries) {
   const all = normalizeParsed(entries);
   const isLeave = (p) => p.note === '請假' || p.note === '不吃';
@@ -1513,21 +1637,15 @@ function buildAggregateText(taskName, entries) {
   const groups = {};
   parsed.forEach(p => {
     const key = p.item || '(未辨識)';
-    if (!groups[key]) groups[key] = { count: 0, total: 0 };
+    if (!groups[key]) groups[key] = { count: 0 };
     groups[key].count += 1;
-    groups[key].total += p.price || 0;
   });
   const lines = Object.keys(groups)
     .sort((a, b) => groups[b].count - groups[a].count || a.localeCompare(b, 'zh-Hant'))
-    .map(k => {
-      const g = groups[k];
-      const price = g.total ? ` ＄${g.total}` : '';
-      return `・${k} x${g.count}${price}`;
-    });
+    .map(k => `・${k} x${groups[k].count}`);
   const totalCount = parsed.length;
-  const totalPrice = parsed.reduce((s, p) => s + (p.price || 0), 0);
   const leaveTail = leaveCount ? `　（請假 ${leaveCount} 人，不計入）` : '';
-  const totalLine = `合計：${totalCount} 份${totalPrice ? `　＄${totalPrice}` : ''}${leaveTail}`;
+  const totalLine = `合計：${totalCount} 份${leaveTail}`;
   return `📦「${taskName}」訂購彙總（對店家）\n${lines.join('\n')}\n\n${totalLine}`;
 }
 
