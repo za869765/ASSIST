@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS members (
   line_avatar  TEXT,
   bound_at     TEXT,               -- 綁定時間（未綁定 = null）
   last_seen_at TEXT,
+  is_member    INTEGER DEFAULT 0,  -- 是否會員（衛生局合作補助對象；admin 手設）
   created_at   TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_members_bound ON members(bound_at);
@@ -28,7 +29,11 @@ CREATE TABLE IF NOT EXISTS tasks (
   closed_at    TEXT,
   excel_url    TEXT,                          -- 結案後 Excel 連結
   view_token   TEXT,                          -- 結單後私人查看連結的 token（只有管理員收到）
-  url_slug     TEXT UNIQUE                    -- 公開看板 URL 的隨機 slug（每個任務不同）
+  url_slug     TEXT UNIQUE,                   -- 公開看板 URL 的隨機 slug（每個任務不同）
+  -- v1.0.36 計價模式（free_bento / menu / shared / drink / travel-預留）
+  pricing_mode   TEXT DEFAULT 'free_bento',
+  total_amount   INTEGER,                     -- 合菜模式總額（看板 admin 可改）
+  member_subsidy INTEGER DEFAULT 400          -- 會員補助（per-task 覆寫，看板上 50 級距 ± 調）
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_group_status ON tasks(group_id, status);
 

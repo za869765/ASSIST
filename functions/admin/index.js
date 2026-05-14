@@ -7,7 +7,7 @@ export async function onRequestGet() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ASSIST 管理後台</title>
-<meta name="version" content="v1.0.35">
+<meta name="version" content="v1.0.36">
 <style>
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -95,7 +95,7 @@ small.note { color: #888; font-size: 11px; }
   <h1>🛠 ASSIST 管理後台
     <button onclick="doLogout()" style="font-size:12px">登出</button>
   </h1>
-  <div class="sub">v1.0.35 · LINE Bot 統一維護</div>
+  <div class="sub">v1.0.36 · LINE Bot 統一維護</div>
 
   <div class="tabs">
     <button class="tab active" data-tab="overview">總覽</button>
@@ -168,7 +168,7 @@ small.note { color: #888; font-size: 11px; }
     <div id="memberModeBanner" style="padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:8px"></div>
     <div class="msg" id="memberMsg"></div>
     <table id="memberTable">
-      <thead><tr><th>姓名</th><th>LINE 暱稱</th><th>LINE userId</th><th>分區</th><th>最後</th><th>操作</th></tr></thead>
+      <thead><tr><th>姓名</th><th>LINE 暱稱</th><th>LINE userId</th><th>分區</th><th>會員</th><th>最後</th><th>操作</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -179,7 +179,7 @@ small.note { color: #888; font-size: 11px; }
       <b>D1 binding</b><div>DB → assist_db</div>
       <b>分區設定</b><div><a class="zone-link" href="/admin/zones">/admin/zones</a></div>
       <b>Webhook URL</b><div><code id="webhookUrl">—</code></div>
-      <b>後台版本</b><div>v1.0.35</div>
+      <b>後台版本</b><div>v1.0.36</div>
     </div>
     <h2>💡 LINE 指令備忘</h2>
     <ul style="font-size:13px;line-height:1.8;color:#666">
@@ -694,6 +694,7 @@ async function loadMembersPane() {
       zone_val: m.zone || '',
       zone_fallback: '',
       has_override: false,
+      is_member: !!m.is_member,
       last_at: m.last_seen_at || '',
       _searchable: [m.real_name, m.line_display, m.user_id].filter(Boolean).join(' ').toLowerCase(),
     }));
@@ -712,6 +713,9 @@ function renderAllMembers() {
     const actionBtn = isPerGroup
       ? \`<button class="danger" style="font-size:11px;padding:3px 8px" onclick="clearMemberOverride('\${esc(m.user_id)}')">✖ 清</button>\`
       : \`<button class="danger" style="font-size:11px;padding:3px 8px" onclick="delMember('\${esc(m.user_id)}', '\${(m.name_val || m.line_display || '').replace(/'/g, '&#39;')}')">🗑 刪除</button>\`;
+    const memberCell = isPerGroup
+      ? '<small style="color:#aaa">—</small>'
+      : \`<input type="checkbox" data-uid="\${esc(m.user_id)}" class="member-is-member"\${m.is_member ? ' checked' : ''} title="勾選 = 會員，可領補助" style="width:16px;height:16px;cursor:pointer">\`;
     return \`<tr>
       <td>
         <input type="text" value="\${esc(m.name_val)}" placeholder="\${esc(m.name_ph)}" data-uid="\${esc(m.user_id)}" class="member-real-name" style="width:140px;padding:4px 6px;font-size:13px;border:1px solid #ccc6;border-radius:4px;background:transparent;color:inherit">
@@ -723,11 +727,12 @@ function renderAllMembers() {
         <select data-uid="\${esc(m.user_id)}" class="member-zone" style="padding:4px 6px;font-size:13px;border:1px solid #ccc6;border-radius:4px;background:transparent;color:inherit">\${zoneOptionsHtml(m.zone_val)}</select>
         \${m.zone_fallback ? '<small style="color:#aaa;margin-left:4px">' + esc(m.zone_fallback) + '</small>' : ''}
       </td>
+      <td style="text-align:center">\${memberCell}</td>
       <td><small>\${esc(last)}</small></td>
       <td>\${actionBtn}</td>
     </tr>\`;
   });
-  document.querySelector('#memberTable tbody').innerHTML = rows.join('') || '<tr><td colspan="6" style="text-align:center;color:#999">查無結果</td></tr>';
+  document.querySelector('#memberTable tbody').innerHTML = rows.join('') || '<tr><td colspan="7" style="text-align:center;color:#999">查無結果</td></tr>';
 
   document.querySelectorAll('.member-real-name').forEach(inp => {
     inp.addEventListener('blur', async () => {
@@ -758,6 +763,27 @@ function renderAllMembers() {
           found.has_override = isPerGroup ? !!(found.name_val || v) : false;
         }
       }
+    });
+  });
+
+  // 會員 checkbox 僅全域模式顯示（is_member 是全域屬性，per-group 不適用）
+  document.querySelectorAll('.member-is-member').forEach(cb => {
+    cb.addEventListener('change', async () => {
+      const uid = cb.dataset.uid;
+      const v = cb.checked ? 1 : 0;
+      const r = await fetch('/api/members', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: uid, is_member: v }),
+      });
+      if (!r.ok) {
+        showMsg('memberMsg', '更新會員身份失敗（' + r.status + '）', true);
+        cb.checked = !cb.checked;
+        return;
+      }
+      showMsg('memberMsg', '已更新會員身份 → ' + (v ? '會員' : '非會員'));
+      const found = ALL_MEMBERS.find(m => m.user_id === uid);
+      if (found) found.is_member = !!v;
     });
   });
 }

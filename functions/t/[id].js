@@ -3,11 +3,15 @@ export async function onRequestGet({ params, request, env }) {
   const key = String(params.id || '');
   if (!key) return new Response('Bad id', { status: 400 });
   let task = await env.DB.prepare(
-    `SELECT id, task_name, mode, status, started_at, closed_at, view_token, group_id, url_slug FROM tasks WHERE url_slug = ?`
+    `SELECT id, task_name, mode, status, started_at, closed_at, view_token, group_id, url_slug,
+            pricing_mode, total_amount, member_subsidy
+       FROM tasks WHERE url_slug = ?`
   ).bind(key).first();
   if (!task && /^\d+$/.test(key)) {
     task = await env.DB.prepare(
-      `SELECT id, task_name, mode, status, started_at, closed_at, view_token, group_id, url_slug FROM tasks WHERE id = ?`
+      `SELECT id, task_name, mode, status, started_at, closed_at, view_token, group_id, url_slug,
+              pricing_mode, total_amount, member_subsidy
+         FROM tasks WHERE id = ?`
     ).bind(parseInt(key, 10)).first();
   }
   if (!task) return new Response('Not found', { status: 404 });
@@ -70,7 +74,14 @@ export async function onRequestGet({ params, request, env }) {
     : '';
 
   const initData = {
-    task: { id: task.id, name: task.task_name, mode: task.mode || 'free' },
+    task: {
+      id: task.id,
+      name: task.task_name,
+      mode: task.mode || 'free',
+      pricing_mode: task.pricing_mode || 'free_bento',
+      total_amount: task.total_amount,
+      member_subsidy: task.member_subsidy,
+    },
     zones,
     entries: entries.map(e => ({
       user_id: e.user_id,
@@ -1517,6 +1528,32 @@ body.luxe.t-cyber  html, body.luxe.t-cyber  { background: var(--bg); }
 /* 所有內容相對粒子提高一層 */
 h1, .meta, .admin-row, .tabs, .menu-card, #board,
 .admin-banner { position: relative; z-index: 1; }
+
+/* ===== v1.0.36 計價設定 panel（admin 模式專屬） ===== */
+.pricing-panel {
+  position: relative; z-index: 1;
+  margin: 8px 0; padding: 10px 12px;
+  background: rgba(127,168,140,.10);
+  border: 1px solid rgba(127,168,140,.40);
+  border-radius: 6px;
+  font-size: 13px;
+  display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center;
+}
+.pricing-panel strong { color: var(--jade); font-family: var(--f-zh); letter-spacing: .04em; }
+.pricing-panel .pp-field { display: inline-flex; align-items: center; gap: 4px; }
+.pricing-panel select, .pricing-panel input {
+  background: transparent; border: 1px solid var(--line); color: var(--text);
+  border-radius: 4px; padding: 4px 6px; font-size: 13px;
+  font-family: var(--f-ui);
+}
+.pricing-panel select { min-width: 130px; }
+.pricing-panel input { width: 80px; }
+.pricing-panel button {
+  background: transparent; border: 1px solid var(--line); color: var(--text);
+  border-radius: 4px; padding: 3px 8px; font-size: 12px; cursor: pointer;
+}
+.pricing-panel button:hover { background: rgba(201,169,97,.10); }
+#pricingMsg { font-size: 12px; color: var(--text-muted); margin-left: auto; }
 </style>
 </head>
 <body>
@@ -1531,7 +1568,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.26</span>
+  <span style="opacity:.6">v1.0.36</span>
 </div>
 
 <div class="admin-row">
@@ -1585,6 +1622,26 @@ ${closed ? '' : `<label class="menu-mode-toggle" id="menuModeToggle" style="disp
 
 ${closed ? '' : `<div id="adminBanner" class="admin-banner" style="display:none">🔧 管理員模式：web 紀錄可刪除（× 按鈕）。<a href="?">離開</a></div>`}
 ${closed ? '' : `<div id="editPriceBanner" class="admin-banner" style="display:none">📝 編輯模式：點「品項名稱」或「價格」可以改（OCR 亂碼可在這裡修正）。<a href="?">離開</a></div>`}
+${closed ? '' : `<div id="pricingPanel" class="pricing-panel" style="display:none">
+  <strong>💰 計價</strong>
+  <select id="pricingModeSel" aria-label="計價模式">
+    <option value="free_bento">無菜單便當（$0）</option>
+    <option value="menu">菜單模式</option>
+    <option value="shared">合菜（共享總額）</option>
+    <option value="drink">飲料</option>
+  </select>
+  <span class="pp-field" id="totalAmountWrap">
+    <label for="totalAmountInp">總額</label>
+    <input id="totalAmountInp" type="number" inputmode="numeric" min="0" placeholder="30000">
+  </span>
+  <span class="pp-field" id="subsidyWrap">
+    <label for="subsidyInp">會員補助</label>
+    <button id="subsidyDown" type="button" title="−50">−50</button>
+    <input id="subsidyInp" type="number" inputmode="numeric" min="0" step="50" placeholder="400">
+    <button id="subsidyUp" type="button" title="+50">+50</button>
+  </span>
+  <span id="pricingMsg"></span>
+</div>`}
 
 <div id="board"></div>
 
@@ -1897,6 +1954,87 @@ function syncMenuOnlyButtons(isMenu) {
       alert('錯誤：' + e.message);
       chk.checked = !chk.checked;
     }
+  });
+})();
+
+// v1.0.36 計價設定 panel（admin 模式專屬）
+(function initPricingPanel() {
+  const panel = document.getElementById('pricingPanel');
+  if (!panel) return;
+  if (!IS_ADMIN) return;
+  panel.style.display = '';
+
+  const sel = document.getElementById('pricingModeSel');
+  const totalInp = document.getElementById('totalAmountInp');
+  const totalWrap = document.getElementById('totalAmountWrap');
+  const subInp = document.getElementById('subsidyInp');
+  const msg = document.getElementById('pricingMsg');
+
+  const t = state.task || {};
+  sel.value = t.pricing_mode || 'free_bento';
+  totalInp.value = (t.total_amount == null) ? '' : String(t.total_amount);
+  subInp.value = (t.member_subsidy == null) ? '' : String(t.member_subsidy);
+
+  function syncTotalVisible() {
+    totalWrap.style.display = (sel.value === 'shared' || sel.value === 'menu') ? '' : 'none';
+  }
+  syncTotalVisible();
+
+  let msgTimer = null;
+  function show(text, ok) {
+    if (!msg) return;
+    if (msgTimer) clearTimeout(msgTimer);
+    msg.textContent = text;
+    msg.style.color = ok === false ? 'var(--danger)' : 'var(--text-muted)';
+    if (ok !== false) msgTimer = setTimeout(() => { msg.textContent = ''; }, 1500);
+  }
+
+  async function patch(payload) {
+    try {
+      const r = await fetch('/api/t/' + TASK_ID + '/pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) { show('儲存失敗 ' + r.status, false); return false; }
+      show('✓ 已存', true);
+      return true;
+    } catch (e) {
+      show('錯誤：' + e.message, false);
+      return false;
+    }
+  }
+
+  sel.addEventListener('change', async () => {
+    const ok = await patch({ pricing_mode: sel.value });
+    if (ok && state.task) state.task.pricing_mode = sel.value;
+    syncTotalVisible();
+  });
+  totalInp.addEventListener('blur', async () => {
+    const v = totalInp.value.trim();
+    const ok = await patch({ total_amount: v });
+    if (ok && state.task) state.task.total_amount = v === '' ? null : parseInt(v, 10);
+  });
+  subInp.addEventListener('blur', async () => {
+    const v = subInp.value.trim();
+    const ok = await patch({ member_subsidy: v });
+    if (ok && state.task) state.task.member_subsidy = v === '' ? null : parseInt(v, 10);
+  });
+  document.getElementById('subsidyDown').addEventListener('click', async () => {
+    const cur = parseInt(subInp.value, 10);
+    const base = Number.isFinite(cur) ? cur : 400;
+    const next = Math.max(0, base - 50);
+    subInp.value = String(next);
+    const ok = await patch({ member_subsidy: next });
+    if (ok && state.task) state.task.member_subsidy = next;
+  });
+  document.getElementById('subsidyUp').addEventListener('click', async () => {
+    const cur = parseInt(subInp.value, 10);
+    const base = Number.isFinite(cur) ? cur : 400;
+    const next = base + 50;
+    subInp.value = String(next);
+    const ok = await patch({ member_subsidy: next });
+    if (ok && state.task) state.task.member_subsidy = next;
   });
 })();
 

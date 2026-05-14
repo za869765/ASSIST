@@ -2,7 +2,7 @@
 export async function onRequestGet({ env }) {
   // 排除代點的 synthetic 成員（user_id 以 'zone:' 開頭）
   const row = await env.DB.prepare(
-    `SELECT user_id, real_name, line_display, zone, last_seen_at
+    `SELECT user_id, real_name, line_display, zone, last_seen_at, is_member
        FROM members
       WHERE user_id NOT LIKE 'zone:%'
       ORDER BY (zone IS NULL OR zone = '') DESC, zone ASC, last_seen_at DESC`
@@ -29,6 +29,10 @@ export async function onRequestPatch({ request, env }) {
     const v = String(body.zone ?? '').trim();
     updates.push('zone = ?');
     binds.push(v || null);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'is_member')) {
+    updates.push('is_member = ?');
+    binds.push(body.is_member ? 1 : 0);
   }
   if (updates.length === 0) return new Response('nothing to update', { status: 400 });
 

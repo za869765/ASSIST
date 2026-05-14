@@ -11,7 +11,8 @@ export async function onRequestGet({ params, request, env }) {
 
   const task = await env.DB.prepare(`
     SELECT t.id, t.task_name, t.mode, t.status, t.started_at, t.closed_at,
-           t.group_id, t.url_slug, g.alias AS group_alias
+           t.group_id, t.url_slug, g.alias AS group_alias,
+           t.pricing_mode, t.total_amount, t.member_subsidy
       FROM tasks t
       LEFT JOIN groups g ON g.group_id = t.group_id
      WHERE t.id = ?
@@ -69,6 +70,9 @@ export async function onRequestGet({ params, request, env }) {
       group_id: task.group_id,
       group_alias: task.group_alias || '',
       url_slug: task.url_slug || '',
+      pricing_mode: task.pricing_mode || 'free_bento',
+      total_amount: task.total_amount,
+      member_subsidy: task.member_subsidy,
     },
     entries,
     summary: {
