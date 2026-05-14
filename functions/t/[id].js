@@ -40,11 +40,13 @@ export async function onRequestGet({ params, request, env }) {
   }
 
   // per-group: 用該任務的 group_id JOIN group_members（per-group 設定優先，全域 fallback）
+  // v1.0.37: 帶 m.is_member（會員身份）給看板判斷非會員 entry 顯示勾選 UI
   const entriesRow = await env.DB.prepare(
     `SELECT e.user_id, e.data_json, e.note, e.price, e.updated_at,
             COALESCE(gm.real_name, m.real_name) AS real_name,
             m.line_display,
-            COALESCE(gm.zone,      m.zone)      AS zone
+            COALESCE(gm.zone,      m.zone)      AS zone,
+            m.is_member
        FROM entries e
        LEFT JOIN group_members gm ON gm.group_id = ? AND gm.user_id = e.user_id
        LEFT JOIN members m        ON m.user_id   = e.user_id
@@ -91,6 +93,8 @@ export async function onRequestGet({ params, request, env }) {
       note: e.note || '',
       price: e.price || 0,
       updated_at: e.updated_at,
+      // v1.0.37 web 點單 entry 一律算非會員；LINE entry 看 members.is_member
+      is_member: String(e.user_id || '').startsWith('web:') ? false : !!e.is_member,
     })),
   };
 
@@ -851,6 +855,29 @@ li:hover {
 }
 .price:empty { display: none; }
 
+/* v1.0.37 合菜模式非會員 entry 勾選列：共餐／協助訂便當（葷/素） */
+.guest-flags {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 2px 0 0;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: rgba(127,168,140,.07);
+  border: 1px solid rgba(127,168,140,.20);
+  border-radius: 4px;
+}
+.guest-flags label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.guest-flags input { margin: 0; cursor: pointer; accent-color: var(--jade); }
+.guest-flags .g-bt {
+  display: inline-flex;
+  gap: 8px;
+  padding-left: 8px;
+  border-left: 1px solid var(--line-soft);
+}
+
 .del-btn {
   padding: 0;
   line-height: 1;
@@ -1568,7 +1595,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.36</span>
+  <span style="opacity:.6">v1.0.37</span>
 </div>
 
 <div class="admin-row">
@@ -1776,6 +1803,58 @@ let currentRecHits = new Set();
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+// v1.0.37 合菜非會員旗標渲染（共餐／協助訂便當/葷素）
+function guestFlagsHtml(e, isShared) {
+  if (!isShared) return '';
+  if (e.is_member) return '';
+  const data = e.data || {};
+  const join = !!data.guest_join;
+  const bento = !!data.guest_bento;
+  const bt = data.bento_type === '素' ? '素' : '葷';
+  const uid = esc(e.user_id);
+  return \`<div class="guest-flags" data-uid="\${uid}">
+    <label><input type="checkbox" class="g-join"\${join ? ' checked' : ''}> 共餐</label>
+    <label><input type="checkbox" class="g-bento"\${bento ? ' checked' : ''}> 協助訂便當</label>
+    <span class="g-bt" style="\${bento ? '' : 'display:none'}">
+      <label><input type="radio" name="bt-\${uid}" value="葷"\${bt === '葷' ? ' checked' : ''}> 葷</label>
+      <label><input type="radio" name="bt-\${uid}" value="素"\${bt === '素' ? ' checked' : ''}> 素</label>
+    </span>
+  </div>\`;
+}
+
+async function patchEntryFlag(uid, payload) {
+  try {
+    const r = await fetch('/api/t/' + TASK_ID + '/entry-flag', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: uid, ...payload }),
+    });
+    if (!r.ok) { showToast('儲存失敗 ' + r.status); return; }
+    const j = await r.json();
+    const entry = (state.entries || []).find(e => e.user_id === uid);
+    if (entry && j.data) entry.data = j.data;
+  } catch (err) {
+    showToast('錯誤：' + err.message);
+  }
+}
+
+function bindGuestFlagListeners() {
+  document.querySelectorAll('.guest-flags').forEach(row => {
+    const uid = row.dataset.uid;
+    const join = row.querySelector('.g-join');
+    const bento = row.querySelector('.g-bento');
+    const btWrap = row.querySelector('.g-bt');
+    join?.addEventListener('change', () => patchEntryFlag(uid, { guest_join: join.checked }));
+    bento?.addEventListener('change', () => {
+      if (btWrap) btWrap.style.display = bento.checked ? '' : 'none';
+      patchEntryFlag(uid, { guest_bento: bento.checked });
+    });
+    row.querySelectorAll('input[type=radio]').forEach(r => {
+      r.addEventListener('change', () => { if (r.checked) patchEntryFlag(uid, { bento_type: r.value }); });
+    });
+  });
+}
+
 function entryBody(e) {
   const data = e.data || {};
   // 便當品項一律 collapse：data 任一欄位含「葷食/素食」變體 → 顯示對應便當名（不再展開葷素）
@@ -1849,19 +1928,23 @@ function render() {
     const codeHtml = (so >= 100 && so < 1000) ? \`<span class="zone-code">\${String(so).padStart(4, '0')}</span>\` : '';
     parts.push(\`<h2 class="\${headerClass}"><span>\${codeHtml}\${esc(g.zone.name)}\${inOfficeTag}\${isUnassigned ? ' ⚠️' : ''}\${emptyTag}</span>\${capNote}</h2>\`);
     if (g.list.length === 0) continue;
+    const isSharedMode = state.task && state.task.pricing_mode === 'shared';
     parts.push('<ul>' + g.list.map(e => {
       const price = e.price ? \`$\${e.price}\` : '';
       const noteShown = e.note && entryBody(e) !== '(未辨識)' ? \`（\${esc(e.note)}）\` : '';
       const idLine = isUnassigned ? \`<div class="uid-row">\${esc(e.user_id)}</div>\` : '';
       const isWeb = String(e.user_id || '').startsWith('web:');
       const delBtn = IS_ADMIN ? \`<button class="del-btn" data-uid="\${esc(e.user_id)}" data-real="\${isWeb ? '0' : '1'}" title="刪除此筆">×</button>\` : '';
-      return \`<li><span class="who">\${esc(e.name)}\${idLine}</span><span class="body">\${entryBodyHtml(e)}\${noteShown}</span><span class="price">\${esc(price)}\${delBtn}</span></li>\`;
+      const guestRow = guestFlagsHtml(e, isSharedMode);
+      return \`<li><span class="who">\${esc(e.name)}\${idLine}</span><span class="body">\${entryBodyHtml(e)}\${noteShown}</span><span class="price">\${esc(price)}\${delBtn}</span>\${guestRow}</li>\`;
     }).join('') + '</ul>');
   }
 
   const total = entries.reduce((s, e) => s + (e.price || 0), 0);
   if (total) parts.push(\`<div class="total">合計：$\${total}</div>\`);
   board.innerHTML = parts.join('');
+
+  bindGuestFlagListeners();
 
   document.getElementById('statLine').textContent = \`共 \${entries.length} 筆・已填 \${filledZones}/\${totalZonesEnabled} 區\`;
 }
@@ -2093,7 +2176,7 @@ async function loadMenu() {
     const hasItems = isMenuMode && (j.items || []).length > 0;
     const recBar = document.querySelector('.recommend-bar');
     const leaveRow = '<div class="cat-row" style="margin-top:8px"><span class="item-chip leave-chip" data-name="__leave__"><b class="item-pick">📝 請假</b></span></div>';
-    if (!hasItems && IS_DRINK_TASK) {
+    if (!hasItems && isDrinkTask()) {
       // 飲料類強制要有菜單，沒上傳就擋住（請假仍可）
       document.getElementById('menuItems').innerHTML =
         '<div style="padding:10px;background:rgba(240,160,88,.08);border:1px dashed rgba(240,160,88,.4);border-radius:6px;color:var(--wine);font-size:13px">' +
@@ -2386,7 +2469,11 @@ document.querySelectorAll('.recommend-buttons button').forEach(b => {
 });
 
 const TASK_NAME_RAW = ${JSON.stringify(task.task_name)};
-const IS_DRINK_TASK = /飲料|飲品|茶|咖啡|手搖|冷飲|熱飲|奶茶|果汁|冰沙/.test(TASK_NAME_RAW);
+// v1.0.37 飲料判斷改用動態 getter：任務名稱 regex || pricing_mode === 'drink'（admin 切換可即時生效）
+function isDrinkTask() {
+  return /飲料|飲品|茶|咖啡|手搖|冷飲|熱飲|奶茶|果汁|冰沙/.test(TASK_NAME_RAW)
+      || (state.task && state.task.pricing_mode === 'drink');
+}
 const SWEET_OPTS = ['正常糖','少糖','半糖','微糖','無糖'];
 const ICE_OPTS = ['正常冰','少冰','微冰','去冰','溫','熱'];
 const LS_LAST_ZONE = 'lastZone:' + TASK_ID;
@@ -2429,7 +2516,7 @@ function openOrderModal(itemName, price, isCustom) {
   const optBtns = (group, opts, defaultIdx) => '<div class="opt-grid" data-group="' + group + '">' +
     opts.map((o, i) => '<button type="button" data-val="' + esc(o) + '"' + (i === defaultIdx ? ' class="active"' : '') + '>' + esc(o) + '</button>').join('') +
     '</div>';
-  const drinkRow = IS_DRINK_TASK ? (
+  const drinkRow = isDrinkTask() ? (
     '<label>甜度</label>' + optBtns('sweet', SWEET_OPTS, 0) +
     '<label>冰塊</label>' + optBtns('ice', ICE_OPTS, 0)
   ) : '';
@@ -2525,8 +2612,8 @@ function openOrderModal(itemName, price, isCustom) {
     const okBtn = d.querySelector('#omOk');
     okBtn.disabled = true; okBtn.textContent = '送出中…';
     const zone = d.querySelector('#omZone').value;
-    const sweet = IS_DRINK_TASK ? getOpt('sweet') : null;
-    const ice = IS_DRINK_TASK ? getOpt('ice') : null;
+    const sweet = isDrinkTask() ? getOpt('sweet') : null;
+    const ice = isDrinkTask() ? getOpt('ice') : null;
     const note = d.querySelector('#omNote').value.trim() || null;
     let memberName = null, nonMemberName = null;
     if (/衛生局/.test(zone)) {
