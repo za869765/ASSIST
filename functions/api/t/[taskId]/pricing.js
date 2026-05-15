@@ -46,6 +46,19 @@ export async function onRequestPost({ params, request, env }) {
     updates.push('buy5_get1 = ?');
     binds.push(body.buy5_get1 ? 1 : 0);
   }
+  // v1.0.50 共同袋子成本（task 級別）
+  if (Object.prototype.hasOwnProperty.call(body, 'shared_addon')) {
+    const v = body.shared_addon;
+    if (v == null || v === '') {
+      updates.push('shared_addon = ?');
+      binds.push(0);
+    } else {
+      const n = parseInt(v, 10);
+      if (!Number.isFinite(n) || n < 0 || n > 10000) return new Response('bad shared_addon', { status: 400 });
+      updates.push('shared_addon = ?');
+      binds.push(n);
+    }
+  }
   if (updates.length === 0) return new Response('nothing to update', { status: 400 });
 
   binds.push(taskId);
@@ -57,16 +70,18 @@ export async function onRequestPost({ params, request, env }) {
     if (!r.meta?.changes) return new Response('task not found', { status: 404 });
     return Response.json({ ok: true });
   } catch (e) {
-    // 移除 buy5_get1 相關 update，重跑
-    const safePairs = updates.map((u, i) => ({ u, b: binds[i] })).filter(p => !p.u.startsWith('buy5_get1'));
+    // 移除新欄位相關 update（buy5_get1 / shared_addon），重跑
+    const safePairs = updates
+      .map((u, i) => ({ u, b: binds[i] }))
+      .filter(p => !p.u.startsWith('buy5_get1') && !p.u.startsWith('shared_addon'));
     if (safePairs.length === 0) {
-      return Response.json({ ok: false, error: 'buy5_get1 migration 未跑', _warn: String(e).slice(0, 200) }, { status: 409 });
+      return Response.json({ ok: false, error: 'migration 未跑', _warn: String(e).slice(0, 200) }, { status: 409 });
     }
     const safeBinds = [...safePairs.map(p => p.b), taskId];
     const r2 = await env.DB.prepare(
       `UPDATE tasks SET ${safePairs.map(p => p.u).join(', ')} WHERE id = ?`
     ).bind(...safeBinds).run();
     if (!r2.meta?.changes) return new Response('task not found', { status: 404 });
-    return Response.json({ ok: true, _warn: 'buy5_get1 migration 未跑，該欄位未更新' });
+    return Response.json({ ok: true, _warn: 'buy5_get1 / shared_addon migration 未跑，該欄位未更新' });
   }
 }

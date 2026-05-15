@@ -2,16 +2,20 @@
 export async function onRequestGet({ params, request, env }) {
   const key = String(params.id || '');
   if (!key) return new Response('Bad id', { status: 400 });
-  // v1.0.48 容錯：buy5_get1 欄位 migration 未跑時 SQL 會炸，先試含欄位，fail 則 fallback
-  const COLS = `id, task_name, mode, status, started_at, closed_at, view_token, group_id, url_slug,
+  // v1.0.48/50 容錯：buy5_get1 / shared_addon 欄位 migration 未跑時 SQL 會炸
+  // 採階梯式 fallback：先試含全部，再試含 buy5_get1 但無 shared_addon，最後不含任何新欄位
+  const COLS_BASE = `id, task_name, mode, status, started_at, closed_at, view_token, group_id, url_slug,
                 pricing_mode, total_amount, member_subsidy`;
-  const COLS_V148 = COLS + ', buy5_get1';
+  const COLS_V148 = COLS_BASE + ', buy5_get1';
+  const COLS_V150 = COLS_V148 + ', shared_addon';
   async function selectTask(where, bindVal) {
     try {
+      return await env.DB.prepare(`SELECT ${COLS_V150} FROM tasks WHERE ${where}`).bind(bindVal).first();
+    } catch {}
+    try {
       return await env.DB.prepare(`SELECT ${COLS_V148} FROM tasks WHERE ${where}`).bind(bindVal).first();
-    } catch {
-      return await env.DB.prepare(`SELECT ${COLS} FROM tasks WHERE ${where}`).bind(bindVal).first();
-    }
+    } catch {}
+    return await env.DB.prepare(`SELECT ${COLS_BASE} FROM tasks WHERE ${where}`).bind(bindVal).first();
   }
   let task = await selectTask('url_slug = ?', key);
   if (!task && /^\d+$/.test(key)) {
@@ -98,6 +102,7 @@ export async function onRequestGet({ params, request, env }) {
       member_subsidy: task.member_subsidy,
       show_zones: showZones,
       buy5_get1: task.buy5_get1 == null ? 0 : (+task.buy5_get1 ? 1 : 0),
+      shared_addon: task.shared_addon == null ? 0 : Math.max(0, +task.shared_addon || 0),
     },
     zones,
     entries: entries.map(e => ({
@@ -1630,7 +1635,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.49</span>
+  <span style="opacity:.6">v1.0.50</span>
 </div>
 
 <div class="admin-row">
@@ -1682,7 +1687,7 @@ ${closed ? '' : `<label class="menu-mode-toggle" id="menuModeToggle" style="disp
 </details>
 <div class="items-list" id="menuItems" style="margin:10px 0"></div>`}
 
-${closed ? '' : `<div id="adminBanner" class="admin-banner" style="display:none">🔧 管理員模式：點 ✏️ 編輯、× 刪除、💰 按菜單重算（菜單模式）。<a href="?">離開</a> <button id="repriceBtn" style="margin-left:8px;padding:3px 10px;background:#2db87a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;display:none">💰 按菜單重算金額</button> <label style="margin-left:10px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="buy5Get1Chk" style="cursor:pointer">🎁 買五送一</label></div>`}
+${closed ? '' : `<div id="adminBanner" class="admin-banner" style="display:none">🔧 管理員模式：點 ✏️ 編輯、× 刪除、💰 按菜單重算（菜單模式）。<a href="?">離開</a> <button id="repriceBtn" style="margin-left:8px;padding:3px 10px;background:#2db87a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;display:none">💰 按菜單重算金額</button> <label style="margin-left:10px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="buy5Get1Chk" style="cursor:pointer">🎁 買五送一</label> <label style="margin-left:10px;font-size:12px;display:inline-flex;align-items:center;gap:4px">🛍 共同袋子 <input type="number" id="sharedAddonInput" min="0" max="100" step="1" style="width:50px;padding:2px 4px;border:1px solid #ccc;border-radius:3px;font-size:12px" placeholder="0"> 元</label></div>`}
 ${closed ? '' : `<div id="editPriceBanner" class="admin-banner" style="display:none">📝 編輯模式：點「品項名稱」或「價格」可以改（OCR 亂碼可在這裡修正）。<a href="?">離開</a></div>`}
 ${closed ? '' : `<div id="pricingPanel" class="pricing-panel" style="display:none">
   <strong>💰 計價</strong>
@@ -1841,7 +1846,33 @@ if (IS_ADMIN) {
       chk.checked = !!(state.task && state.task.buy5_get1);
       chk.addEventListener('change', toggleBuy5Get1);
     }
+    // v1.0.50 共同袋子成本 input
+    const addonInput = document.getElementById('sharedAddonInput');
+    if (addonInput) {
+      addonInput.value = (state.task && state.task.shared_addon) || 0;
+      let saveTimer = null;
+      addonInput.addEventListener('input', () => {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => saveSharedAddon(addonInput.value), 600);
+      });
+    }
   }, 300);
+}
+async function saveSharedAddon(v) {
+  const n = +v || 0;
+  try {
+    const r = await fetch('/api/t/${task.id}/pricing', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shared_addon: n }),
+    });
+    if (!r.ok) {
+      const t = await r.text().catch(() => '');
+      alert('儲存失敗：' + t.slice(0, 200));
+      return;
+    }
+    if (state.task) state.task.shared_addon = n;
+    render();
+  } catch (e) { alert('錯誤：' + e.message); }
 }
 async function toggleBuy5Get1(ev) {
   const chk = ev.target;
@@ -1881,6 +1912,31 @@ function computeBuy5Get1(entries) {
     }
   }
   return { freeIds, discount };
+}
+
+// v1.0.50 應付明細 HTML（從 server 端 share-details endpoint 拿來的資料）
+function shareDetailsHtml() {
+  const sd = state.shareDetails;
+  if (!sd || !sd.n_payers || !sd.payable) return '';
+  const rows = (sd.per_entry || []).filter(p => p.role !== 'skip').map(p => {
+    const badge = p.role === 'overpay'
+      ? '<span style="color:#d4543a;font-weight:600">多付 🔴</span>'
+      : (p.role === 'bag' ? '<span style="color:#d4a13a;font-weight:600">袋子 🛍</span>' : '');
+    const bal = p.balance_before > 0 ? \`<small style="color:#888">（累計多付 \${p.balance_before}）</small>\` : '';
+    return \`<tr><td style="padding:3px 6px">\${esc(p.name)} \${bal}</td><td style="text-align:right;padding:3px 6px"><b>$\${p.due}</b></td><td style="padding:3px 6px">\${badge}</td></tr>\`;
+  }).join('');
+  const breakdown = \`飲料 $\${sd.total_items}\${sd.discount ? ' − 折 $' + sd.discount : ''}\${sd.shared_addon ? ' + 袋子 $' + sd.shared_addon : ''} = <b>應收 $\${sd.payable}</b>\`;
+  const avgNote = sd.remainder
+    ? \`平均 $\${sd.base}/人，\${sd.remainder} 人多付 $1\${sd.bag_offset ? '（其中 ' + sd.bag_offset + ' 元算袋子共擔）' : ''}\${sd.real_overpay ? '，真正多付 ' + sd.real_overpay + ' 人記輪序' : ''}\`
+    : \`平均 $\${sd.base}/人（剛好整除）\`;
+  return \`<div class="share-details" style="margin-top:14px;padding:10px 12px;background:rgba(120,150,180,.06);border:1px solid rgba(120,150,180,.25);border-radius:6px">
+    <b style="font-size:13px">📊 應付明細</b>
+    <div style="font-size:12px;line-height:1.7;margin:4px 0 8px;color:var(--text-dim)">\${breakdown}<br>\${avgNote}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr><th style="text-align:left;padding:3px 6px;border-bottom:1px solid rgba(120,150,180,.3)">姓名</th><th style="text-align:right;padding:3px 6px;border-bottom:1px solid rgba(120,150,180,.3)">應付</th><th style="text-align:left;padding:3px 6px;border-bottom:1px solid rgba(120,150,180,.3)">標記</th></tr></thead>
+      <tbody>\${rows}</tbody>
+    </table>
+  </div>\`;
 }
 async function repriceAll() {
   if (!confirm('按菜單 L 大杯價回填每筆 entry.price（base + 加料加總）？')) return;
@@ -2040,6 +2096,9 @@ function render() {
         parts.push(\`<div class="total">合計：$\${total}</div>\`);
       }
     }
+    // v1.0.50 應付明細表（每人應付 + 多付標記）
+    const sdHtml = shareDetailsHtml();
+    if (sdHtml) parts.push(sdHtml);
     board.innerHTML = parts.join('');
     bindGuestFlagListeners();
     document.getElementById('statLine').textContent = \`共 \${entries.length} 筆\`;
@@ -2111,6 +2170,9 @@ function render() {
       parts.push(\`<div class="total">合計：$\${total}</div>\`);
     }
   }
+  // v1.0.50 應付明細表（每人應付 + 多付標記）
+  const sdHtml = shareDetailsHtml();
+  if (sdHtml) parts.push(sdHtml);
   board.innerHTML = parts.join('');
 
   bindGuestFlagListeners();
@@ -2124,11 +2186,23 @@ async function poll() {
     if (!r.ok) return;
     const j = await r.json();
     state = j;
+    // v1.0.50 同步抓應付明細（買五送一 + 共同袋子 + 多付清單）
+    try {
+      const sd = await fetch('/api/t/${task.id}/share-details');
+      if (sd.ok) state.shareDetails = await sd.json();
+    } catch {}
     render();
   } catch {}
 }
 
 render();
+// v1.0.50 首次抓 share-details（之後 poll 會持續更新）
+(async () => {
+  try {
+    const r = await fetch('/api/t/${task.id}/share-details');
+    if (r.ok) { state.shareDetails = await r.json(); render(); }
+  } catch {}
+})();
 
 document.getElementById('board').addEventListener('click', async (ev) => {
   const b = ev.target.closest('.del-btn'); if (!b) return;
@@ -2758,10 +2832,8 @@ function openOrderModal(itemName, price, isCustom) {
     '<label>甜度</label>' + optBtns('sweet', SWEET_OPTS, 0) +
     '<label>冰塊</label>' + optBtns('ice', ICE_OPTS, 0)
   ) : '';
-  // v1.0.49 袋子選項（飲料任務）：無袋 / 袋 +1 / 大袋 +2
-  const bagRow = isDrinkTask()
-    ? '<label>袋子（外帶加購）</label>' + optBtns('bag', ['無袋', '袋+1', '大袋+2'], 0)
-    : '';
+  // v1.0.50 撤回個人袋子選項，改用 task.shared_addon 共同袋子成本（admin 在看板頂部設定）
+  const bagRow = '';
   // 衛生局：從花名冊挑會員，或選「非會員」
   const memberRow = '<div id="omMemberRow" style="display:none">' +
     '<label>是誰？（名單內請直接點；不在名單請選「非會員」並填名字）</label>' +
@@ -2896,11 +2968,7 @@ function openOrderModal(itemName, price, isCustom) {
     const zone = isNoZoneGroup ? '本群組' : d.querySelector('#omZone').value;
     const sweet = isDrinkTask() ? getOpt('sweet') : null;
     const ice = isDrinkTask() ? getOpt('ice') : null;
-    // v1.0.49 袋子：解析選項
-    const bagOpt = isDrinkTask() ? getOpt('bag') : null;
-    let bagAddon = 0; let bagLabel = '';
-    if (bagOpt === '袋+1') { bagAddon = 1; bagLabel = '袋'; }
-    else if (bagOpt === '大袋+2') { bagAddon = 2; bagLabel = '大袋'; }
+    // v1.0.50 撤回個人袋子，改 task.shared_addon 共同袋子成本
     const note = d.querySelector('#omNote').value.trim() || null;
     let memberName = null, nonMemberName = null, memberUserId = null;
     if (isNoZoneGroup) {
@@ -2925,15 +2993,11 @@ function openOrderModal(itemName, price, isCustom) {
         memberName = active.dataset.val;
       }
     }
-    // v1.0.49 袋子加價 → final price
-    const finalPrice = price != null
-      ? price + bagAddon
-      : (bagAddon > 0 ? bagAddon : null);
     // 檢查是否已有點餐：同人再點要問「加點 / 更改」
     const existing = findExistingEntry(zone, memberName, nonMemberName);
     let additive = false;
     if (existing) {
-      const choice = await askAddOrReplace(existing, itemName, finalPrice);
+      const choice = await askAddOrReplace(existing, itemName, price);
       if (!choice) { okBtn.disabled = false; okBtn.textContent = '送出'; return; }
       additive = (choice === 'add');
     }
@@ -2941,9 +3005,8 @@ function openOrderModal(itemName, price, isCustom) {
       const r = await fetch('/api/t/' + TASK_ID + '/quick-entry', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          zone, item: itemName, price: finalPrice, sweet, ice, note,
+          zone, item: itemName, price, sweet, ice, note,
           memberName, nonMemberName, memberUserId,
-          bag: bagLabel || null, bag_addon: bagAddon || 0,
           custom: !!isCustom, additive,
           noZoneGroup: isNoZoneGroup,
         }),
@@ -2956,7 +3019,7 @@ function openOrderModal(itemName, price, isCustom) {
         item: itemName,
         zone: isNoZoneGroup ? null : zone,
         name: memberName || nonMemberName || null,
-        sweet, ice, note, price: finalPrice,
+        sweet, ice, note, price,
         additive,
       });
       await poll();

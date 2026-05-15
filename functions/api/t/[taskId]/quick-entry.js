@@ -25,11 +25,9 @@ export async function onRequestPost({ env, params, request }) {
   const ice = body.ice == null ? null : String(body.ice).slice(0, 10);
   const memberName = (body.memberName == null ? '' : String(body.memberName)).trim().slice(0, 20) || null;
   const nonMemberName = (body.nonMemberName == null ? '' : String(body.nonMemberName)).trim().slice(0, 20) || null;
-  // v1.0.49 不分區群組 + 袋子
+  // v1.0.49 不分區群組（v1.0.50 撤回個人袋子，袋子改 task.shared_addon 共同成本）
   const noZoneGroup = !!body.noZoneGroup;
   const memberUserId = (body.memberUserId == null ? '' : String(body.memberUserId)).trim() || null;
-  const bag = (body.bag == null ? '' : String(body.bag)).trim().slice(0, 10) || null;
-  const bagAddon = +body.bag_addon || 0;
   if (price != null && (isNaN(price) || price < 0 || price > 100000)) {
     return json({ error: 'bad price' }, 400);
   }
@@ -122,7 +120,6 @@ export async function onRequestPost({ env, params, request }) {
   if (!isLeave) {
     if (sweet) data['甜度'] = sweet;
     if (ice) data['冰塊'] = ice;
-    if (bag) data['袋子'] = bag; // v1.0.49 袋子
   }
   if (memberName) data['姓名'] = memberName;
   if (nonMemberName) { data['姓名'] = nonMemberName; data['身份'] = '非會員'; }
@@ -133,7 +130,7 @@ export async function onRequestPost({ env, params, request }) {
   const finalPrice = isLeave ? null : price;
   const rawText = isLeave
     ? `[web] ${zone} ${displayName}${isNon ? '(非會員)' : ''} → 請假${note ? '（' + note + '）' : ''}`
-    : `[web] ${zone} ${displayName}${isNon ? '(非會員)' : ''} → ${item}${sweet ? '/' + sweet : ''}${ice ? '/' + ice : ''}${bag ? '/' + bag : ''}`;
+    : `[web] ${zone} ${displayName}${isNon ? '(非會員)' : ''} → ${item}${sweet ? '/' + sweet : ''}${ice ? '/' + ice : ''}`;
   await upsertEntry(env.DB, {
     taskId, userId,
     data,

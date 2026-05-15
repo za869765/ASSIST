@@ -609,6 +609,73 @@ async function doExportInProgress(env, tasks, replyToken) {
   }]);
 }
 
+// v1.0.50 結單時更新「真正多付」的人到 group_member_balance（跨任務輪序累計）
+//   買五送一 + 共同袋子 + 平均分攤後，餘數 R 個人多付 1 元；其中 bagOffset = min(R, shared_addon) 個算「袋子共擔」不計；剩下 realOverpay 個才記到 D1
+//   靜默失敗：migration 未跑/D1 錯誤都 catch 不擋結單流程
+async function updateOverpayBalance(env, picked, entries) {
+  if (!picked.group_id) return;
+  let task;
+  try {
+    task = await env.DB.prepare(
+      `SELECT id, group_id, buy5_get1, shared_addon FROM tasks WHERE id = ?`
+    ).bind(picked.id).first();
+  } catch { return; }
+  if (!task) return;
+
+  const buy5 = !!task.buy5_get1;
+  const sharedAddon = Math.max(0, +(task.shared_addon || 0));
+  const payers = (entries || []).filter(e => !(e.note === '請假' || e.note === '不吃') && +e.price > 0);
+  const n = payers.length;
+  if (n === 0) return;
+
+  const totalItems = payers.reduce((s, e) => s + (+e.price || 0), 0);
+  let discount = 0;
+  if (buy5 && n >= 6) {
+    const sorted = [...payers].sort((a, b) => (+a.price) - (+b.price));
+    for (let i = 0; i + 6 <= sorted.length; i += 6) {
+      discount += +sorted[i].price || 0;
+    }
+  }
+  const payable = totalItems - discount + sharedAddon;
+  if (payable <= 0) return;
+
+  const base = Math.floor(payable / n);
+  const remainder = payable - base * n;
+  const bagOffset = Math.min(remainder, sharedAddon);
+  const realOverpay = Math.max(0, remainder - bagOffset);
+  if (realOverpay === 0) return;
+
+  // 讀現有 balance，挑「累計多付最少」的人
+  const balanceMap = new Map();
+  try {
+    const br = await env.DB.prepare(
+      `SELECT user_id, overpaid_count FROM group_member_balance WHERE group_id = ?`
+    ).bind(picked.group_id).all();
+    for (const row of (br.results || [])) {
+      balanceMap.set(row.user_id, +row.overpaid_count || 0);
+    }
+  } catch { return; }
+
+  const sortedPayers = [...payers].sort((a, b) => {
+    const ba = balanceMap.get(a.user_id) || 0;
+    const bb = balanceMap.get(b.user_id) || 0;
+    if (ba !== bb) return ba - bb;
+    return String(a.user_id).localeCompare(String(b.user_id));
+  });
+  // 跳過袋子 bagOffset 個，後面 realOverpay 個是「真正多付」記 D1
+  for (let i = bagOffset; i < bagOffset + realOverpay; i++) {
+    const p = sortedPayers[i];
+    if (!p) break;
+    try {
+      await env.DB.prepare(
+        `INSERT INTO group_member_balance (group_id, user_id, overpaid_count, last_updated_at)
+         VALUES (?, ?, 1, datetime('now'))
+         ON CONFLICT(group_id, user_id) DO UPDATE SET overpaid_count = overpaid_count + 1, last_updated_at = datetime('now')`
+      ).bind(picked.group_id, p.user_id).run();
+    } catch (e) { console.error('[balance upsert]', e); }
+  }
+}
+
 async function doCloseTask(env, picked, replyToken) {
   // 結單前：未回應的 pending_dups 預設視為「更改」，全部套用
   const pendingRows = await env.DB.prepare(
@@ -626,6 +693,12 @@ async function doCloseTask(env, picked, replyToken) {
   await env.DB.prepare(`DELETE FROM pending_profanity WHERE task_id = ?`).bind(picked.id).run();
 
   const entries = await listEntries(env.DB, picked.id);
+
+  // v1.0.50 結算前：算每人應付，把「真正多付」的人 +1 到 group_member_balance（買五送一 + 共同袋子 + 多付清單輪序）
+  try {
+    await updateOverpayBalance(env, picked, entries);
+  } catch (e) { console.error('[balance update]', e); }
+
   await closeTask(env.DB, picked.id, env.MENU_BUCKET);
 
   // 撈 zone sort_order 給 buildSheetRows 排序（衛生局 → 在局 → 一般衛生所 sort_order）
