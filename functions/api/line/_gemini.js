@@ -293,6 +293,7 @@ export async function geminiOrganizeMenu(apiKey, rawItems) {
 
 要求：
 - 合併重複或錯字變體；保留最完整/正確的名稱（例：「珍奶」「珍珠奶茶」→「珍珠奶茶」）
+- **語言規則：name 一律用繁體中文。若清單中同時出現「中文名」與「對應英文翻譯」（例：「古早味紅茶」與「Retro black tea」、「茉香綠茶」與「Jasmine green tea」、「四季春青茶」與「Four seasons green tea」），視為同一品項合併，保留中文名稱、刪除純英文翻譯項。只有原文菜單就是英文（無對應中文）時才保留英文 name。**
 - 修正/補齊分類。分類用以下之一：主食、便當、飯、麵、湯品、飲料、小菜、加料、套餐、甜點、其他
 - 保留整數台幣價格；同一品項有多個價格取最合理者；沒價格就給 null
 - 依分類、再依價格由低到高排序（同價保留原順序）
@@ -338,7 +339,7 @@ export async function geminiParseMenu(apiKey, imageBase64, mimeType) {
 要求：
 - 只回傳 JSON，無其他文字
 - 格式：{"items": [{"name": "珍珠奶茶", "price": 50, "category": "飲料"}, ...]}
-- name：品項全名（保留原本用字）
+- **name 一律用繁體中文。台灣餐飲菜單常見中英對照（中文主標 + 英文小字翻譯，例：「古早味紅茶 Retro black tea」、「茉香綠茶 Jasmine green tea」、「四季春青茶 Four seasons green tea」），請只抽中文那一個，英文翻譯不要當成獨立品項。只有當原文菜單本身就只有英文（無對應中文）時才用英文 name。**
 - price：整數台幣金額；看不到就給 null
 - category：飲料/主食/便當/小菜/加料 等可辨識的分類；沒辦法判斷就給 null
 - 若照片不是菜單或讀不出來，回 {"items": []}
