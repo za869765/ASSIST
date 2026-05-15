@@ -909,6 +909,26 @@ li:hover {
 .del-btn:hover, .del-btn:active {
   background: var(--danger); color: var(--bg); border-color: var(--danger);
 }
+.edit-btn {
+  padding: 0;
+  line-height: 1;
+  border: 1px solid rgba(120,180,160,.4);
+  background: transparent;
+  color: #6fa68b;
+  border-radius: 50%;
+  width: 28px; height: 28px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all .2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+.edit-btn:hover, .edit-btn:active {
+  background: #6fa68b; color: var(--bg); border-color: #6fa68b;
+}
 
 /* Total — 金框尊榮結算 */
 .total {
@@ -1606,7 +1626,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.46</span>
+  <span style="opacity:.6">v1.0.47</span>
 </div>
 
 <div class="admin-row">
@@ -1658,7 +1678,7 @@ ${closed ? '' : `<label class="menu-mode-toggle" id="menuModeToggle" style="disp
 </details>
 <div class="items-list" id="menuItems" style="margin:10px 0"></div>`}
 
-${closed ? '' : `<div id="adminBanner" class="admin-banner" style="display:none">🔧 管理員模式：web 紀錄可刪除（× 按鈕）。<a href="?">離開</a></div>`}
+${closed ? '' : `<div id="adminBanner" class="admin-banner" style="display:none">🔧 管理員模式：點 ✏️ 編輯、× 刪除、💰 按菜單重算（菜單模式）。<a href="?">離開</a> <button id="repriceBtn" style="margin-left:8px;padding:3px 10px;background:#2db87a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;display:none">💰 按菜單重算金額</button></div>`}
 ${closed ? '' : `<div id="editPriceBanner" class="admin-banner" style="display:none">📝 編輯模式：點「品項名稱」或「價格」可以改（OCR 亂碼可在這裡修正）。<a href="?">離開</a></div>`}
 ${closed ? '' : `<div id="pricingPanel" class="pricing-panel" style="display:none">
   <strong>💰 計價</strong>
@@ -1802,6 +1822,44 @@ if (IS_ADMIN) {
   document.body.classList.add('is-admin');
   const banner = document.getElementById('adminBanner');
   if (banner) banner.style.display = '';
+  // v1.0.47: 菜單模式才顯示重算按鈕
+  setTimeout(() => {
+    if (state.task && state.task.mode === 'menu') {
+      const btn = document.getElementById('repriceBtn');
+      if (btn) {
+        btn.style.display = '';
+        btn.addEventListener('click', repriceAll);
+      }
+    }
+  }, 300);
+}
+async function repriceAll() {
+  if (!confirm('按菜單 L 大杯價回填每筆 entry.price（base + 加料加總）？')) return;
+  const btn = document.getElementById('repriceBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '重算中…'; }
+  try {
+    // X-Admin-Pass 用 prompt 取得（reprice endpoint 有 admin pass gate）
+    let pass = sessionStorage.getItem('adminPass') || '';
+    if (!pass) {
+      pass = prompt('請輸入 ADMIN_PASS（後台密碼）：') || '';
+      if (pass) sessionStorage.setItem('adminPass', pass);
+    }
+    const r = await fetch('/api/admin/tasks/${task.id}/reprice', {
+      method: 'POST',
+      headers: { 'X-Admin-Pass': pass, 'Content-Type': 'application/json' },
+    });
+    if (!r.ok) {
+      const t = await r.text().catch(() => '');
+      sessionStorage.removeItem('adminPass');
+      alert('重算失敗（' + r.status + '）：' + t.slice(0, 200));
+      return;
+    }
+    const j = await r.json();
+    alert(\`重算完成\\n共 \${j.total} 筆\\n更新 \${j.updated} 筆\\n原本就對 \${j.unchanged} 筆\\n菜單外略過 \${j.skipped_not_in_menu} 筆\\n沒品項略過 \${j.skipped_no_item} 筆\`);
+    poll();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '💰 按菜單重算金額'; }
+  }
 }
 if (IS_EDIT_PRICE) {
   document.body.classList.add('is-edit-price');
@@ -1913,9 +1971,10 @@ function render() {
       const price = e.price ? \`$\${e.price}\` : '';
       const noteShown = e.note && entryBody(e) !== '(未辨識)' ? \`（\${esc(e.note)}）\` : '';
       const isWeb = String(e.user_id || '').startsWith('web:');
+      const editBtn = IS_ADMIN ? \`<button class="edit-btn" data-uid="\${esc(e.user_id)}" title="編輯此筆">✏️</button>\` : '';
       const delBtn = IS_ADMIN ? \`<button class="del-btn" data-uid="\${esc(e.user_id)}" data-real="\${isWeb ? '0' : '1'}" title="刪除此筆">×</button>\` : '';
       const guestRow = guestFlagsHtml(e, isSharedMode);
-      return \`<li><span class="who">\${esc(e.name)}</span><span class="body">\${entryBodyHtml(e)}\${noteShown}</span><span class="price">\${esc(price)}\${delBtn}</span>\${guestRow}</li>\`;
+      return \`<li><span class="who">\${esc(e.name)}</span><span class="body">\${entryBodyHtml(e)}\${noteShown}</span><span class="price">\${esc(price)}\${editBtn}\${delBtn}</span>\${guestRow}</li>\`;
     }).join('') + '</ul>');
     const total = entries.reduce((s, e) => s + (e.price || 0), 0);
     if (total) parts.push(\`<div class="total">合計：$\${total}</div>\`);
@@ -1970,9 +2029,10 @@ function render() {
       const noteShown = e.note && entryBody(e) !== '(未辨識)' ? \`（\${esc(e.note)}）\` : '';
       const idLine = isUnassigned ? \`<div class="uid-row">\${esc(e.user_id)}</div>\` : '';
       const isWeb = String(e.user_id || '').startsWith('web:');
+      const editBtn = IS_ADMIN ? \`<button class="edit-btn" data-uid="\${esc(e.user_id)}" title="編輯此筆">✏️</button>\` : '';
       const delBtn = IS_ADMIN ? \`<button class="del-btn" data-uid="\${esc(e.user_id)}" data-real="\${isWeb ? '0' : '1'}" title="刪除此筆">×</button>\` : '';
       const guestRow = guestFlagsHtml(e, isSharedMode);
-      return \`<li><span class="who">\${esc(e.name)}\${idLine}</span><span class="body">\${entryBodyHtml(e)}\${noteShown}</span><span class="price">\${esc(price)}\${delBtn}</span>\${guestRow}</li>\`;
+      return \`<li><span class="who">\${esc(e.name)}\${idLine}</span><span class="body">\${entryBodyHtml(e)}\${noteShown}</span><span class="price">\${esc(price)}\${editBtn}\${delBtn}</span>\${guestRow}</li>\`;
     }).join('') + '</ul>');
   }
 
@@ -2016,6 +2076,72 @@ document.getElementById('board').addEventListener('click', async (ev) => {
     await poll();
   } catch (e) { alert('錯誤：' + e.message); b.disabled = false; b.textContent = '×'; }
 });
+
+// v1.0.47 admin 模式編輯 entry
+document.getElementById('board').addEventListener('click', (ev) => {
+  const b = ev.target.closest('.edit-btn'); if (!b) return;
+  const uid = b.dataset.uid; if (!uid) return;
+  openEditEntryModal(uid);
+});
+
+function openEditEntryModal(uid) {
+  const entry = (state.entries || []).find(e => e.user_id === uid);
+  if (!entry) { alert('找不到此筆紀錄'); return; }
+  const data = entry.data || {};
+  const fld = (k) => esc(data[k] != null ? String(data[k]) : '');
+  const d = document.createElement('div');
+  d.className = 'order-modal';
+  d.innerHTML = \`<div class="box">
+    <h3>編輯：<span style="color:#2db87a">\${esc(entry.name)}</span></h3>
+    <label>品項</label><input id="emItem" maxlength="60" value="\${fld('品項')}">
+    <label>甜度</label><input id="emSweet" maxlength="20" value="\${fld('甜度')}" placeholder="無糖／微糖／半糖／少糖／全糖／正常糖">
+    <label>冰塊</label><input id="emIce" maxlength="20" value="\${fld('冰塊')}" placeholder="去冰／微冰／少冰／正常冰／多冰／溫／熱">
+    <label>加料</label><input id="emAddon" maxlength="60" value="\${fld('加料')}" placeholder="例：小珍珠／波霸／椰果（多個用、隔開）">
+    <label>大小</label><input id="emSize" maxlength="10" value="\${fld('大小')}" placeholder="L／M／中／小">
+    <label>備註</label><input id="emNote" maxlength="60" value="\${esc(entry.note || '')}">
+    <label>金額 (price)</label><input id="emPrice" type="number" min="0" max="100000" value="\${entry.price != null ? entry.price : ''}" placeholder="留空 = null">
+    <div class="row-btns"><button id="emCancel">取消</button><button class="primary" id="emOk">儲存</button></div>
+  </div>\`;
+  document.body.appendChild(d);
+  const close = () => { d.classList.add('closing'); setTimeout(() => d.remove(), 200); };
+  d.addEventListener('click', (e) => { if (e.target === d) close(); });
+  d.querySelector('#emCancel').addEventListener('click', close);
+  d.querySelector('#emOk').addEventListener('click', async () => {
+    const okBtn = d.querySelector('#emOk');
+    okBtn.disabled = true; okBtn.textContent = '儲存中…';
+    const newData = {
+      '品項': d.querySelector('#emItem').value.trim(),
+      '甜度': d.querySelector('#emSweet').value.trim(),
+      '冰塊': d.querySelector('#emIce').value.trim(),
+      '加料': d.querySelector('#emAddon').value.trim(),
+      '大小': d.querySelector('#emSize').value.trim(),
+    };
+    // 保留 entry.data 原有的其他欄位（葷素/份量/姓名/身份）
+    for (const k of Object.keys(data)) {
+      if (!Object.prototype.hasOwnProperty.call(newData, k)) {
+        // 不在新表單中的舊欄位原樣保留
+        if (data[k] != null && data[k] !== '') newData[k] = data[k];
+      }
+    }
+    const priceVal = d.querySelector('#emPrice').value;
+    const payload = {
+      userId: uid,
+      data: newData,
+      note: d.querySelector('#emNote').value.trim() || null,
+      price: priceVal === '' ? null : +priceVal,
+    };
+    try {
+      const r = await fetch('/api/t/${task.id}/quick-entry', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const j = await r.json();
+      if (!r.ok) { alert('儲存失敗：' + (j.error || r.status)); okBtn.disabled = false; okBtn.textContent = '儲存'; return; }
+      close();
+      await poll();
+    } catch (e) { alert('錯誤：' + e.message); okBtn.disabled = false; okBtn.textContent = '儲存'; }
+  });
+}
 
 ${closed ? '' : 'setInterval(async () => { await poll(); if (typeof loadMenu === "function") loadMenu(); }, 5000);'}
 

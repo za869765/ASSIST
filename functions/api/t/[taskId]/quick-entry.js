@@ -111,6 +111,55 @@ export async function onRequestPost({ env, params, request }) {
   return json({ ok: true });
 }
 
+// v1.0.47 管理員編輯：改 entry 的 data（品項/甜度/冰塊/加料/大小）+ price + note
+// PATCH body: { userId, data?: {品項?, 甜度?, 冰塊?, 加料?, 大小?, 葷素?, 份量?, ...}, price?, note? }
+//   - data 只覆蓋有提供的欄位（partial update）；要清空某欄位請給空字串
+//   - price 給 null 清空；不給就不變
+//   - note 給空字串清空
+//   - 同 quick-entry.js 其他 method 不額外 admin gate（看板 admin 模式可直接呼叫）
+export async function onRequestPatch({ env, params, request }) {
+  const taskId = +params.taskId;
+  if (!taskId) return json({ error: 'bad taskId' }, 400);
+  const body = await request.json().catch(() => ({}));
+  const userId = String(body.userId || '').trim();
+  if (!userId) return json({ error: 'missing userId' }, 400);
+
+  const row = await env.DB.prepare(
+    `SELECT id, data_json, price, note FROM entries WHERE task_id = ? AND user_id = ?`
+  ).bind(taskId, userId).first();
+  if (!row) return json({ error: 'entry not found' }, 404);
+
+  let data; try { data = JSON.parse(row.data_json || '{}'); } catch { data = {}; }
+  if (body.data && typeof body.data === 'object') {
+    for (const k of Object.keys(body.data)) {
+      const v = body.data[k];
+      if (v === null || v === undefined || v === '') {
+        delete data[k];
+      } else {
+        data[k] = String(v).slice(0, 60);
+      }
+    }
+  }
+
+  let newPrice = row.price;
+  if (Object.prototype.hasOwnProperty.call(body, 'price')) {
+    if (body.price === null || body.price === '') newPrice = null;
+    else if (!isNaN(+body.price) && +body.price >= 0 && +body.price <= 100000) newPrice = +body.price;
+    else return json({ error: 'bad price' }, 400);
+  }
+
+  let newNote = row.note;
+  if (Object.prototype.hasOwnProperty.call(body, 'note')) {
+    newNote = body.note == null ? null : String(body.note).slice(0, 60) || null;
+  }
+
+  await env.DB.prepare(
+    `UPDATE entries SET data_json = ?, price = ?, note = ?, updated_at = datetime('now') WHERE id = ?`
+  ).bind(JSON.stringify(data), newPrice, newNote, row.id).run();
+
+  return json({ ok: true, id: row.id, data, price: newPrice, note: newNote });
+}
+
 // 管理員刪除：只允許刪看板建立的 entry（user_id 前綴 web:<taskId>:）
 // 不動 LINE 真人資料
 export async function onRequestDelete({ env, params, request }) {
