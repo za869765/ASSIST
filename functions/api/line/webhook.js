@@ -775,8 +775,37 @@ async function doCloseTask(env, picked, replyToken) {
     ? `\n\n⚠️ 未分區（${unassigned.length} 人）：${unassigned.join('、')}\n→ /admin/zones 可手動分區`
     : '';
 
+  // v1.0.61 應付明細摘要（飲料/折/袋子/應收 + 每人折讓 + 補差人數）
+  let shareLine = '';
+  if (buy5 || sharedAddon) {
+    const payers = entries.filter(e => !(e.note === '請假' || e.note === '不吃') && +e.price > 0);
+    const nPayers = payers.length;
+    if (nPayers > 0) {
+      const totalItems = payers.reduce((s, e) => s + (+e.price || 0), 0);
+      let discount = 0;
+      if (buy5 && nPayers >= 6) {
+        const sorted = [...payers].sort((a, b) => (+a.price) - (+b.price));
+        for (let i = 0; i + 6 <= sorted.length; i += 6) discount += +sorted[i + 5].price || 0;
+      }
+      const payable = totalItems - discount + sharedAddon;
+      const dpp = Math.ceil(discount / nPayers);
+      const bagShareFloat = sharedAddon / nPayers;
+      const sumBase = payers.reduce((s, e) => s + Math.floor((+e.price || 0) - dpp + bagShareFloat), 0);
+      const remainder = payable - sumBase;
+      const bagOffset = Math.min(Math.max(0, remainder), sharedAddon);
+      const realExtra = Math.max(0, remainder - bagOffset);
+      const parts = [`飲料 $${totalItems}`];
+      if (discount) parts.push(`− 買五送一 $${discount}`);
+      if (sharedAddon) parts.push(`+ 袋子 $${sharedAddon}`);
+      parts.push(`= 應收 $${payable}`);
+      shareLine = `\n\n💰 應付明細\n${parts.join(' ')}\n每人折讓 $${dpp}`;
+      if (bagOffset) shareLine += `；${bagOffset} 人分擔袋子 $1`;
+      if (realExtra) shareLine += `；${realExtra} 人補差 $1 (記輪序)`;
+    }
+  }
+
   await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [
-    { type: 'text', text: `✅ 任務「${picked.task_name}」已結單\n\n${aggText}${unassignedLine}\n\n📎 完整明細下載：\n${dlUrl}\n⏰ 連結在 ${tpeExpire}（台北時間）前有效，可多人重複下載` },
+    { type: 'text', text: `✅ 任務「${picked.task_name}」已結單\n\n${aggText}${shareLine}${unassignedLine}\n\n📎 完整明細下載：\n${dlUrl}\n⏰ 連結在 ${tpeExpire}（台北時間）前有效，可多人重複下載` },
   ]);
 }
 
