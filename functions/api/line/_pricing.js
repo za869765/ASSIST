@@ -171,8 +171,10 @@ export function computePricing(task, entries) {
   };
 }
 
-// v1.0.48 買五送一：對 valid entries（已過濾請假）按 price 升序分組，
-//   每 6 杯一組，組內最便宜（即 sorted 第 1 個）標記為 free
+// v1.0.51 買五送一規則（依實際白巷子店家規則修正）：
+//   對 valid entries（已過濾請假）按 price 升序分組，每 6 杯一組
+//   組內【最貴】那杯免費（即 sorted 第 6 個 = i+5）
+//   注意：只有完整 6 杯才送，剩餘不足 6 不送
 // 輸入：entries（含 id 與 price）
 // 輸出：{ freeIds: Set<entry.id>, discount: number, groupsApplied: number }
 export function applyBuy5Get1(entries) {
@@ -182,13 +184,12 @@ export function applyBuy5Get1(entries) {
   const freeIds = new Set();
   let discount = 0;
   let groupsApplied = 0;
-  // 整批排序後，每 6 個為一組，組內最便宜（i*6）免費
-  // 注意：只有完整 6 杯才送，剩餘不足 6 不送
   for (let i = 0; i + 6 <= sorted.length; i += 6) {
-    const cheapest = sorted[i];
-    if (cheapest && cheapest.id != null) {
-      freeIds.add(cheapest.id);
-      discount += +cheapest.price || 0;
+    // 組內最貴 = sorted[i+5]（每 6 杯一組的最後一個）
+    const mostExpensive = sorted[i + 5];
+    if (mostExpensive && mostExpensive.id != null) {
+      freeIds.add(mostExpensive.id);
+      discount += +mostExpensive.price || 0;
       groupsApplied++;
     }
   }

@@ -75,14 +75,15 @@ export async function onRequestGet({ env, params }) {
 
   // 算飲料合計與買五送一折扣
   const totalItems = payers.reduce((s, e) => s + e.price, 0);
+  // v1.0.51 買五送一規則：組內【最貴】那杯免費（sorted[i+5]）
   let discount = 0;
   const freeIds = new Set();
   if (buy5 && n >= 6) {
     const sorted = [...payers].sort((a, b) => a.price - b.price);
     for (let i = 0; i + 6 <= sorted.length; i += 6) {
-      const cheapest = sorted[i];
-      freeIds.add(cheapest.id);
-      discount += cheapest.price;
+      const mostExpensive = sorted[i + 5];
+      freeIds.add(mostExpensive.id);
+      discount += mostExpensive.price;
     }
   }
 

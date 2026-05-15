@@ -629,11 +629,12 @@ async function updateOverpayBalance(env, picked, entries) {
   if (n === 0) return;
 
   const totalItems = payers.reduce((s, e) => s + (+e.price || 0), 0);
+  // v1.0.51 買五送一規則：組內【最貴】那杯免費（sorted[i+5]）
   let discount = 0;
   if (buy5 && n >= 6) {
     const sorted = [...payers].sort((a, b) => (+a.price) - (+b.price));
     for (let i = 0; i + 6 <= sorted.length; i += 6) {
-      discount += +sorted[i].price || 0;
+      discount += +sorted[i + 5].price || 0;
     }
   }
   const payable = totalItems - discount + sharedAddon;

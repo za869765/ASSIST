@@ -1635,7 +1635,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.50</span>
+  <span style="opacity:.6">v1.0.51</span>
 </div>
 
 <div class="admin-row">
@@ -1896,7 +1896,7 @@ async function toggleBuy5Get1(ev) {
     chk.disabled = false;
   }
 }
-// v1.0.48 計算買五送一折扣（client side）
+// v1.0.51 計算買五送一折扣（client side）— 規則改為「組內最貴免費」
 // 回傳 { freeIds: Set<user_id>, discount: number }
 function computeBuy5Get1(entries) {
   if (!state.task || !state.task.buy5_get1) return { freeIds: new Set(), discount: 0 };
@@ -1905,10 +1905,10 @@ function computeBuy5Get1(entries) {
   const freeIds = new Set();
   let discount = 0;
   for (let i = 0; i + 6 <= sorted.length; i += 6) {
-    const cheapest = sorted[i];
-    if (cheapest) {
-      freeIds.add(cheapest.user_id);
-      discount += +cheapest.price || 0;
+    const mostExpensive = sorted[i + 5]; // 組內最貴
+    if (mostExpensive) {
+      freeIds.add(mostExpensive.user_id);
+      discount += +mostExpensive.price || 0;
     }
   }
   return { freeIds, discount };
