@@ -143,6 +143,9 @@ export async function onRequestGet({ env, params }) {
     if (i < bagOffset) bagPayerIds.add(p.id);
   }
 
+  // v1.0.57 拆解每人應付：原價 − 折讓 + 袋子分擔
+  // discount_share = round(entry.price × discount / totalItems) — 該人享受的折扣金額
+  // bag_extra = 1 元（若該人 role=bag/extra）或 0
   const per_entry = entries.map(e => {
     if (e.isLeave) return { user_id: e.user_id, name: e.name, price: 0, due: 0, role: 'skip' };
     if (e.price <= 0) return { user_id: e.user_id, name: e.name, price: 0, due: 0, role: 'skip' };
@@ -150,11 +153,15 @@ export async function onRequestGet({ env, params }) {
     const pb = payerBases.find(x => x.id === e.id);
     const isExtra = extraIds.has(e.id);
     const isBagPayer = bagPayerIds.has(e.id);
+    const discountShare = totalItems > 0 ? Math.round(e.price * discount / totalItems) : 0;
+    const bagExtra = isExtra ? 1 : 0;
     return {
       user_id: e.user_id,
       name: e.name,
       price: e.price,
       free: isFree,
+      discount_share: discountShare,
+      bag_extra: bagExtra,
       base: pb ? pb.base : 0,
       due: pb ? (isExtra ? pb.base + 1 : pb.base) : 0,
       role: isExtra ? (isBagPayer ? 'bag' : 'extra') : 'base',
