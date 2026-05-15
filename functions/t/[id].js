@@ -1635,7 +1635,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.54</span>
+  <span style="opacity:.6">v1.0.55</span>
 </div>
 
 <div class="admin-row">
@@ -1914,26 +1914,42 @@ function computeBuy5Get1(entries) {
   return { freeIds, discount };
 }
 
-// v1.0.50 應付明細 HTML（從 server 端 share-details endpoint 拿來的資料）
+// v1.0.50/55 應付明細 HTML（從 server 端 share-details endpoint 拿來的資料）
+// v1.0.55 表格擴充：姓名 / 原價 / 應付 / 標記（買五送一免費 / 多付 / 袋子分擔）
 function shareDetailsHtml() {
   const sd = state.shareDetails;
   if (!sd || !sd.n_payers || !sd.payable) return '';
   const rows = (sd.per_entry || []).filter(p => p.role !== 'skip').map(p => {
-    const badge = p.role === 'overpay'
-      ? '<span style="color:#d4543a;font-weight:600">多付 🔴</span>'
-      : (p.role === 'bag' ? '<span style="color:#d4a13a;font-weight:600">袋子 🛍</span>' : '');
-    const bal = p.balance_before > 0 ? \`<small style="color:#888">（累計多付 \${p.balance_before}）</small>\` : '';
-    return \`<tr><td style="padding:3px 6px">\${esc(p.name)} \${bal}</td><td style="text-align:right;padding:3px 6px"><b>$\${p.due}</b></td><td style="padding:3px 6px">\${badge}</td></tr>\`;
+    // 原價欄：若該人享買五送一免費，劃線標「免費 🎁」
+    const priceCell = p.free
+      ? \`<s style="opacity:.5">$\${p.price}</s> <span style="color:#d4a13a;font-weight:600">免費🎁</span>\`
+      : \`$\${p.price}\`;
+    // 標記欄：多付（含袋子分擔/真正多付）
+    let badge = '';
+    if (p.role === 'bag') badge = '<span style="color:#d4a13a;font-weight:600">+$1（分擔袋子🛍）</span>';
+    else if (p.role === 'overpay') badge = '<span style="color:#d4543a;font-weight:600">+$1（多付🔴）</span>';
+    const bal = p.balance_before > 0 ? \`<small style="color:#888;display:block">累計多付 \${p.balance_before}</small>\` : '';
+    return \`<tr>
+      <td style="padding:3px 6px">\${esc(p.name)}\${bal}</td>
+      <td style="text-align:right;padding:3px 6px;color:var(--text-dim)">\${priceCell}</td>
+      <td style="text-align:right;padding:3px 6px"><b>$\${p.due}</b></td>
+      <td style="padding:3px 6px">\${badge}</td>
+    </tr>\`;
   }).join('');
-  const breakdown = \`飲料 $\${sd.total_items}\${sd.discount ? ' − 折 $' + sd.discount : ''}\${sd.shared_addon ? ' + 袋子 $' + sd.shared_addon : ''} = <b>應收 $\${sd.payable}</b>\`;
+  const breakdown = \`飲料原價 $\${sd.total_items}\${sd.discount ? ' − 買五送一 −$' + sd.discount : ''}\${sd.shared_addon ? ' + 共同袋子 $' + sd.shared_addon : ''} = <b>應收 $\${sd.payable}</b>\`;
   const avgNote = sd.remainder
-    ? \`平均 $\${sd.base}/人，\${sd.remainder} 人多付 $1\${sd.bag_offset ? '（其中 ' + sd.bag_offset + ' 元算袋子共擔）' : ''}\${sd.real_overpay ? '，真正多付 ' + sd.real_overpay + ' 人記輪序' : ''}\`
+    ? \`平均 $\${sd.base}/人，\${sd.remainder} 人多付 $1\${sd.bag_offset ? '（其中 ' + sd.bag_offset + ' 人分擔袋子 $1）' : ''}\${sd.real_overpay ? '，真正多付 ' + sd.real_overpay + ' 人記輪序' : ''}\`
     : \`平均 $\${sd.base}/人（剛好整除）\`;
   return \`<div class="share-details" style="margin-top:14px;padding:10px 12px;background:rgba(120,150,180,.06);border:1px solid rgba(120,150,180,.25);border-radius:6px">
     <b style="font-size:13px">📊 應付明細</b>
     <div style="font-size:12px;line-height:1.7;margin:4px 0 8px;color:var(--text-dim)">\${breakdown}<br>\${avgNote}</div>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead><tr><th style="text-align:left;padding:3px 6px;border-bottom:1px solid rgba(120,150,180,.3)">姓名</th><th style="text-align:right;padding:3px 6px;border-bottom:1px solid rgba(120,150,180,.3)">應付</th><th style="text-align:left;padding:3px 6px;border-bottom:1px solid rgba(120,150,180,.3)">標記</th></tr></thead>
+      <thead><tr>
+        <th style="text-align:left;padding:3px 6px;border-bottom:1px solid rgba(120,150,180,.3)">姓名</th>
+        <th style="text-align:right;padding:3px 6px;border-bottom:1px solid rgba(120,150,180,.3)">原價</th>
+        <th style="text-align:right;padding:3px 6px;border-bottom:1px solid rgba(120,150,180,.3)">應付</th>
+        <th style="text-align:left;padding:3px 6px;border-bottom:1px solid rgba(120,150,180,.3)">說明</th>
+      </tr></thead>
       <tbody>\${rows}</tbody>
     </table>
   </div>\`;
@@ -2169,9 +2185,15 @@ function render() {
   }
 
   const total = entries.reduce((s, e) => s + (e.price || 0), 0);
+  // v1.0.55 分區模式合計也要加共同袋子（之前 v1.0.53 只修了不分區那分支）
+  const sharedAddon2 = +(state.task && state.task.shared_addon) || 0;
   if (total) {
-    if (discount > 0) {
-      parts.push(\`<div class="total">原 $\${total} − 買五送一 −$\${discount} = <b>應收 $\${total - discount}</b></div>\`);
+    if (discount > 0 || sharedAddon2 > 0) {
+      let breakdown = \`原 $\${total}\`;
+      if (discount > 0) breakdown += \` − 買五送一 −$\${discount}\`;
+      if (sharedAddon2 > 0) breakdown += \` + 袋子 +$\${sharedAddon2}\`;
+      breakdown += \` = <b>應收 $\${total - discount + sharedAddon2}</b>\`;
+      parts.push(\`<div class="total">\${breakdown}</div>\`);
     } else {
       parts.push(\`<div class="total">合計：$\${total}</div>\`);
     }
