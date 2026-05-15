@@ -1,9 +1,11 @@
 // 按 task 的 menu_json 重算所有 entries 的 price
 // v1.0.44 修 menu OCR 抽 M 價導致 entries.price 殘留錯誤的問題
+// v1.0.45 加料金額也納入：base (品項 L 價) + Σ addon (data.加料 對應 menu 加料 price)
 // POST /api/admin/tasks/<id>/reprice
-//   - 比對 menu_json 中的品項名稱 → 取 price 覆寫 entries.price
-//   - 不處理加料額外加價（加料金額目前不在 menu_json 中）
-//   - 不修改沒 data.品項 的 entry、不修改菜單外的品項
+//   - 比對 menu_json 中 category!=加料 的品項 → 取為 base price
+//   - 比對 menu_json 中 category=加料 的品項 → 取為 addon price 表
+//   - data.加料 用「、，,／/」拆 token 分別查 addon 表加總
+//   - 沒 data.品項、不在菜單的品項、加料找不到都會記在 details
 import { requireAdminPass } from '../../../line/_lib.js';
 
 function deny() { return new Response('forbidden', { status: 403 }); }
@@ -28,11 +30,17 @@ export async function onRequestPost({ request, env, params }) {
   if (!Array.isArray(menu) || !menu.length) return json({ error: '菜單為空' }, 400);
 
   const norm = (s) => String(s || '').replace(/\s+/g, '').toLowerCase();
-  const menuMap = new Map();
+  const baseMap = new Map();   // 飲料/正常品項 price
+  const addonMap = new Map();  // 加料 price
   for (const it of menu) {
-    if (it.name && it.price != null) menuMap.set(norm(it.name), +it.price);
+    if (!it.name || it.price == null) continue;
+    if (String(it.category || '') === '加料') {
+      addonMap.set(norm(it.name), +it.price);
+    } else {
+      baseMap.set(norm(it.name), +it.price);
+    }
   }
-  if (!menuMap.size) return json({ error: '菜單沒有任何含價格的品項' }, 400);
+  if (!baseMap.size) return json({ error: '菜單沒有任何含價格的基本品項' }, 400);
 
   const entries = await env.DB.prepare(
     `SELECT id, data_json, price FROM entries WHERE task_id = ?`
@@ -48,17 +56,39 @@ export async function onRequestPost({ request, env, params }) {
     let data; try { data = JSON.parse(e.data_json || '{}'); } catch { data = {}; }
     const item = data['品項'];
     if (!item) { skippedNoItem++; continue; }
-    const menuPrice = menuMap.get(norm(item));
-    if (menuPrice == null) {
+    const basePrice = baseMap.get(norm(item));
+    if (basePrice == null) {
       skippedNotInMenu++;
       details.push({ id: e.id, item, old: e.price, new: null, reason: 'not in menu' });
       continue;
     }
-    if (+menuPrice === +e.price) { unchanged++; continue; }
+    // v1.0.45: 計算加料加總（data.加料 可能有多個用「、，,／/」分隔）
+    const addonStr = data['加料'] || '';
+    const addonTokens = String(addonStr).split(/[、,，／/\s]+/).map(t => t.trim()).filter(Boolean);
+    const addonHits = [];
+    const addonMissed = [];
+    let addonSum = 0;
+    for (const t of addonTokens) {
+      const ap = addonMap.get(norm(t));
+      if (ap != null) {
+        addonSum += ap;
+        addonHits.push({ name: t, price: ap });
+      } else {
+        addonMissed.push(t);
+      }
+    }
+    const newPrice = basePrice + addonSum;
+    if (newPrice === +e.price) {
+      unchanged++;
+      if (addonHits.length || addonMissed.length) {
+        details.push({ id: e.id, item, base: basePrice, addons: addonHits, addons_missed: addonMissed, old: e.price, new: newPrice, note: 'unchanged' });
+      }
+      continue;
+    }
     await env.DB.prepare(`UPDATE entries SET price = ?, updated_at = datetime('now') WHERE id = ?`)
-      .bind(menuPrice, e.id).run();
+      .bind(newPrice, e.id).run();
     updated++;
-    details.push({ id: e.id, item, old: e.price, new: menuPrice });
+    details.push({ id: e.id, item, base: basePrice, addons: addonHits, addons_missed: addonMissed, old: e.price, new: newPrice });
   }
 
   return json({
@@ -68,6 +98,7 @@ export async function onRequestPost({ request, env, params }) {
     unchanged,
     skipped_no_item: skippedNoItem,
     skipped_not_in_menu: skippedNotInMenu,
+    addon_items_in_menu: addonMap.size,
     details,
   });
 }
