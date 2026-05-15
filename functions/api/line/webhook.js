@@ -609,8 +609,9 @@ async function doExportInProgress(env, tasks, replyToken) {
   }]);
 }
 
-// v1.0.50 結單時更新「真正多付」的人到 group_member_balance（跨任務輪序累計）
-//   買五送一 + 共同袋子 + 平均分攤後，餘數 R 個人多付 1 元；其中 bagOffset = min(R, shared_addon) 個算「袋子共擔」不計；剩下 realOverpay 個才記到 D1
+// v1.0.50/56 結算時更新「補差」的人到 group_member_balance（跨任務輪序累計）
+//   v1.0.56 新算法：每人 = entry.price × (totalItems-discount)/totalItems + sharedAddon/n
+//   floor + 餘數 R 個人 +$1；其中 bagOffset = min(R, shared_addon) 算袋子分擔（不記）、後 realExtra 算補差（記 D1）
 //   靜默失敗：migration 未跑/D1 錯誤都 catch 不擋結單流程
 async function updateOverpayBalance(env, picked, entries) {
   if (!picked.group_id) return;
@@ -629,7 +630,7 @@ async function updateOverpayBalance(env, picked, entries) {
   if (n === 0) return;
 
   const totalItems = payers.reduce((s, e) => s + (+e.price || 0), 0);
-  // v1.0.51 買五送一規則：組內【最貴】那杯免費（sorted[i+5]）
+  // 買五送一規則：組內【最貴】那杯免費（sorted[i+5]）
   let discount = 0;
   if (buy5 && n >= 6) {
     const sorted = [...payers].sort((a, b) => (+a.price) - (+b.price));
@@ -640,13 +641,20 @@ async function updateOverpayBalance(env, picked, entries) {
   const payable = totalItems - discount + sharedAddon;
   if (payable <= 0) return;
 
-  const base = Math.floor(payable / n);
-  const remainder = payable - base * n;
-  const bagOffset = Math.min(remainder, sharedAddon);
-  const realOverpay = Math.max(0, remainder - bagOffset);
-  if (realOverpay === 0) return;
+  // v1.0.56 算每人 floor 應付（按比例 + 袋子均分）
+  const ratio = totalItems > 0 ? (totalItems - discount) / totalItems : 1;
+  const bagShareFloat = n > 0 ? sharedAddon / n : 0;
+  const payerBases = payers.map(e => {
+    const theory = (+e.price || 0) * ratio + bagShareFloat;
+    return { ...e, base: Math.floor(theory) };
+  });
+  const sumBase = payerBases.reduce((s, p) => s + p.base, 0);
+  const remainder = payable - sumBase;
+  const bagOffset = Math.min(Math.max(0, remainder), sharedAddon);
+  const realExtra = Math.max(0, remainder - bagOffset);
+  if (realExtra === 0) return;
 
-  // 讀現有 balance，挑「累計多付最少」的人
+  // 讀現有 balance，挑「累計補差最少」的人
   const balanceMap = new Map();
   try {
     const br = await env.DB.prepare(
@@ -657,14 +665,14 @@ async function updateOverpayBalance(env, picked, entries) {
     }
   } catch { return; }
 
-  const sortedPayers = [...payers].sort((a, b) => {
+  const sortedPayers = [...payerBases].sort((a, b) => {
     const ba = balanceMap.get(a.user_id) || 0;
     const bb = balanceMap.get(b.user_id) || 0;
     if (ba !== bb) return ba - bb;
     return String(a.user_id).localeCompare(String(b.user_id));
   });
-  // 跳過袋子 bagOffset 個，後面 realOverpay 個是「真正多付」記 D1
-  for (let i = bagOffset; i < bagOffset + realOverpay; i++) {
+  // 跳過袋子 bagOffset 個，後 realExtra 個是「補差」記 D1
+  for (let i = bagOffset; i < bagOffset + realExtra; i++) {
     const p = sortedPayers[i];
     if (!p) break;
     try {

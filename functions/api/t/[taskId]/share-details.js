@@ -91,17 +91,20 @@ export async function onRequestGet({ env, params }) {
   if (n === 0) {
     return json({
       total_items: totalItems, discount, shared_addon: sharedAddon, payable,
-      n_payers: 0, base: 0, remainder: 0, bag_offset: 0, real_overpay: 0,
+      n_payers: 0, remainder: 0, bag_offset: 0, real_extra: 0,
       per_entry: entries.map(e => ({ user_id: e.user_id, name: e.name, price: e.price, due: 0, role: 'skip' })),
     });
   }
 
-  const base = Math.floor(payable / n);
-  const remainder = payable - base * n; // 0 ~ n-1
-  const bagOffset = Math.min(remainder, sharedAddon);
-  const realOverpay = Math.max(0, remainder - bagOffset);
+  // v1.0.56 新算法：個人付自己訂的 × 折扣比例 + 袋子平均
+  //   theory = entry.price × (totalItems - discount) / totalItems + sharedAddon / n
+  //   base = floor(theory)
+  //   餘數 = payable - sum(base) → N 人 +$1（從累計補差最少的人挑，公平輪序）
+  //   其中前 bagOffset 個算「分擔袋子」（不記補差清單）、後 realExtra 個算「補差」記輪序
+  const ratio = totalItems > 0 ? (totalItems - discount) / totalItems : 1;
+  const bagShareFloat = n > 0 ? sharedAddon / n : 0;
 
-  // 跨任務多付累計（讀 D1）；若 migration 未跑就空 map
+  // 跨任務補差累計（讀 D1）；若 migration 未跑就空 map
   const balanceMap = new Map();
   if (task.group_id) {
     try {
@@ -114,20 +117,29 @@ export async function onRequestGet({ env, params }) {
     } catch {}
   }
 
-  // 排序：累計多付最少 → 多 → 同分依名字
-  // 從前 `remainder` 個挑出來「+1 元」（前 bagOffset 個算袋子、後 realOverpay 個算真多付）
-  const sortedPayers = [...payers].sort((a, b) => {
+  // 算每人 floor 應付
+  const payerBases = payers.map(e => {
+    const theory = e.price * ratio + bagShareFloat;
+    return { ...e, theory, base: Math.floor(theory) };
+  });
+  const sumBase = payerBases.reduce((s, p) => s + p.base, 0);
+  const remainder = payable - sumBase; // 多少人要 +$1 才湊到 payable
+  const bagOffset = Math.min(Math.max(0, remainder), sharedAddon);
+  const realExtra = Math.max(0, remainder - bagOffset);
+
+  // 排序：累計補差最少 → 多 → 同分按 user_id 字典序（穩定）
+  const sortedPayers = [...payerBases].sort((a, b) => {
     const ba = balanceMap.get(a.user_id) || 0;
     const bb = balanceMap.get(b.user_id) || 0;
     if (ba !== bb) return ba - bb;
-    return String(a.name).localeCompare(String(b.name), 'zh-Hant');
+    return String(a.user_id).localeCompare(String(b.user_id));
   });
-  const overpayIds = new Set(); // payer.id 集合：付 base+1
-  const bagPayerIds = new Set(); // 其中 bagOffset 個算袋子（不記多付）
+  const extraIds = new Set();  // 付 base+$1 的人
+  const bagPayerIds = new Set(); // 其中算「分擔袋子」的（不記補差）
   for (let i = 0; i < remainder; i++) {
     const p = sortedPayers[i];
     if (!p) break;
-    overpayIds.add(p.id);
+    extraIds.add(p.id);
     if (i < bagOffset) bagPayerIds.add(p.id);
   }
 
@@ -135,15 +147,17 @@ export async function onRequestGet({ env, params }) {
     if (e.isLeave) return { user_id: e.user_id, name: e.name, price: 0, due: 0, role: 'skip' };
     if (e.price <= 0) return { user_id: e.user_id, name: e.name, price: 0, due: 0, role: 'skip' };
     const isFree = freeIds.has(e.id);
-    const isOverpay = overpayIds.has(e.id);
+    const pb = payerBases.find(x => x.id === e.id);
+    const isExtra = extraIds.has(e.id);
     const isBagPayer = bagPayerIds.has(e.id);
     return {
       user_id: e.user_id,
       name: e.name,
       price: e.price,
       free: isFree,
-      due: isOverpay ? base + 1 : base,
-      role: isOverpay ? (isBagPayer ? 'bag' : 'overpay') : 'base',
+      base: pb ? pb.base : 0,
+      due: pb ? (isExtra ? pb.base + 1 : pb.base) : 0,
+      role: isExtra ? (isBagPayer ? 'bag' : 'extra') : 'base',
       balance_before: balanceMap.get(e.user_id) || 0,
     };
   });
@@ -154,10 +168,11 @@ export async function onRequestGet({ env, params }) {
     shared_addon: sharedAddon,
     payable,
     n_payers: n,
-    base,
+    discount_ratio: +(ratio).toFixed(4),
+    bag_share: +(bagShareFloat).toFixed(4),
     remainder,
     bag_offset: bagOffset,
-    real_overpay: realOverpay,
+    real_extra: realExtra,
     per_entry,
   });
 }
