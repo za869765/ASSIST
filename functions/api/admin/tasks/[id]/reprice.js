@@ -62,14 +62,36 @@ export async function onRequestPost({ request, env, params }) {
       details.push({ id: e.id, item, old: e.price, new: null, reason: 'not in menu' });
       continue;
     }
-    // v1.0.45: 計算加料加總（data.加料 可能有多個用「、，,／/」分隔）
-    const addonStr = data['加料'] || '';
-    const addonTokens = String(addonStr).split(/[、,，／/\s]+/).map(t => t.trim()).filter(Boolean);
+    // v1.0.45/54: 計算加料加總
+    //   優先取 data['加料']；若該欄空，掃 data 所有 value（除品項/甜度/冰塊/大小等基本欄位）
+    //   把每個 value 拆 token 試 match 加料 menu_json
+    //   這樣 Gemini extract 把「珍珠」放到 data['加購'] 或別的 key 也能算到
+    const KNOWN_NON_ADDON = new Set(['品項', '甜度', '冰塊', '大小', '葷素', '份量', '飯量', '辣度', '備註', '忌口', '姓名', '身份']);
+    const addonValues = [];
+    if (data['加料']) {
+      addonValues.push(String(data['加料']));
+    } else {
+      // fallback：掃其他非基本欄位的 value
+      for (const k of Object.keys(data)) {
+        if (KNOWN_NON_ADDON.has(k)) continue;
+        const v = data[k];
+        if (v && typeof v === 'string') addonValues.push(v);
+      }
+    }
+    const addonTokens = addonValues.flatMap(s => String(s).split(/[、,，／/\s]+/).map(t => t.trim()).filter(Boolean));
     const addonHits = [];
     const addonMissed = [];
     let addonSum = 0;
     for (const t of addonTokens) {
-      const ap = addonMap.get(norm(t));
+      // 先精確 match，再 fuzzy（「珍珠」可 match 加料區的「波霸」「小珍珠」「混珠」任一，取 +5）
+      let ap = addonMap.get(norm(t));
+      if (ap == null) {
+        const nt = norm(t);
+        // fuzzy: 看 addonMap 有沒有 key 含 nt 或 nt 含 key
+        for (const [k, v] of addonMap.entries()) {
+          if (k.includes(nt) || nt.includes(k)) { ap = v; break; }
+        }
+      }
       if (ap != null) {
         addonSum += ap;
         addonHits.push({ name: t, price: ap });
