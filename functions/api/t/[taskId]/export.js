@@ -7,9 +7,17 @@ import { listEntries } from '../../line/_tasks.js';
 export async function onRequestGet({ env, params }) {
   const taskId = +params.taskId;
   if (!taskId) return new Response('bad taskId', { status: 400 });
-  const task = await env.DB.prepare(
-    `SELECT id, task_name, mode, group_id, pricing_mode, total_amount, member_subsidy FROM tasks WHERE id = ?`
-  ).bind(taskId).first();
+  // v1.0.58 含 buy5_get1 / shared_addon（容錯：migration 未跑時 fallback）
+  let task;
+  try {
+    task = await env.DB.prepare(
+      `SELECT id, task_name, mode, group_id, pricing_mode, total_amount, member_subsidy, buy5_get1, shared_addon FROM tasks WHERE id = ?`
+    ).bind(taskId).first();
+  } catch {
+    task = await env.DB.prepare(
+      `SELECT id, task_name, mode, group_id, pricing_mode, total_amount, member_subsidy FROM tasks WHERE id = ?`
+    ).bind(taskId).first();
+  }
   if (!task) return new Response('not found', { status: 404 });
   const entries = await listEntries(env.DB, taskId);
   // 撈 zone sort_order 給 buildSheetRows 排序
@@ -26,12 +34,27 @@ export async function onRequestGet({ env, params }) {
       if (g && g.show_zones != null) showZones = +g.show_zones ? 1 : 0;
     } catch {}
   }
+  // v1.0.58 讀 group_member_balance 給應付明細用（公平輪序排序）
+  const balanceMap = new Map();
+  if (task.group_id) {
+    try {
+      const br = await env.DB.prepare(
+        `SELECT user_id, overpaid_count FROM group_member_balance WHERE group_id = ?`
+      ).bind(task.group_id).all();
+      for (const row of (br.results || [])) {
+        balanceMap.set(row.user_id, +row.overpaid_count || 0);
+      }
+    } catch {}
+  }
   const sheet = buildSheetRows(task.task_name, entries, {
     mode: task.mode, zoneOrder,
     pricing_mode: task.pricing_mode,
     total_amount: task.total_amount,
     member_subsidy: task.member_subsidy,
     showZones,
+    buy5_get1: task.buy5_get1 ? 1 : 0,
+    shared_addon: task.shared_addon == null ? 0 : Math.max(0, +task.shared_addon || 0),
+    balanceMap,
   });
   const bytes = buildXLSX(task.task_name.slice(0, 31) || 'sheet', sheet.rows, sheet.mergeRanges);
   const stamp = new Date().toISOString().slice(0, 10);

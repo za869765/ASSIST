@@ -722,12 +722,35 @@ async function doCloseTask(env, picked, replyToken) {
       if (g && g.show_zones != null) showZones = +g.show_zones ? 1 : 0;
     } catch {}
   }
+  // v1.0.58 讀 buy5_get1 / shared_addon / balance 給應付明細用
+  let buy5 = 0, sharedAddon = 0;
+  try {
+    const t2 = await env.DB.prepare(`SELECT buy5_get1, shared_addon FROM tasks WHERE id = ?`).bind(picked.id).first();
+    if (t2) {
+      buy5 = t2.buy5_get1 ? 1 : 0;
+      sharedAddon = t2.shared_addon == null ? 0 : Math.max(0, +t2.shared_addon || 0);
+    }
+  } catch {}
+  const balanceMap = new Map();
+  if (picked.group_id) {
+    try {
+      const br = await env.DB.prepare(
+        `SELECT user_id, overpaid_count FROM group_member_balance WHERE group_id = ?`
+      ).bind(picked.group_id).all();
+      for (const row of (br.results || [])) {
+        balanceMap.set(row.user_id, +row.overpaid_count || 0);
+      }
+    } catch {}
+  }
   const sheet = buildSheetRows(picked.task_name, entries, {
     mode: picked.mode, zoneOrder,
     pricing_mode: picked.pricing_mode,
     total_amount: picked.total_amount,
     member_subsidy: picked.member_subsidy,
     showZones,
+    buy5_get1: buy5,
+    shared_addon: sharedAddon,
+    balanceMap,
   });
   const bytes = buildXLSX(picked.task_name.slice(0, 31) || 'sheet', sheet.rows, sheet.mergeRanges);
   const token = genDownloadToken();
@@ -1618,7 +1641,100 @@ export function buildSheetRows(taskName, entries, opts = {}) {
   // pricing_mode 沒提供或 free_bento 時不算（一律 $0，無計價意義）
   appendPricingBlocks(rows, entries, opts);
 
+  // ⑦ v1.0.58 應付明細區（買五送一 / 共同袋子 / 平均分攤）
+  if (opts.buy5_get1 || opts.shared_addon) {
+    appendShareDetailsBlock(rows, parsed, opts);
+  }
+
   return { rows, mergeRanges };
+}
+
+// v1.0.58 應付明細區（XLSX 結單檔用）
+// 對齊看板的 share-details 邏輯：
+//   payable = sum(price) − 買五送一折扣 + 共同袋子
+//   每人 theory = price × ratio + sharedAddon/n
+//   floor + 餘數 N 人 +$1（其中 bagOffset 算袋子、後 realExtra 算補差）
+function appendShareDetailsBlock(rows, parsed, opts) {
+  const buy5 = !!opts.buy5_get1;
+  const sharedAddon = Math.max(0, +(opts.shared_addon || 0));
+  const balanceMap = opts.balanceMap || new Map();
+  const payers = parsed.filter(p => p && (+p.price || 0) > 0);
+  const n = payers.length;
+  if (n === 0) return;
+
+  const totalItems = payers.reduce((s, p) => s + (+p.price || 0), 0);
+  // 買五送一：sorted[i+5] 組內最貴免費
+  let discount = 0;
+  const freeNames = new Set();
+  if (buy5 && n >= 6) {
+    const sorted = [...payers].sort((a, b) => (+a.price) - (+b.price));
+    for (let i = 0; i + 6 <= sorted.length; i += 6) {
+      const top = sorted[i + 5];
+      discount += +top.price || 0;
+      freeNames.add(top.name + '|' + top.zone + '|' + (+top.price));
+    }
+  }
+  const payable = totalItems - discount + sharedAddon;
+  if (payable <= 0) return;
+
+  const ratio = totalItems > 0 ? (totalItems - discount) / totalItems : 1;
+  const bagShareFloat = n > 0 ? sharedAddon / n : 0;
+  const payerBases = payers.map(p => ({
+    ...p,
+    theory: (+p.price || 0) * ratio + bagShareFloat,
+    base: Math.floor((+p.price || 0) * ratio + bagShareFloat),
+    discountShare: totalItems > 0 ? Math.round((+p.price || 0) * discount / totalItems) : 0,
+  }));
+  const sumBase = payerBases.reduce((s, p) => s + p.base, 0);
+  const remainder = payable - sumBase;
+  const bagOffset = Math.min(Math.max(0, remainder), sharedAddon);
+  const realExtra = Math.max(0, remainder - bagOffset);
+
+  const sortedByBalance = [...payerBases].sort((a, b) => {
+    const ba = balanceMap.get(a.user_id) || 0;
+    const bb = balanceMap.get(b.user_id) || 0;
+    if (ba !== bb) return ba - bb;
+    return String(a.name).localeCompare(String(b.name), 'zh-Hant');
+  });
+  const extraKeys = new Set();
+  const bagPayerKeys = new Set();
+  for (let i = 0; i < remainder; i++) {
+    const p = sortedByBalance[i];
+    if (!p) break;
+    const key = p.name + '|' + p.zone + '|' + (+p.price);
+    extraKeys.add(key);
+    if (i < bagOffset) bagPayerKeys.add(key);
+  }
+
+  rows.push([]);
+  rows.push([`■ 應付明細（買五送一 / 袋子分攤 / 補差輪序）`]);
+  const breakdown = `飲料原價 $${totalItems}` +
+    (discount ? ` − 買五送一 −$${discount}（折 ${((1 - ratio) * 100).toFixed(1)}%）` : '') +
+    (sharedAddon ? ` + 共同袋子 $${sharedAddon}` : '') +
+    ` = 應收 $${payable}`;
+  rows.push([breakdown]);
+  if (remainder > 0) {
+    const note = `每人 = 原價 × (1−${((1 - ratio) * 100).toFixed(1)}%) + 袋子均分` +
+      (bagOffset ? `；${bagOffset} 人分擔袋子 $1` : '') +
+      (realExtra ? `；補差 ${realExtra} 人記輪序` : '');
+    rows.push([note]);
+  }
+  rows.push(['姓名', '原價', '折讓', '袋子分擔', '應付']);
+
+  let totalDue = 0;
+  for (const p of payerBases) {
+    const key = p.name + '|' + p.zone + '|' + (+p.price);
+    const isFree = freeNames.has(key);
+    const isExtra = extraKeys.has(key);
+    const isBag = bagPayerKeys.has(key);
+    const due = p.base + (isExtra ? 1 : 0);
+    totalDue += due;
+    const priceCell = isFree ? `$${p.price}（免費 🎁）` : `$${p.price}`;
+    const discCell = p.discountShare > 0 ? `−$${p.discountShare}` : '$0';
+    const bagCell = isBag ? '+$1（分擔袋子 🛍）' : (isExtra ? '+$1（補差 🔄）' : '$0');
+    rows.push([p.name, priceCell, discCell, bagCell, `$${due}`]);
+  }
+  rows.push(['合計', '', '', '', `$${totalDue}`]);
 }
 
 // v1.0.38 4 模式計價 + 發票區塊（請見 _pricing.js 計價規則）
