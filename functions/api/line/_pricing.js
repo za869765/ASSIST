@@ -171,6 +171,30 @@ export function computePricing(task, entries) {
   };
 }
 
+// v1.0.48 買五送一：對 valid entries（已過濾請假）按 price 升序分組，
+//   每 6 杯一組，組內最便宜（即 sorted 第 1 個）標記為 free
+// 輸入：entries（含 id 與 price）
+// 輸出：{ freeIds: Set<entry.id>, discount: number, groupsApplied: number }
+export function applyBuy5Get1(entries) {
+  const list = (entries || []).filter(e => e && e.note !== '請假' && e.note !== '不吃');
+  // 按 price 升序；無 price 視為 0 排最前
+  const sorted = [...list].sort((a, b) => (+a.price || 0) - (+b.price || 0));
+  const freeIds = new Set();
+  let discount = 0;
+  let groupsApplied = 0;
+  // 整批排序後，每 6 個為一組，組內最便宜（i*6）免費
+  // 注意：只有完整 6 杯才送，剩餘不足 6 不送
+  for (let i = 0; i + 6 <= sorted.length; i += 6) {
+    const cheapest = sorted[i];
+    if (cheapest && cheapest.id != null) {
+      freeIds.add(cheapest.id);
+      discount += +cheapest.price || 0;
+      groupsApplied++;
+    }
+  }
+  return { freeIds, discount, groupsApplied };
+}
+
 // 結算結果可選的中文標籤（XLSX 用）
 export const MODE_LABEL = {
   free_bento: '無菜單便當',

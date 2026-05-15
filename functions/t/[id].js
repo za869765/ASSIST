@@ -2,17 +2,20 @@
 export async function onRequestGet({ params, request, env }) {
   const key = String(params.id || '');
   if (!key) return new Response('Bad id', { status: 400 });
-  let task = await env.DB.prepare(
-    `SELECT id, task_name, mode, status, started_at, closed_at, view_token, group_id, url_slug,
-            pricing_mode, total_amount, member_subsidy
-       FROM tasks WHERE url_slug = ?`
-  ).bind(key).first();
+  // v1.0.48 容錯：buy5_get1 欄位 migration 未跑時 SQL 會炸，先試含欄位，fail 則 fallback
+  const COLS = `id, task_name, mode, status, started_at, closed_at, view_token, group_id, url_slug,
+                pricing_mode, total_amount, member_subsidy`;
+  const COLS_V148 = COLS + ', buy5_get1';
+  async function selectTask(where, bindVal) {
+    try {
+      return await env.DB.prepare(`SELECT ${COLS_V148} FROM tasks WHERE ${where}`).bind(bindVal).first();
+    } catch {
+      return await env.DB.prepare(`SELECT ${COLS} FROM tasks WHERE ${where}`).bind(bindVal).first();
+    }
+  }
+  let task = await selectTask('url_slug = ?', key);
   if (!task && /^\d+$/.test(key)) {
-    task = await env.DB.prepare(
-      `SELECT id, task_name, mode, status, started_at, closed_at, view_token, group_id, url_slug,
-              pricing_mode, total_amount, member_subsidy
-         FROM tasks WHERE id = ?`
-    ).bind(parseInt(key, 10)).first();
+    task = await selectTask('id = ?', parseInt(key, 10));
   }
   if (!task) return new Response('Not found', { status: 404 });
 
@@ -94,6 +97,7 @@ export async function onRequestGet({ params, request, env }) {
       total_amount: task.total_amount,
       member_subsidy: task.member_subsidy,
       show_zones: showZones,
+      buy5_get1: task.buy5_get1 == null ? 0 : (+task.buy5_get1 ? 1 : 0),
     },
     zones,
     entries: entries.map(e => ({
@@ -1626,7 +1630,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.47</span>
+  <span style="opacity:.6">v1.0.48</span>
 </div>
 
 <div class="admin-row">
@@ -1678,7 +1682,7 @@ ${closed ? '' : `<label class="menu-mode-toggle" id="menuModeToggle" style="disp
 </details>
 <div class="items-list" id="menuItems" style="margin:10px 0"></div>`}
 
-${closed ? '' : `<div id="adminBanner" class="admin-banner" style="display:none">🔧 管理員模式：點 ✏️ 編輯、× 刪除、💰 按菜單重算（菜單模式）。<a href="?">離開</a> <button id="repriceBtn" style="margin-left:8px;padding:3px 10px;background:#2db87a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;display:none">💰 按菜單重算金額</button></div>`}
+${closed ? '' : `<div id="adminBanner" class="admin-banner" style="display:none">🔧 管理員模式：點 ✏️ 編輯、× 刪除、💰 按菜單重算（菜單模式）。<a href="?">離開</a> <button id="repriceBtn" style="margin-left:8px;padding:3px 10px;background:#2db87a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;display:none">💰 按菜單重算金額</button> <label style="margin-left:10px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="buy5Get1Chk" style="cursor:pointer">🎁 買五送一</label></div>`}
 ${closed ? '' : `<div id="editPriceBanner" class="admin-banner" style="display:none">📝 編輯模式：點「品項名稱」或「價格」可以改（OCR 亂碼可在這裡修正）。<a href="?">離開</a></div>`}
 ${closed ? '' : `<div id="pricingPanel" class="pricing-panel" style="display:none">
   <strong>💰 計價</strong>
@@ -1823,6 +1827,7 @@ if (IS_ADMIN) {
   const banner = document.getElementById('adminBanner');
   if (banner) banner.style.display = '';
   // v1.0.47: 菜單模式才顯示重算按鈕
+  // v1.0.48: 買五送一 toggle
   setTimeout(() => {
     if (state.task && state.task.mode === 'menu') {
       const btn = document.getElementById('repriceBtn');
@@ -1831,7 +1836,51 @@ if (IS_ADMIN) {
         btn.addEventListener('click', repriceAll);
       }
     }
+    const chk = document.getElementById('buy5Get1Chk');
+    if (chk) {
+      chk.checked = !!(state.task && state.task.buy5_get1);
+      chk.addEventListener('change', toggleBuy5Get1);
+    }
   }, 300);
+}
+async function toggleBuy5Get1(ev) {
+  const chk = ev.target;
+  const on = chk.checked;
+  chk.disabled = true;
+  try {
+    const r = await fetch('/api/t/${task.id}/pricing', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ buy5_get1: on }),
+    });
+    if (!r.ok) {
+      const t = await r.text().catch(() => '');
+      alert('切換失敗：' + t.slice(0, 200));
+      chk.checked = !on;
+      return;
+    }
+    // 更新 state 並重畫
+    if (state.task) state.task.buy5_get1 = on ? 1 : 0;
+    render();
+  } finally {
+    chk.disabled = false;
+  }
+}
+// v1.0.48 計算買五送一折扣（client side）
+// 回傳 { freeIds: Set<user_id>, discount: number }
+function computeBuy5Get1(entries) {
+  if (!state.task || !state.task.buy5_get1) return { freeIds: new Set(), discount: 0 };
+  const list = entries.filter(e => e.note !== '請假' && e.note !== '不吃' && (+e.price || 0) > 0);
+  const sorted = [...list].sort((a, b) => (+a.price || 0) - (+b.price || 0));
+  const freeIds = new Set();
+  let discount = 0;
+  for (let i = 0; i + 6 <= sorted.length; i += 6) {
+    const cheapest = sorted[i];
+    if (cheapest) {
+      freeIds.add(cheapest.user_id);
+      discount += +cheapest.price || 0;
+    }
+  }
+  return { freeIds, discount };
 }
 async function repriceAll() {
   if (!confirm('按菜單 L 大杯價回填每筆 entry.price（base + 加料加總）？')) return;
@@ -1958,6 +2007,8 @@ function render() {
   const { zones, entries } = state;
   const board = document.getElementById('board');
   const isSharedMode = state.task && state.task.pricing_mode === 'shared';
+  // v1.0.48 買五送一：算出免費 entry 的 user_id 集合 + 折扣金額
+  const { freeIds, discount } = computeBuy5Get1(entries);
 
   // v1.0.40 不分區模式：群組設定 show_zones=0 → 直接按 entry 順序列名字，不顯示 zone 標頭
   if (state.task && state.task.show_zones === 0) {
@@ -1968,16 +2019,27 @@ function render() {
       return;
     }
     parts.push('<ul>' + entries.map(e => {
-      const price = e.price ? \`$\${e.price}\` : '';
+      const isFree = freeIds.has(e.user_id);
+      const price = e.price
+        ? (isFree
+            ? \`<span style="text-decoration:line-through;opacity:.5">$\${e.price}</span> <span style="color:#d4a13a;font-weight:600">免費🎁</span>\`
+            : \`$\${e.price}\`)
+        : '';
       const noteShown = e.note && entryBody(e) !== '(未辨識)' ? \`（\${esc(e.note)}）\` : '';
       const isWeb = String(e.user_id || '').startsWith('web:');
       const editBtn = IS_ADMIN ? \`<button class="edit-btn" data-uid="\${esc(e.user_id)}" title="編輯此筆">✏️</button>\` : '';
       const delBtn = IS_ADMIN ? \`<button class="del-btn" data-uid="\${esc(e.user_id)}" data-real="\${isWeb ? '0' : '1'}" title="刪除此筆">×</button>\` : '';
       const guestRow = guestFlagsHtml(e, isSharedMode);
-      return \`<li><span class="who">\${esc(e.name)}</span><span class="body">\${entryBodyHtml(e)}\${noteShown}</span><span class="price">\${esc(price)}\${editBtn}\${delBtn}</span>\${guestRow}</li>\`;
+      return \`<li><span class="who">\${esc(e.name)}</span><span class="body">\${entryBodyHtml(e)}\${noteShown}</span><span class="price">\${price}\${editBtn}\${delBtn}</span>\${guestRow}</li>\`;
     }).join('') + '</ul>');
     const total = entries.reduce((s, e) => s + (e.price || 0), 0);
-    if (total) parts.push(\`<div class="total">合計：$\${total}</div>\`);
+    if (total) {
+      if (discount > 0) {
+        parts.push(\`<div class="total">原 $\${total} − 買五送一 −$\${discount} = <b>應收 $\${total - discount}</b></div>\`);
+      } else {
+        parts.push(\`<div class="total">合計：$\${total}</div>\`);
+      }
+    }
     board.innerHTML = parts.join('');
     bindGuestFlagListeners();
     document.getElementById('statLine').textContent = \`共 \${entries.length} 筆\`;
@@ -2025,19 +2087,30 @@ function render() {
     parts.push(\`<h2 class="\${headerClass}"><span>\${codeHtml}\${esc(g.zone.name)}\${inOfficeTag}\${isUnassigned ? ' ⚠️' : ''}\${emptyTag}</span>\${capNote}</h2>\`);
     if (g.list.length === 0) continue;
     parts.push('<ul>' + g.list.map(e => {
-      const price = e.price ? \`$\${e.price}\` : '';
+      const isFree = freeIds.has(e.user_id);
+      const price = e.price
+        ? (isFree
+            ? \`<span style="text-decoration:line-through;opacity:.5">$\${e.price}</span> <span style="color:#d4a13a;font-weight:600">免費🎁</span>\`
+            : \`$\${e.price}\`)
+        : '';
       const noteShown = e.note && entryBody(e) !== '(未辨識)' ? \`（\${esc(e.note)}）\` : '';
       const idLine = isUnassigned ? \`<div class="uid-row">\${esc(e.user_id)}</div>\` : '';
       const isWeb = String(e.user_id || '').startsWith('web:');
       const editBtn = IS_ADMIN ? \`<button class="edit-btn" data-uid="\${esc(e.user_id)}" title="編輯此筆">✏️</button>\` : '';
       const delBtn = IS_ADMIN ? \`<button class="del-btn" data-uid="\${esc(e.user_id)}" data-real="\${isWeb ? '0' : '1'}" title="刪除此筆">×</button>\` : '';
       const guestRow = guestFlagsHtml(e, isSharedMode);
-      return \`<li><span class="who">\${esc(e.name)}\${idLine}</span><span class="body">\${entryBodyHtml(e)}\${noteShown}</span><span class="price">\${esc(price)}\${editBtn}\${delBtn}</span>\${guestRow}</li>\`;
+      return \`<li><span class="who">\${esc(e.name)}\${idLine}</span><span class="body">\${entryBodyHtml(e)}\${noteShown}</span><span class="price">\${price}\${editBtn}\${delBtn}</span>\${guestRow}</li>\`;
     }).join('') + '</ul>');
   }
 
   const total = entries.reduce((s, e) => s + (e.price || 0), 0);
-  if (total) parts.push(\`<div class="total">合計：$\${total}</div>\`);
+  if (total) {
+    if (discount > 0) {
+      parts.push(\`<div class="total">原 $\${total} − 買五送一 −$\${discount} = <b>應收 $\${total - discount}</b></div>\`);
+    } else {
+      parts.push(\`<div class="total">合計：$\${total}</div>\`);
+    }
+  }
   board.innerHTML = parts.join('');
 
   bindGuestFlagListeners();
