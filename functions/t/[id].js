@@ -1635,7 +1635,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.51</span>
+  <span style="opacity:.6">v1.0.52</span>
 </div>
 
 <div class="admin-row">
@@ -2350,6 +2350,7 @@ function syncMenuOnlyButtons(isMenu) {
 })();
 
 // v1.0.36 計價設定 panel（admin 模式專屬）
+// v1.0.52 不分區群組：隱藏「會員補助」（沒有會員/非會員之分）
 (function initPricingPanel() {
   const panel = document.getElementById('pricingPanel');
   if (!panel) return;
@@ -2360,12 +2361,17 @@ function syncMenuOnlyButtons(isMenu) {
   const totalInp = document.getElementById('totalAmountInp');
   const totalWrap = document.getElementById('totalAmountWrap');
   const subInp = document.getElementById('subsidyInp');
+  const subsidyWrap = document.getElementById('subsidyWrap');
   const msg = document.getElementById('pricingMsg');
 
   const t = state.task || {};
   sel.value = t.pricing_mode || 'free_bento';
   totalInp.value = (t.total_amount == null) ? '' : String(t.total_amount);
   subInp.value = (t.member_subsidy == null) ? '' : String(t.member_subsidy);
+
+  // v1.0.52 不分區群組（show_zones=0）→ 隱藏會員補助欄
+  const isNoZoneGroup = !!(t.show_zones === 0);
+  if (isNoZoneGroup && subsidyWrap) subsidyWrap.style.display = 'none';
 
   function syncTotalVisible() {
     totalWrap.style.display = (sel.value === 'shared' || sel.value === 'menu') ? '' : 'none';
