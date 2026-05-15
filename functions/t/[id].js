@@ -1635,7 +1635,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.52</span>
+  <span style="opacity:.6">v1.0.53</span>
 </div>
 
 <div class="admin-row">
@@ -2089,9 +2089,15 @@ function render() {
       return \`<li><span class="who">\${esc(e.name)}</span><span class="body">\${entryBodyHtml(e)}\${noteShown}</span><span class="price">\${price}\${editBtn}\${delBtn}</span>\${guestRow}</li>\`;
     }).join('') + '</ul>');
     const total = entries.reduce((s, e) => s + (e.price || 0), 0);
+    // v1.0.53 合計也要加共同袋子
+    const sharedAddon = +(state.task && state.task.shared_addon) || 0;
     if (total) {
-      if (discount > 0) {
-        parts.push(\`<div class="total">原 $\${total} − 買五送一 −$\${discount} = <b>應收 $\${total - discount}</b></div>\`);
+      if (discount > 0 || sharedAddon > 0) {
+        let breakdown = \`原 $\${total}\`;
+        if (discount > 0) breakdown += \` − 買五送一 −$\${discount}\`;
+        if (sharedAddon > 0) breakdown += \` + 袋子 +$\${sharedAddon}\`;
+        breakdown += \` = <b>應收 $\${total - discount + sharedAddon}</b>\`;
+        parts.push(\`<div class="total">\${breakdown}</div>\`);
       } else {
         parts.push(\`<div class="total">合計：$\${total}</div>\`);
       }
