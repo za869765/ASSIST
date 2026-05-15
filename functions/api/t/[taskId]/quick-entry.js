@@ -25,29 +25,44 @@ export async function onRequestPost({ env, params, request }) {
   const ice = body.ice == null ? null : String(body.ice).slice(0, 10);
   const memberName = (body.memberName == null ? '' : String(body.memberName)).trim().slice(0, 20) || null;
   const nonMemberName = (body.nonMemberName == null ? '' : String(body.nonMemberName)).trim().slice(0, 20) || null;
+  // v1.0.49 不分區群組 + 袋子
+  const noZoneGroup = !!body.noZoneGroup;
+  const memberUserId = (body.memberUserId == null ? '' : String(body.memberUserId)).trim() || null;
+  const bag = (body.bag == null ? '' : String(body.bag)).trim().slice(0, 10) || null;
+  const bagAddon = +body.bag_addon || 0;
   if (price != null && (isNaN(price) || price < 0 || price > 100000)) {
     return json({ error: 'bad price' }, 400);
   }
 
   const task = await env.DB.prepare(
-    `SELECT id, status, menu_json FROM tasks WHERE id = ?`
+    `SELECT id, status, menu_json, group_id FROM tasks WHERE id = ?`
   ).bind(taskId).first();
   if (!task) return json({ error: 'task not found' }, 404);
   if (task.status === 'closed') return json({ error: 'task closed' }, 400);
 
-  const zrow = await env.DB.prepare(
-    `SELECT name, capacity FROM zones WHERE name = ? AND enabled = 1`
-  ).bind(zone).first();
-  if (!zrow) return json({ error: 'zone 未啟用或不存在' }, 400);
-  // capacity = 0 → 該區不限人數（例：檢驗中心/衛生局），每次都開新紀錄
-  const unlimited = +zrow.capacity === 0;
+  // v1.0.49 不分區群組：跳過 zones 表驗證，視同 unlimited 走名字當 key
+  let unlimited = false;
+  if (noZoneGroup) {
+    unlimited = true; // 不分區強制 unlimited，每筆獨立 user_id 避免衝突（用名字當 key）
+  } else {
+    const zrow = await env.DB.prepare(
+      `SELECT name, capacity FROM zones WHERE name = ? AND enabled = 1`
+    ).bind(zone).first();
+    if (!zrow) return json({ error: 'zone 未啟用或不存在' }, 400);
+    // capacity = 0 → 該區不限人數（例：檢驗中心/衛生局），每次都開新紀錄
+    unlimited = +zrow.capacity === 0;
+  }
+  // v1.0.49 不分區群組：必填名字（會員/非會員）
+  if (noZoneGroup && !memberName && !nonMemberName) {
+    return json({ error: '不分區群組需指定 會員 或 非會員姓名' }, 400);
+  }
   // 衛生局：一定要挑會員 或 非會員姓名
-  if (/衛生局/.test(zone) && !memberName && !nonMemberName) {
+  if (!noZoneGroup && /衛生局/.test(zone) && !memberName && !nonMemberName) {
     return json({ error: '衛生局需指定 會員 或 非會員姓名' }, 400);
   }
-  // 非衛生局區：若沒傳名字，自動從花名冊補上該區的人
+  // 非衛生局/非不分區區：若沒傳名字，自動從花名冊補上該區的人
   let autoName = null;
-  if (!/衛生局/.test(zone) && !memberName && !nonMemberName) {
+  if (!noZoneGroup && !/衛生局/.test(zone) && !memberName && !nonMemberName) {
     try {
       const hit = await env.DB.prepare(
         `SELECT real_name FROM roster WHERE zone = ? LIMIT 1`
@@ -68,27 +83,46 @@ export async function onRequestPost({ env, params, request }) {
   // 身份辨識 + 顯示名
   const isNon = !!nonMemberName;
   const displayName = memberName || nonMemberName || zone;
+  // v1.0.49 不分區群組：若有 memberUserId（LINE 真人）→ 用該 user_id（會 upsert 既有 entry，避免重複）
+  //   - 否則用名字當 key
   // 衛生局會員用姓名當 key（避免同一會員代點成多筆），非會員每筆獨立
-  const userId = /衛生局/.test(zone)
-    ? (memberName
-        ? `web:${taskId}:${zone}:m:${memberName}`
-        : `web:${taskId}:${zone}:n:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`)
-    : (unlimited
-        ? `web:${taskId}:${zone}:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-        : `web:${taskId}:${zone}`);
-  const memberLabel = /衛生局/.test(zone)
-    ? (memberName ? `🌐 ${memberName}` : `🌐 ${nonMemberName}（非會員）`)
-    : (autoName ? `🌐 ${autoName}` : `🌐 ${zone}`);
-  await env.DB.prepare(
-    `INSERT INTO members (user_id, real_name, zone, last_seen_at)
-     VALUES (?, ?, ?, datetime('now'))
-     ON CONFLICT(user_id) DO UPDATE SET zone = excluded.zone, real_name = excluded.real_name, last_seen_at = datetime('now')`
-  ).bind(userId, memberLabel, zone).run();
+  let userId;
+  if (noZoneGroup) {
+    if (memberUserId) {
+      userId = memberUserId; // 用真實 LINE userId，看板會跟 LINE 訊息那筆合併
+    } else if (memberName) {
+      userId = `web:${taskId}:group:m:${memberName}`;
+    } else {
+      userId = `web:${taskId}:group:n:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    }
+  } else if (/衛生局/.test(zone)) {
+    userId = memberName
+      ? `web:${taskId}:${zone}:m:${memberName}`
+      : `web:${taskId}:${zone}:n:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  } else {
+    userId = unlimited
+      ? `web:${taskId}:${zone}:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+      : `web:${taskId}:${zone}`;
+  }
+  // members upsert：不分區群組若用真實 LINE userId 就不要覆寫成 web 影子
+  if (!(noZoneGroup && memberUserId)) {
+    const memberLabel = noZoneGroup
+      ? (memberName ? `🌐 ${memberName}` : `🌐 ${nonMemberName}（非會員）`)
+      : (/衛生局/.test(zone)
+          ? (memberName ? `🌐 ${memberName}` : `🌐 ${nonMemberName}（非會員）`)
+          : (autoName ? `🌐 ${autoName}` : `🌐 ${zone}`));
+    await env.DB.prepare(
+      `INSERT INTO members (user_id, real_name, zone, last_seen_at)
+       VALUES (?, ?, ?, datetime('now'))
+       ON CONFLICT(user_id) DO UPDATE SET zone = excluded.zone, real_name = excluded.real_name, last_seen_at = datetime('now')`
+    ).bind(userId, memberLabel, noZoneGroup ? '' : zone).run();
+  }
 
   const data = isLeave ? {} : { 品項: item };
   if (!isLeave) {
     if (sweet) data['甜度'] = sweet;
     if (ice) data['冰塊'] = ice;
+    if (bag) data['袋子'] = bag; // v1.0.49 袋子
   }
   if (memberName) data['姓名'] = memberName;
   if (nonMemberName) { data['姓名'] = nonMemberName; data['身份'] = '非會員'; }
@@ -99,7 +133,7 @@ export async function onRequestPost({ env, params, request }) {
   const finalPrice = isLeave ? null : price;
   const rawText = isLeave
     ? `[web] ${zone} ${displayName}${isNon ? '(非會員)' : ''} → 請假${note ? '（' + note + '）' : ''}`
-    : `[web] ${zone} ${displayName}${isNon ? '(非會員)' : ''} → ${item}${sweet ? '/' + sweet : ''}${ice ? '/' + ice : ''}`;
+    : `[web] ${zone} ${displayName}${isNon ? '(非會員)' : ''} → ${item}${sweet ? '/' + sweet : ''}${ice ? '/' + ice : ''}${bag ? '/' + bag : ''}`;
   await upsertEntry(env.DB, {
     taskId, userId,
     data,

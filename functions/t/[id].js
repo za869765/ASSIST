@@ -1630,7 +1630,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.48</span>
+  <span style="opacity:.6">v1.0.49</span>
 </div>
 
 <div class="admin-row">
@@ -2411,13 +2411,8 @@ async function loadMenu() {
     const hasItems = isMenuMode && (j.items || []).length > 0;
     const recBar = document.querySelector('.recommend-bar');
     const leaveRow = '<div class="cat-row" style="margin-top:8px"><span class="item-chip leave-chip" data-name="__leave__"><b class="item-pick">📝 請假</b></span></div>';
-    const isNoZone = state.task && state.task.show_zones === 0;
-    if (isNoZone) {
-      // v1.0.41 不分區群組：看板不提供下單，請從 LINE 群組打字點餐
-      document.getElementById('menuItems').innerHTML =
-        '<div style="margin:14px 0;padding:14px 18px;background:rgba(120,160,200,.1);border:1px solid rgba(120,160,200,.3);border-radius:8px;font-size:13px;text-align:center;color:var(--text-dim);line-height:1.7">📱 此群組為「不分區」模式<br>請直接在 LINE 群組打字點餐（例：「珍奶 微糖少冰」）</div>';
-      if (recBar) recBar.style.display = 'none';
-    } else if (!hasItems && isDrinkTask()) {
+    // v1.0.49: 不分區群組看板恢復下單 chips（v1.0.41 隱藏邏輯取消，改成 openOrderModal 內部處理「選成員」）
+    if (!hasItems && isDrinkTask()) {
       // 飲料類強制要有菜單，沒上傳就擋住（請假仍可）
       document.getElementById('menuItems').innerHTML =
         '<div style="padding:10px;background:rgba(240,160,88,.08);border:1px dashed rgba(240,160,88,.4);border-radius:6px;color:var(--wine);font-size:13px">' +
@@ -2745,8 +2740,10 @@ function openCustomModal() {
 }
 
 function openOrderModal(itemName, price, isCustom) {
+  // v1.0.49 不分區群組：免選區，改列群組成員
+  const isNoZoneGroup = !!(state.task && state.task.show_zones === 0);
   const zones = (state.zones || []).filter(z => z.enabled !== 0);
-  if (!zones.length) { alert('沒有可選的分區'); return; }
+  if (!isNoZoneGroup && !zones.length) { alert('沒有可選的分區'); return; }
   const lastZone = localStorage.getItem(LS_LAST_ZONE) || '';
   const zoneOpts = zones.map(z => {
     const so = +z.sort_order;
@@ -2761,6 +2758,10 @@ function openOrderModal(itemName, price, isCustom) {
     '<label>甜度</label>' + optBtns('sweet', SWEET_OPTS, 0) +
     '<label>冰塊</label>' + optBtns('ice', ICE_OPTS, 0)
   ) : '';
+  // v1.0.49 袋子選項（飲料任務）：無袋 / 袋 +1 / 大袋 +2
+  const bagRow = isDrinkTask()
+    ? '<label>袋子（外帶加購）</label>' + optBtns('bag', ['無袋', '袋+1', '大袋+2'], 0)
+    : '';
   // 衛生局：從花名冊挑會員，或選「非會員」
   const memberRow = '<div id="omMemberRow" style="display:none">' +
     '<label>是誰？（名單內請直接點；不在名單請選「非會員」並填名字）</label>' +
@@ -2768,14 +2769,22 @@ function openOrderModal(itemName, price, isCustom) {
     '<div id="omNonMemberInput" style="display:none;margin-top:8px"><input id="omNonMemberName" maxlength="20" placeholder="請輸入非會員姓名"></div>' +
     '</div>' +
     '<div id="omZoneMemberHint" style="display:none;margin-top:6px;font-size:12px;color:#2db87a"></div>';
+  // v1.0.49 不分區群組：直接列群組成員
+  const noZoneRow = isNoZoneGroup
+    ? '<label>是誰？（直接點名單；不在名單按「非會員」並填名字）</label>' +
+      '<div class="opt-grid" id="omGroupGrid"><span style="color:#888;font-size:12px">載入群組成員中…</span></div>' +
+      '<div id="omNonMemberInput" style="display:none;margin-top:8px"><input id="omNonMemberName" maxlength="20" placeholder="請輸入非會員姓名"></div>'
+    : '';
   const priceStr = price != null ? ' $' + price : '';
   const d = document.createElement('div');
   d.className = 'order-modal';
   d.innerHTML = '<div class="box">' +
     '<h3>下單：<span style="color:#2db87a">' + esc(itemName) + '</span>' + esc(priceStr) + '</h3>' +
-    '<label>哪一區 / 誰</label><select id="omZone">' + zoneOpts + '</select>' +
-    memberRow +
+    (isNoZoneGroup
+      ? noZoneRow
+      : '<label>哪一區 / 誰</label><select id="omZone">' + zoneOpts + '</select>' + memberRow) +
     drinkRow +
+    bagRow +
     '<label>備註（選填）</label><input id="omNote" maxlength="60" placeholder="例：不要香菜">' +
     '<div class="row-btns"><button id="omCancel">取消</button><button class="primary" id="omOk">送出</button></div>' +
     '</div>';
@@ -2790,58 +2799,89 @@ function openOrderModal(itemName, price, isCustom) {
       b.classList.add('active');
     });
   });
-  // 依區動態顯示/隱藏 會員挑選
-  const memberRowEl = d.querySelector('#omMemberRow');
-  const hintEl = d.querySelector('#omZoneMemberHint');
-  const zoneSel = d.querySelector('#omZone');
-  const rosterGrid = d.querySelector('#omRosterGrid');
-  let rosterAll = null; // 全部花名冊（一次載入）
-  let rosterGridRendered = false;
-  async function ensureRosterLoaded() {
-    if (rosterAll) return rosterAll;
-    const r = await fetch('/api/roster');
-    const j = await r.json();
-    rosterAll = j.list || [];
-    return rosterAll;
-  }
-  function renderHealthBureauGrid() {
-    if (rosterGridRendered) return; rosterGridRendered = true;
-    const list = (rosterAll || []).filter(m => m.zone === '衛生局');
-    const btns = list.map(m => {
-      const label = esc(m.real_name) + (m.title ? ' <small style="opacity:.7">' + esc(m.title) + '</small>' : '');
-      return '<button type="button" data-val="' + esc(m.real_name) + '" data-title="' + esc(m.title || '') + '">' + label + '</button>';
-    }).join('');
-    rosterGrid.innerHTML = btns + '<button type="button" data-val="__non__" style="background:#fff3e0;color:#b04a1a;border-color:#f0a058">＋ 非會員（代點）</button>';
-  }
   const nonMemberInput = d.querySelector('#omNonMemberInput');
-  rosterGrid.addEventListener('click', (ev) => {
-    const b = ev.target.closest('button'); if (!b) return;
-    rosterGrid.querySelectorAll('button').forEach(x => x.classList.remove('active'));
-    b.classList.add('active');
-    const isNon = b.dataset.val === '__non__';
-    nonMemberInput.style.display = isNon ? '' : 'none';
-    if (isNon) setTimeout(() => d.querySelector('#omNonMemberName')?.focus(), 0);
-  });
-  const syncMemberRow = async () => {
-    const z = zoneSel.value || '';
-    const isHB = /衛生局/.test(z);
-    memberRowEl.style.display = isHB ? '' : 'none';
-    hintEl.style.display = 'none'; hintEl.textContent = '';
-    try {
-      await ensureRosterLoaded();
-    } catch { rosterGrid.innerHTML = '<span style="color:#d4543a">花名冊載入失敗</span>'; return; }
-    if (isHB) {
-      renderHealthBureauGrid();
-    } else {
-      const hit = (rosterAll || []).find(m => m.zone === z);
-      if (hit) {
-        hintEl.textContent = '這筆會記給：' + hit.real_name + (hit.title ? '（' + hit.title + '）' : '');
-        hintEl.style.display = '';
-      }
+  // v1.0.49 不分區群組：直接載入群組成員列表
+  if (isNoZoneGroup) {
+    const grid = d.querySelector('#omGroupGrid');
+    fetch('/api/t/' + TASK_ID + '/group-members')
+      .then(r => r.json())
+      .then(j => {
+        const list = j.members || [];
+        if (!list.length) {
+          grid.innerHTML = '<small style="color:#888">尚無群組成員，請直接按「非會員」並填名字</small><br><br>'
+            + '<button type="button" data-val="__non__" style="background:#fff3e0;color:#b04a1a;border-color:#f0a058">＋ 非會員（代點）</button>';
+          return;
+        }
+        const btns = list.map(m => {
+          const name = m.real_name || m.line_display || (m.user_id || '').slice(0, 6);
+          return '<button type="button" data-uid="' + esc(m.user_id) + '" data-val="' + esc(name) + '">' + esc(name) + '</button>';
+        }).join('');
+        grid.innerHTML = btns + '<button type="button" data-val="__non__" style="background:#fff3e0;color:#b04a1a;border-color:#f0a058">＋ 非會員（代點）</button>';
+      })
+      .catch(() => {
+        grid.innerHTML = '<span style="color:#d4543a">成員載入失敗</span>';
+      });
+    grid.addEventListener('click', (ev) => {
+      const b = ev.target.closest('button'); if (!b) return;
+      grid.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      const isNon = b.dataset.val === '__non__';
+      if (nonMemberInput) nonMemberInput.style.display = isNon ? '' : 'none';
+      if (isNon) setTimeout(() => d.querySelector('#omNonMemberName')?.focus(), 0);
+    });
+  } else {
+    // 分區群組：依區動態顯示/隱藏 會員挑選
+    const memberRowEl = d.querySelector('#omMemberRow');
+    const hintEl = d.querySelector('#omZoneMemberHint');
+    const zoneSel = d.querySelector('#omZone');
+    const rosterGrid = d.querySelector('#omRosterGrid');
+    let rosterAll = null;
+    let rosterGridRendered = false;
+    async function ensureRosterLoaded() {
+      if (rosterAll) return rosterAll;
+      const r = await fetch('/api/roster');
+      const j = await r.json();
+      rosterAll = j.list || [];
+      return rosterAll;
     }
-  };
-  zoneSel.addEventListener('change', syncMemberRow);
-  syncMemberRow();
+    function renderHealthBureauGrid() {
+      if (rosterGridRendered) return; rosterGridRendered = true;
+      const list = (rosterAll || []).filter(m => m.zone === '衛生局');
+      const btns = list.map(m => {
+        const label = esc(m.real_name) + (m.title ? ' <small style="opacity:.7">' + esc(m.title) + '</small>' : '');
+        return '<button type="button" data-val="' + esc(m.real_name) + '" data-title="' + esc(m.title || '') + '">' + label + '</button>';
+      }).join('');
+      rosterGrid.innerHTML = btns + '<button type="button" data-val="__non__" style="background:#fff3e0;color:#b04a1a;border-color:#f0a058">＋ 非會員（代點）</button>';
+    }
+    rosterGrid.addEventListener('click', (ev) => {
+      const b = ev.target.closest('button'); if (!b) return;
+      rosterGrid.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      const isNon = b.dataset.val === '__non__';
+      nonMemberInput.style.display = isNon ? '' : 'none';
+      if (isNon) setTimeout(() => d.querySelector('#omNonMemberName')?.focus(), 0);
+    });
+    const syncMemberRow = async () => {
+      const z = zoneSel.value || '';
+      const isHB = /衛生局/.test(z);
+      memberRowEl.style.display = isHB ? '' : 'none';
+      hintEl.style.display = 'none'; hintEl.textContent = '';
+      try {
+        await ensureRosterLoaded();
+      } catch { rosterGrid.innerHTML = '<span style="color:#d4543a">花名冊載入失敗</span>'; return; }
+      if (isHB) {
+        renderHealthBureauGrid();
+      } else {
+        const hit = (rosterAll || []).find(m => m.zone === z);
+        if (hit) {
+          hintEl.textContent = '這筆會記給：' + hit.real_name + (hit.title ? '（' + hit.title + '）' : '');
+          hintEl.style.display = '';
+        }
+      }
+    };
+    zoneSel.addEventListener('change', syncMemberRow);
+    syncMemberRow();
+  }
   const getOpt = (group) => {
     const g = d.querySelector('.opt-grid[data-group="' + group + '"]');
     if (!g) return null;
@@ -2852,12 +2892,30 @@ function openOrderModal(itemName, price, isCustom) {
   d.querySelector('#omOk').addEventListener('click', async () => {
     const okBtn = d.querySelector('#omOk');
     okBtn.disabled = true; okBtn.textContent = '送出中…';
-    const zone = d.querySelector('#omZone').value;
+    // v1.0.49 不分區群組：zone 用 group placeholder
+    const zone = isNoZoneGroup ? '本群組' : d.querySelector('#omZone').value;
     const sweet = isDrinkTask() ? getOpt('sweet') : null;
     const ice = isDrinkTask() ? getOpt('ice') : null;
+    // v1.0.49 袋子：解析選項
+    const bagOpt = isDrinkTask() ? getOpt('bag') : null;
+    let bagAddon = 0; let bagLabel = '';
+    if (bagOpt === '袋+1') { bagAddon = 1; bagLabel = '袋'; }
+    else if (bagOpt === '大袋+2') { bagAddon = 2; bagLabel = '大袋'; }
     const note = d.querySelector('#omNote').value.trim() || null;
-    let memberName = null, nonMemberName = null;
-    if (/衛生局/.test(zone)) {
+    let memberName = null, nonMemberName = null, memberUserId = null;
+    if (isNoZoneGroup) {
+      const grid = d.querySelector('#omGroupGrid');
+      const active = grid.querySelector('button.active');
+      if (!active) { alert('請先選「是誰」'); okBtn.disabled = false; okBtn.textContent = '送出'; return; }
+      if (active.dataset.val === '__non__') {
+        nonMemberName = (d.querySelector('#omNonMemberName')?.value || '').trim();
+        if (!nonMemberName) { alert('請填非會員姓名'); okBtn.disabled = false; okBtn.textContent = '送出'; return; }
+      } else {
+        memberName = active.dataset.val;
+        memberUserId = active.dataset.uid || null;
+      }
+    } else if (/衛生局/.test(zone)) {
+      const rosterGrid = d.querySelector('#omRosterGrid');
       const active = rosterGrid.querySelector('button.active');
       if (!active) { alert('請先選「是誰」'); okBtn.disabled = false; okBtn.textContent = '送出'; return; }
       if (active.dataset.val === '__non__') {
@@ -2867,28 +2925,38 @@ function openOrderModal(itemName, price, isCustom) {
         memberName = active.dataset.val;
       }
     }
+    // v1.0.49 袋子加價 → final price
+    const finalPrice = price != null
+      ? price + bagAddon
+      : (bagAddon > 0 ? bagAddon : null);
     // 檢查是否已有點餐：同人再點要問「加點 / 更改」
     const existing = findExistingEntry(zone, memberName, nonMemberName);
     let additive = false;
     if (existing) {
-      const choice = await askAddOrReplace(existing, itemName, price);
+      const choice = await askAddOrReplace(existing, itemName, finalPrice);
       if (!choice) { okBtn.disabled = false; okBtn.textContent = '送出'; return; }
       additive = (choice === 'add');
     }
     try {
       const r = await fetch('/api/t/' + TASK_ID + '/quick-entry', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ zone, item: itemName, price, sweet, ice, note, memberName, nonMemberName, custom: !!isCustom, additive }),
+        body: JSON.stringify({
+          zone, item: itemName, price: finalPrice, sweet, ice, note,
+          memberName, nonMemberName, memberUserId,
+          bag: bagLabel || null, bag_addon: bagAddon || 0,
+          custom: !!isCustom, additive,
+          noZoneGroup: isNoZoneGroup,
+        }),
       });
       const j = await r.json();
       if (!r.ok) { alert('失敗：' + (j.error || r.status)); okBtn.disabled = false; okBtn.textContent = '送出'; return; }
-      localStorage.setItem(LS_LAST_ZONE, zone);
+      if (!isNoZoneGroup) localStorage.setItem(LS_LAST_ZONE, zone);
       close();
       showSuccessPopup({
         item: itemName,
-        zone,
+        zone: isNoZoneGroup ? null : zone,
         name: memberName || nonMemberName || null,
-        sweet, ice, note, price,
+        sweet, ice, note, price: finalPrice,
         additive,
       });
       await poll();
