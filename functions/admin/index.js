@@ -7,7 +7,7 @@ export async function onRequestGet() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ASSIST 管理後台</title>
-<meta name="version" content="v1.0.39">
+<meta name="version" content="v1.0.40">
 <style>
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -95,7 +95,7 @@ small.note { color: #888; font-size: 11px; }
   <h1>🛠 ASSIST 管理後台
     <button onclick="doLogout()" style="font-size:12px">登出</button>
   </h1>
-  <div class="sub">v1.0.39 · LINE Bot 統一維護</div>
+  <div class="sub">v1.0.40 · LINE Bot 統一維護</div>
 
   <div class="tabs">
     <button class="tab active" data-tab="overview">總覽</button>
@@ -136,7 +136,7 @@ small.note { color: #888; font-size: 11px; }
     <small class="note">列出所有 bot 進過的群組，可加備註別名、停用某群組（停用後非管理員訊息一律不回應）</small>
     <div class="msg" id="groupMsg"></div>
     <table id="groupTable">
-      <thead><tr><th>群組</th><th>備註別名</th><th>狀態</th><th>任務數</th><th>最後活動</th><th>成員</th></tr></thead>
+      <thead><tr><th>群組</th><th>備註別名</th><th>狀態</th><th>分區顯示</th><th>任務數</th><th>最後活動</th><th>成員</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -179,7 +179,7 @@ small.note { color: #888; font-size: 11px; }
       <b>D1 binding</b><div>DB → assist_db</div>
       <b>分區設定</b><div><a class="zone-link" href="/admin/zones">/admin/zones</a></div>
       <b>Webhook URL</b><div><code id="webhookUrl">—</code></div>
-      <b>後台版本</b><div>v1.0.39</div>
+      <b>後台版本</b><div>v1.0.40</div>
     </div>
     <h2>💡 LINE 指令備忘</h2>
     <ul style="font-size:13px;line-height:1.8;color:#666">
@@ -359,16 +359,21 @@ async function loadGroups() {
   const rows = (j.groups || []).map(g => {
     const dt = (g.last_active_at || '').slice(0, 16);
     const enabledBadge = g.enabled ? '<span class="badge b-ok">啟用</span>' : '<span class="badge b-mute">停用</span>';
+    const showZones = g.show_zones == null ? 1 : +g.show_zones;
+    const zoneBadge = showZones
+      ? '<span class="badge b-ok">分區</span>'
+      : '<span class="badge b-mute">不分區</span>';
     return \`<tr>
       <td class="uid">\${esc(g.group_id)}</td>
       <td><input type="text" value="\${esc(g.alias || '')}" placeholder="(無備註)" data-gid="\${esc(g.group_id)}" class="alias-edit" style="width:160px;padding:4px 6px;font-size:13px;border:1px solid #ccc6;border-radius:4px;background:transparent;color:inherit"></td>
       <td>\${enabledBadge} <button onclick="toggleGroup('\${esc(g.group_id)}', \${g.enabled ? 0 : 1})" style="font-size:11px;padding:2px 8px">切換</button></td>
+      <td>\${zoneBadge} <button onclick="toggleShowZones('\${esc(g.group_id)}', \${showZones ? 0 : 1})" style="font-size:11px;padding:2px 8px">切換</button></td>
       <td><small>\${g.task_total} 個（進行 \${g.open_count}）</small></td>
       <td><small>\${esc(dt)}</small></td>
       <td><button class="expand-btn" onclick="toggleGroupMembers('\${esc(g.group_id)}', this)">👥 成員</button></td>
     </tr>\`;
   });
-  document.querySelector('#groupTable tbody').innerHTML = rows.join('') || '<tr><td colspan="6" style="text-align:center;color:#999">尚無已知群組（bot 至少要被加入一個群並收到訊息）</td></tr>';
+  document.querySelector('#groupTable tbody').innerHTML = rows.join('') || '<tr><td colspan="7" style="text-align:center;color:#999">尚無已知群組（bot 至少要被加入一個群並收到訊息）</td></tr>';
   document.querySelectorAll('.alias-edit').forEach(inp => {
     inp.addEventListener('blur', async () => {
       const gid = inp.dataset.gid;
@@ -383,6 +388,12 @@ async function loadGroups() {
 async function toggleGroup(gid, newEnabled) {
   const r = await api('/api/admin/groups', { method: 'PATCH', body: JSON.stringify({ group_id: gid, enabled: !!newEnabled }) });
   if (r.ok) { showMsg('groupMsg', newEnabled ? '已啟用 ✓' : '已停用 ✓'); loadGroups(); }
+  else showMsg('groupMsg', '切換失敗', true);
+}
+
+async function toggleShowZones(gid, newShowZones) {
+  const r = await api('/api/admin/groups', { method: 'PATCH', body: JSON.stringify({ group_id: gid, show_zones: !!newShowZones }) });
+  if (r.ok) { showMsg('groupMsg', newShowZones ? '看板已切回分區顯示 ✓' : '看板改為不分區、純名字顯示 ✓'); loadGroups(); }
   else showMsg('groupMsg', '切換失敗', true);
 }
 
@@ -507,6 +518,10 @@ async function loadTasks(status) {
       const exp = ex.expires_at && Date.parse(ex.expires_at.replace(' ', 'T') + 'Z') < Date.now();
       return \`<a class="dl-link \${exp ? 'expired' : ''}" href="/d/\${esc(ex.token)}" target="_blank" title="\${esc(ex.filename)}（\${ex.download_count || 0} 次下載）">\${exp ? '已到期' : '下載'}</a>\`;
     }).join('') || '<small style="color:#999">—</small>';
+    const slug = t.url_slug || t.id;
+    const boardLink = isOpen
+      ? \`<a class="detail-btn" href="/t/\${esc(slug)}?admin=1" target="_blank" title="進入看板 admin 模式可刪除 entry">→ 看板</a>\`
+      : '';
     return \`<tr class="tasks-row">
       <td>\${esc(t.task_name)} <small class="note">#\${t.id}</small></td>
       <td>\${groupLabel}</td>
@@ -514,7 +529,7 @@ async function loadTasks(status) {
       <td>\${t.entry_count || 0}</td>
       <td><small>\${esc((t.started_at || '').slice(0, 16))}</small></td>
       <td><small>\${esc((t.closed_at || '').slice(0, 16))}</small></td>
-      <td><button class="detail-btn" onclick="openTaskDetail(\${t.id})">📋 查看</button></td>
+      <td><button class="detail-btn" onclick="openTaskDetail(\${t.id})">📋 查看</button> \${boardLink}</td>
       <td>\${exps}</td>
     </tr>\`;
   });

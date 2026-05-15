@@ -10,7 +10,7 @@ export async function onRequestGet({ request, env }) {
 
   // 合併兩邊：groups 表 + tasks 出現過的 group_id（tasks 多但沒備註的補進來）
   const rows = await env.DB.prepare(`
-    WITH g AS (SELECT group_id, alias, enabled, first_seen_at, last_active_at FROM groups),
+    WITH g AS (SELECT group_id, alias, enabled, show_zones, first_seen_at, last_active_at FROM groups),
          t AS (
            SELECT group_id,
                   COUNT(*) AS task_total,
@@ -23,6 +23,7 @@ export async function onRequestGet({ request, env }) {
       COALESCE(g.group_id, t.group_id) AS group_id,
       g.alias,
       COALESCE(g.enabled, 1) AS enabled,
+      COALESCE(g.show_zones, 1) AS show_zones,
       g.first_seen_at,
       COALESCE(g.last_active_at, t.last_task_at) AS last_active_at,
       COALESCE(t.task_total, 0) AS task_total,
@@ -30,7 +31,7 @@ export async function onRequestGet({ request, env }) {
     FROM g LEFT JOIN t ON g.group_id = t.group_id
     UNION
     SELECT
-      t.group_id, NULL AS alias, 1 AS enabled, NULL AS first_seen_at,
+      t.group_id, NULL AS alias, 1 AS enabled, 1 AS show_zones, NULL AS first_seen_at,
       t.last_task_at AS last_active_at,
       t.task_total, t.open_count
     FROM t LEFT JOIN g ON t.group_id = g.group_id
@@ -41,7 +42,7 @@ export async function onRequestGet({ request, env }) {
   return Response.json({ groups: rows.results || [] });
 }
 
-// PATCH { group_id, alias?, enabled? } → 更新（不存在則 insert）
+// PATCH { group_id, alias?, enabled?, show_zones? } → 更新（不存在則 insert）
 export async function onRequestPatch({ request, env }) {
   if (!requireAdminPass(request, env)) return deny();
   let body;
@@ -49,15 +50,16 @@ export async function onRequestPatch({ request, env }) {
   const group_id = String(body?.group_id || '').trim();
   if (!group_id) return new Response('group_id required', { status: 400 });
 
-  const exist = await env.DB.prepare(`SELECT alias, enabled FROM groups WHERE group_id = ?`).bind(group_id).first();
+  const exist = await env.DB.prepare(`SELECT alias, enabled, show_zones FROM groups WHERE group_id = ?`).bind(group_id).first();
   const alias = body?.alias !== undefined ? (String(body.alias).trim() || null) : (exist?.alias ?? null);
   const enabled = body?.enabled !== undefined ? (body.enabled ? 1 : 0) : (exist?.enabled ?? 1);
+  const show_zones = body?.show_zones !== undefined ? (body.show_zones ? 1 : 0) : (exist?.show_zones ?? 1);
 
   await env.DB.prepare(
-    `INSERT INTO groups (group_id, alias, enabled, first_seen_at, last_active_at)
-     VALUES (?, ?, ?, datetime('now'), datetime('now'))
-     ON CONFLICT(group_id) DO UPDATE SET alias = excluded.alias, enabled = excluded.enabled`
-  ).bind(group_id, alias, enabled).run();
+    `INSERT INTO groups (group_id, alias, enabled, show_zones, first_seen_at, last_active_at)
+     VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+     ON CONFLICT(group_id) DO UPDATE SET alias = excluded.alias, enabled = excluded.enabled, show_zones = excluded.show_zones`
+  ).bind(group_id, alias, enabled, show_zones).run();
 
-  return Response.json({ ok: true, group_id, alias, enabled });
+  return Response.json({ ok: true, group_id, alias, enabled, show_zones });
 }

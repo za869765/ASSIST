@@ -1252,7 +1252,23 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
   const missing = (Array.isArray(parsed.missing) ? parsed.missing : [])
     .filter(k => !hasField(k))
     .filter(k => !PASSIVE_FIELDS.has(k));
-  const followUp = missing.length ? (parsed.follow_up || '') : '';
+  // v1.0.40 飲料任務硬性兜底：Gemini 偶爾漏列 missing，這裡強制補
+  //   - 冰塊：非熱飲 + 使用者沒講 + 不在 item_no_fields → 必入 missing
+  //   - 甜度：非冬瓜系列 + 使用者沒講 + 不在 item_no_fields → 必入 missing
+  if (isDrinkTask && parsed?.data?.['品項']) {
+    const itemStr = String(parsed.data['品項'] || '');
+    const isHot = /熱/.test(itemStr);
+    const isDongguaSeries = /冬瓜|冬青|冬檸|冬鮮/.test(itemStr);
+    const noFieldsForItem = (itemNoFields && itemNoFields[itemStr]) || [];
+    if (!isHot && !hasField('冰塊') && !missing.includes('冰塊') && !noFieldsForItem.includes('冰塊')) {
+      missing.push('冰塊');
+    }
+    if (!isDongguaSeries && !hasField('甜度') && !missing.includes('甜度') && !noFieldsForItem.includes('甜度')) {
+      missing.push('甜度');
+    }
+  }
+  // v1.0.40 兜底 follow_up：Gemini 沒給就自動組一句（避免 missing 有東西但沒追問）
+  const followUp = missing.length ? (parsed.follow_up || `${missing.join('、')}要什麼？`) : '';
 
   const m = await env.DB.prepare(
     `SELECT real_name, line_display FROM members WHERE user_id = ?`

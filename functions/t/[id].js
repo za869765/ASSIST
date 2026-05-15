@@ -60,6 +60,16 @@ export async function onRequestGet({ params, request, env }) {
   ).all();
   const zones = zonesRow.results || [];
 
+  // v1.0.40: 查該群組是否設定「不分區顯示」（show_zones=0）
+  // 未設定時預設 show_zones=1（維持現有行為）
+  let showZones = 1;
+  if (task.group_id) {
+    const gRow = await env.DB.prepare(
+      `SELECT show_zones FROM groups WHERE group_id = ?`
+    ).bind(task.group_id).first();
+    if (gRow && gRow.show_zones != null) showZones = +gRow.show_zones ? 1 : 0;
+  }
+
   const closed = task.status === 'closed';
   const statusLabel = closed ? '已結單' : '進行中';
 
@@ -83,6 +93,7 @@ export async function onRequestGet({ params, request, env }) {
       pricing_mode: task.pricing_mode || 'free_bento',
       total_amount: task.total_amount,
       member_subsidy: task.member_subsidy,
+      show_zones: showZones,
     },
     zones,
     entries: entries.map(e => ({
@@ -1595,7 +1606,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.39</span>
+  <span style="opacity:.6">v1.0.40</span>
 </div>
 
 <div class="admin-row">
@@ -1887,7 +1898,34 @@ function entryBodyHtml(e) {
 
 function render() {
   const { zones, entries } = state;
-  // 分組：每個啟用的 zone 一組；加「未分區」組
+  const board = document.getElementById('board');
+  const isSharedMode = state.task && state.task.pricing_mode === 'shared';
+
+  // v1.0.40 不分區模式：群組設定 show_zones=0 → 直接按 entry 順序列名字，不顯示 zone 標頭
+  if (state.task && state.task.show_zones === 0) {
+    const parts = [];
+    if (entries.length === 0) {
+      board.innerHTML = '<div style="text-align:center;color:#999;padding:24px">尚無紀錄</div>';
+      document.getElementById('statLine').textContent = '共 0 筆';
+      return;
+    }
+    parts.push('<ul>' + entries.map(e => {
+      const price = e.price ? \`$\${e.price}\` : '';
+      const noteShown = e.note && entryBody(e) !== '(未辨識)' ? \`（\${esc(e.note)}）\` : '';
+      const isWeb = String(e.user_id || '').startsWith('web:');
+      const delBtn = IS_ADMIN ? \`<button class="del-btn" data-uid="\${esc(e.user_id)}" data-real="\${isWeb ? '0' : '1'}" title="刪除此筆">×</button>\` : '';
+      const guestRow = guestFlagsHtml(e, isSharedMode);
+      return \`<li><span class="who">\${esc(e.name)}</span><span class="body">\${entryBodyHtml(e)}\${noteShown}</span><span class="price">\${esc(price)}\${delBtn}</span>\${guestRow}</li>\`;
+    }).join('') + '</ul>');
+    const total = entries.reduce((s, e) => s + (e.price || 0), 0);
+    if (total) parts.push(\`<div class="total">合計：$\${total}</div>\`);
+    board.innerHTML = parts.join('');
+    bindGuestFlagListeners();
+    document.getElementById('statLine').textContent = \`共 \${entries.length} 筆\`;
+    return;
+  }
+
+  // 分區模式（原本邏輯）：每個啟用的 zone 一組；加「未分區」組
   const groups = new Map();
   // 未分區排最上面：管理員優先看到尚未辨識的人
   groups.set('__unassigned__', { zone: { name: '未分區', capacity: 0 }, list: [] });
@@ -1897,7 +1935,6 @@ function render() {
     groups.get(key).list.push(e);
   }
 
-  const board = document.getElementById('board');
   const parts = [];
   let totalZonesEnabled = zones.length;
   let filledZones = 0;
@@ -1928,7 +1965,6 @@ function render() {
     const codeHtml = (so >= 100 && so < 1000) ? \`<span class="zone-code">\${String(so).padStart(4, '0')}</span>\` : '';
     parts.push(\`<h2 class="\${headerClass}"><span>\${codeHtml}\${esc(g.zone.name)}\${inOfficeTag}\${isUnassigned ? ' ⚠️' : ''}\${emptyTag}</span>\${capNote}</h2>\`);
     if (g.list.length === 0) continue;
-    const isSharedMode = state.task && state.task.pricing_mode === 'shared';
     parts.push('<ul>' + g.list.map(e => {
       const price = e.price ? \`$\${e.price}\` : '';
       const noteShown = e.note && entryBody(e) !== '(未辨識)' ? \`（\${esc(e.note)}）\` : '';
