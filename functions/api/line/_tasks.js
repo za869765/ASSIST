@@ -3,7 +3,7 @@
 export async function findOpenTask(DB, groupId) {
   if (!DB || !groupId) return null;
   const r = await DB.prepare(
-    `SELECT id, task_name, mode, started_by, started_at, url_slug,
+    `SELECT id, group_id, task_name, mode, started_by, started_at, url_slug,
             pricing_mode, total_amount, member_subsidy
        FROM tasks WHERE group_id = ? AND status = 'open'
        ORDER BY id DESC LIMIT 1`
@@ -14,7 +14,7 @@ export async function findOpenTask(DB, groupId) {
 export async function findOpenTasks(DB, groupId) {
   if (!DB || !groupId) return [];
   const r = await DB.prepare(
-    `SELECT id, task_name, mode, menu_json, started_by, started_at, url_slug,
+    `SELECT id, group_id, task_name, mode, menu_json, started_by, started_at, url_slug,
             pricing_mode, total_amount, member_subsidy
        FROM tasks WHERE group_id = ? AND status = 'open'
        ORDER BY id DESC`

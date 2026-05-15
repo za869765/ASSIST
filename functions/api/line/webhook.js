@@ -632,11 +632,20 @@ async function doCloseTask(env, picked, replyToken) {
   const zoneRow = await env.DB.prepare(`SELECT name, sort_order FROM zones`).all();
   const zoneOrder = {};
   for (const z of (zoneRow.results || [])) zoneOrder[z.name] = z.sort_order;
+  // v1.0.46: 不分區群組 → XLSX 不顯示「區」欄
+  let showZones = 1;
+  if (picked.group_id) {
+    try {
+      const g = await env.DB.prepare(`SELECT show_zones FROM groups WHERE group_id = ?`).bind(picked.group_id).first();
+      if (g && g.show_zones != null) showZones = +g.show_zones ? 1 : 0;
+    } catch {}
+  }
   const sheet = buildSheetRows(picked.task_name, entries, {
     mode: picked.mode, zoneOrder,
     pricing_mode: picked.pricing_mode,
     total_amount: picked.total_amount,
     member_subsidy: picked.member_subsidy,
+    showZones,
   });
   const bytes = buildXLSX(picked.task_name.slice(0, 31) || 'sheet', sheet.rows, sheet.mergeRanges);
   const token = genDownloadToken();
@@ -1400,8 +1409,10 @@ export function normalizeParsed(entries) {
 // 請假/不吃 不計入「總筆數」「訂購彙總」「明細」，獨立列在第三段表格
 // opts.mode = 'free' → 拿掉小計／金額欄（無菜單便當沒價格）
 // opts.zoneOrder = { '衛生局': 0, '楠西區': 1, ... } → 自訂 zone 排序權重
+// opts.showZones = 0/false → 明細與請假名單拿掉「區」欄（不分區群組）
 export function buildSheetRows(taskName, entries, opts = {}) {
   const noPrice = opts.mode === 'free';
+  const hideZone = opts.showZones === 0 || opts.showZones === false;
   const zoneOrder = opts.zoneOrder || {};
   const IN_OFFICE = new Set(['楠西區', '南化區', '左鎮區', '新市區']);
   const zoneTier = (z) => z === '衛生局' ? 0 : (IN_OFFICE.has(z) ? 1 : 2);
@@ -1486,8 +1497,8 @@ export function buildSheetRows(taskName, entries, opts = {}) {
   });
   rows.push(['■ 明細（依品項排序，發餐用）']);
   rows.push(noPrice
-    ? ['品項', '區', '姓名', ...restFields, '備註']
-    : ['品項', '區', '姓名', ...restFields, '備註', '金額']);
+    ? ['品項', ...(hideZone ? [] : ['區']), '姓名', ...restFields, '備註']
+    : ['品項', ...(hideZone ? [] : ['區']), '姓名', ...restFields, '備註', '金額']);
   // 同品項內排序：衛生局 → 在局 4 區 → 一般衛生所（依 sort_order）→ 同 tier 依姓名
   const sorted = [...parsed].sort((a, b) => {
     const ai = a.item || '~'; const bi = b.item || '~';
@@ -1501,7 +1512,7 @@ export function buildSheetRows(taskName, entries, opts = {}) {
   sorted.forEach(p => {
     const baseRow = [
       p.item || '(未辨識)',
-      p.zone || '',
+      ...(hideZone ? [] : [p.zone || '']),
       p.name,
       ...restFields.map(k => p.rest[k] == null ? '' : String(p.rest[k])),
       p.note || '',
@@ -1514,10 +1525,10 @@ export function buildSheetRows(taskName, entries, opts = {}) {
   if (leaves.length) {
     rows.push([]);
     rows.push([`■ 請假名單（${leaves.length} 人，不計入訂購）`]);
-    rows.push(['姓名', '區', '備註', '時間']);
+    rows.push(['姓名', ...(hideZone ? [] : ['區']), '備註', '時間']);
     const sortedLeaves = [...leaves].sort((a, b) => (a.zone || '~').localeCompare(b.zone || '~', 'zh-Hant') || a.name.localeCompare(b.name, 'zh-Hant'));
     sortedLeaves.forEach(p => {
-      rows.push([p.name, p.zone || '', p.note || '請假', String(p.updated || '').slice(0, 16)]);
+      rows.push([p.name, ...(hideZone ? [] : [p.zone || '']), p.note || '請假', String(p.updated || '').slice(0, 16)]);
     });
   }
 

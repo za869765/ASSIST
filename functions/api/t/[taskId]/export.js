@@ -8,7 +8,7 @@ export async function onRequestGet({ env, params }) {
   const taskId = +params.taskId;
   if (!taskId) return new Response('bad taskId', { status: 400 });
   const task = await env.DB.prepare(
-    `SELECT id, task_name, mode, pricing_mode, total_amount, member_subsidy FROM tasks WHERE id = ?`
+    `SELECT id, task_name, mode, group_id, pricing_mode, total_amount, member_subsidy FROM tasks WHERE id = ?`
   ).bind(taskId).first();
   if (!task) return new Response('not found', { status: 404 });
   const entries = await listEntries(env.DB, taskId);
@@ -18,11 +18,20 @@ export async function onRequestGet({ env, params }) {
   ).all();
   const zoneOrder = {};
   for (const z of (zoneRow.results || [])) zoneOrder[z.name] = z.sort_order;
+  // v1.0.46: 不分區群組 → XLSX 不顯示「區」欄
+  let showZones = 1;
+  if (task.group_id) {
+    try {
+      const g = await env.DB.prepare(`SELECT show_zones FROM groups WHERE group_id = ?`).bind(task.group_id).first();
+      if (g && g.show_zones != null) showZones = +g.show_zones ? 1 : 0;
+    } catch {}
+  }
   const sheet = buildSheetRows(task.task_name, entries, {
     mode: task.mode, zoneOrder,
     pricing_mode: task.pricing_mode,
     total_amount: task.total_amount,
     member_subsidy: task.member_subsidy,
+    showZones,
   });
   const bytes = buildXLSX(task.task_name.slice(0, 31) || 'sheet', sheet.rows, sheet.mergeRanges);
   const stamp = new Date().toISOString().slice(0, 10);
