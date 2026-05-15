@@ -96,12 +96,14 @@ export async function onRequestGet({ env, params }) {
     });
   }
 
-  // v1.0.56 新算法：個人付自己訂的 × 折扣比例 + 袋子平均
-  //   theory = entry.price × (totalItems - discount) / totalItems + sharedAddon / n
+  // v1.0.59 新算法：每人折讓「平均」（ceil(discount/n)）— 不按比例，貴的不會折比較多
+  //   discountPerPerson = ceil(discount/n)（每人一樣）
+  //   theory = entry.price - discountPerPerson + sharedAddon/n
   //   base = floor(theory)
   //   餘數 = payable - sum(base) → N 人 +$1（從累計補差最少的人挑，公平輪序）
   //   其中前 bagOffset 個算「分擔袋子」（不記補差清單）、後 realExtra 個算「補差」記輪序
-  const ratio = totalItems > 0 ? (totalItems - discount) / totalItems : 1;
+  const discountPerPerson = n > 0 ? Math.ceil(discount / n) : 0;
+  const ratio = totalItems > 0 ? (totalItems - discount) / totalItems : 1; // 保留給 discount_ratio 顯示
   const bagShareFloat = n > 0 ? sharedAddon / n : 0;
 
   // 跨任務補差累計（讀 D1）；若 migration 未跑就空 map
@@ -117,9 +119,9 @@ export async function onRequestGet({ env, params }) {
     } catch {}
   }
 
-  // 算每人 floor 應付
+  // v1.0.59 每人 theory = price - discountPerPerson + bagShareFloat
   const payerBases = payers.map(e => {
-    const theory = e.price * ratio + bagShareFloat;
+    const theory = e.price - discountPerPerson + bagShareFloat;
     return { ...e, theory, base: Math.floor(theory) };
   });
   const sumBase = payerBases.reduce((s, p) => s + p.base, 0);
@@ -153,7 +155,7 @@ export async function onRequestGet({ env, params }) {
     const pb = payerBases.find(x => x.id === e.id);
     const isExtra = extraIds.has(e.id);
     const isBagPayer = bagPayerIds.has(e.id);
-    const discountShare = totalItems > 0 ? Math.round(e.price * discount / totalItems) : 0;
+    const discountShare = discountPerPerson; // v1.0.59 每人折讓一樣
     const bagExtra = isExtra ? 1 : 0;
     return {
       user_id: e.user_id,

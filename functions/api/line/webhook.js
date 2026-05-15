@@ -641,11 +641,11 @@ async function updateOverpayBalance(env, picked, entries) {
   const payable = totalItems - discount + sharedAddon;
   if (payable <= 0) return;
 
-  // v1.0.56 算每人 floor 應付（按比例 + 袋子均分）
-  const ratio = totalItems > 0 ? (totalItems - discount) / totalItems : 1;
+  // v1.0.59 算每人 floor 應付（平均折讓 + 袋子均分）
+  const discountPerPerson = n > 0 ? Math.ceil(discount / n) : 0;
   const bagShareFloat = n > 0 ? sharedAddon / n : 0;
   const payerBases = payers.map(e => {
-    const theory = (+e.price || 0) * ratio + bagShareFloat;
+    const theory = (+e.price || 0) - discountPerPerson + bagShareFloat;
     return { ...e, base: Math.floor(theory) };
   });
   const sumBase = payerBases.reduce((s, p) => s + p.base, 0);
@@ -1677,13 +1677,15 @@ function appendShareDetailsBlock(rows, parsed, opts) {
   const payable = totalItems - discount + sharedAddon;
   if (payable <= 0) return;
 
+  // v1.0.59 平均折讓
+  const discountPerPerson = n > 0 ? Math.ceil(discount / n) : 0;
   const ratio = totalItems > 0 ? (totalItems - discount) / totalItems : 1;
   const bagShareFloat = n > 0 ? sharedAddon / n : 0;
   const payerBases = payers.map(p => ({
     ...p,
-    theory: (+p.price || 0) * ratio + bagShareFloat,
-    base: Math.floor((+p.price || 0) * ratio + bagShareFloat),
-    discountShare: totalItems > 0 ? Math.round((+p.price || 0) * discount / totalItems) : 0,
+    theory: (+p.price || 0) - discountPerPerson + bagShareFloat,
+    base: Math.floor((+p.price || 0) - discountPerPerson + bagShareFloat),
+    discountShare: discountPerPerson,
   }));
   const sumBase = payerBases.reduce((s, p) => s + p.base, 0);
   const remainder = payable - sumBase;
