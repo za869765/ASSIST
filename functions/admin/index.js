@@ -7,7 +7,7 @@ export async function onRequestGet() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ASSIST 管理後台</title>
-<meta name="version" content="v1.0.43">
+<meta name="version" content="v1.0.44">
 <style>
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -95,7 +95,7 @@ small.note { color: #888; font-size: 11px; }
   <h1>🛠 ASSIST 管理後台
     <button onclick="doLogout()" style="font-size:12px">登出</button>
   </h1>
-  <div class="sub">v1.0.43 · LINE Bot 統一維護</div>
+  <div class="sub">v1.0.44 · LINE Bot 統一維護</div>
 
   <div class="tabs">
     <button class="tab active" data-tab="overview">總覽</button>
@@ -179,7 +179,7 @@ small.note { color: #888; font-size: 11px; }
       <b>D1 binding</b><div>DB → assist_db</div>
       <b>分區設定</b><div><a class="zone-link" href="/admin/zones">/admin/zones</a></div>
       <b>Webhook URL</b><div><code id="webhookUrl">—</code></div>
-      <b>後台版本</b><div>v1.0.43</div>
+      <b>後台版本</b><div>v1.0.44</div>
     </div>
     <h2>💡 LINE 指令備忘</h2>
     <ul style="font-size:13px;line-height:1.8;color:#666">
@@ -572,6 +572,10 @@ async function openTaskDetail(id) {
   let html = '';
   html += \`<h3 class="modal-title">\${esc(t.task_name)} <small style="color:#999;font-weight:400">#\${t.id}</small></h3>\`;
   html += \`<div class="modal-meta">\${stBadge} \${modeBadge} · 群組：\${esc(groupLabel)}<br>建立：\${esc((t.started_at || '').slice(0, 16))}\${t.closed_at ? ' · 結單：' + esc(t.closed_at.slice(0, 16)) : ''}</div>\`;
+  // v1.0.44: 進行中 + 菜單模式 → 顯示「按菜單重算」按鈕，依 menu_json 重設所有 entries.price
+  if (t.status === 'open' && t.mode === 'menu') {
+    html += \`<div style="margin:8px 0 12px"><button onclick="reprice(\${t.id})" class="detail-btn" style="background:#2db87a;color:#fff;border:none">💰 按菜單重算金額</button> <small style="color:#888">依菜單 L 價回填每筆 entry 的 price（不處理加料）</small></div>\`;
+  }
 
   html += '<div class="modal-summary">';
   html += \`<div><b>總筆數</b>\${sum.entry_count || 0}</div>\`;
@@ -610,6 +614,21 @@ function closeTaskModal() {
   document.body.style.overflow = '';
 }
 
+// v1.0.44 按菜單重算金額：呼叫 POST /api/admin/tasks/<id>/reprice
+async function reprice(id) {
+  if (!confirm('按菜單 L 價回填每筆 entry 的 price？\\n（菜單沒有的品項不動；不處理加料 +5/+10 等）')) return;
+  const r = await api('/api/admin/tasks/' + id + '/reprice', { method: 'POST' });
+  if (!r.ok) {
+    const t = await r.text().catch(() => '');
+    alert('重算失敗：' + t.slice(0, 200));
+    return;
+  }
+  const j = await r.json();
+  alert(\`重算完成\\n  共 \${j.total} 筆\\n  更新 \${j.updated} 筆\\n  原本就對 \${j.unchanged} 筆\\n  菜單外品項略過 \${j.skipped_not_in_menu} 筆\\n  沒品項略過 \${j.skipped_no_item} 筆\`);
+  // 重新載入詳情顯示新 price
+  openTaskDetail(id);
+}
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && document.getElementById('taskModal').classList.contains('show')) {
     closeTaskModal();
@@ -636,7 +655,7 @@ async function loadGroupOptionsForMembers() {
   if (!r.ok) return;
   const j = await r.json();
   const groups = j.groups || [];
-  // v1.0.43: 存 metadata，給 renderAllMembers 判斷該群是否分區
+  // v1.0.44: 存 metadata，給 renderAllMembers 判斷該群是否分區
   GROUPS_META = {};
   for (const g of groups) {
     GROUPS_META[g.group_id] = {
@@ -732,7 +751,7 @@ function renderAllMembers() {
   const filtered = q ? ALL_MEMBERS.filter(m => m._searchable.includes(q)) : ALL_MEMBERS;
   document.getElementById('memberCount').textContent = \`共 \${filtered.length} / \${ALL_MEMBERS.length} 位\`;
   const isPerGroup = !!CURRENT_GROUP_ID;
-  // v1.0.43: per-group 模式 + 該群 show_zones=0 → 分區欄改顯示「—（不分區群組）」
+  // v1.0.44: per-group 模式 + 該群 show_zones=0 → 分區欄改顯示「—（不分區群組）」
   const hideZoneCol = isPerGroup && GROUPS_META[CURRENT_GROUP_ID]?.show_zones === 0;
   // 動態更新 thead「分區」label，避免使用者困惑
   const thead = document.querySelector('#memberTable thead tr');
