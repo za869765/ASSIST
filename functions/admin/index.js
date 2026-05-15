@@ -7,7 +7,7 @@ export async function onRequestGet() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ASSIST 管理後台</title>
-<meta name="version" content="v1.0.42">
+<meta name="version" content="v1.0.43">
 <style>
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -95,7 +95,7 @@ small.note { color: #888; font-size: 11px; }
   <h1>🛠 ASSIST 管理後台
     <button onclick="doLogout()" style="font-size:12px">登出</button>
   </h1>
-  <div class="sub">v1.0.42 · LINE Bot 統一維護</div>
+  <div class="sub">v1.0.43 · LINE Bot 統一維護</div>
 
   <div class="tabs">
     <button class="tab active" data-tab="overview">總覽</button>
@@ -179,7 +179,7 @@ small.note { color: #888; font-size: 11px; }
       <b>D1 binding</b><div>DB → assist_db</div>
       <b>分區設定</b><div><a class="zone-link" href="/admin/zones">/admin/zones</a></div>
       <b>Webhook URL</b><div><code id="webhookUrl">—</code></div>
-      <b>後台版本</b><div>v1.0.42</div>
+      <b>後台版本</b><div>v1.0.43</div>
     </div>
     <h2>💡 LINE 指令備忘</h2>
     <ul style="font-size:13px;line-height:1.8;color:#666">
@@ -620,6 +620,7 @@ document.addEventListener('keydown', (e) => {
 let ALL_MEMBERS = [];
 let ZONES_CACHE = [];
 let CURRENT_GROUP_ID = ''; // '' = 全域模式；非空 = 該 group_id 的 per-group 編輯
+let GROUPS_META = {};      // group_id → { show_zones, alias, enabled }，給 renderAllMembers 判斷
 
 async function loadZonesCache() {
   try {
@@ -635,6 +636,15 @@ async function loadGroupOptionsForMembers() {
   if (!r.ok) return;
   const j = await r.json();
   const groups = j.groups || [];
+  // v1.0.43: 存 metadata，給 renderAllMembers 判斷該群是否分區
+  GROUPS_META = {};
+  for (const g of groups) {
+    GROUPS_META[g.group_id] = {
+      show_zones: g.show_zones == null ? 1 : +g.show_zones,
+      alias: g.alias,
+      enabled: g.enabled,
+    };
+  }
   const sel = document.getElementById('memberGroupSelect');
   const opts = ['<option value="">— 全部成員（全域 members 表）—</option>'];
   for (const g of groups) {
@@ -722,6 +732,14 @@ function renderAllMembers() {
   const filtered = q ? ALL_MEMBERS.filter(m => m._searchable.includes(q)) : ALL_MEMBERS;
   document.getElementById('memberCount').textContent = \`共 \${filtered.length} / \${ALL_MEMBERS.length} 位\`;
   const isPerGroup = !!CURRENT_GROUP_ID;
+  // v1.0.43: per-group 模式 + 該群 show_zones=0 → 分區欄改顯示「—（不分區群組）」
+  const hideZoneCol = isPerGroup && GROUPS_META[CURRENT_GROUP_ID]?.show_zones === 0;
+  // 動態更新 thead「分區」label，避免使用者困惑
+  const thead = document.querySelector('#memberTable thead tr');
+  if (thead && thead.children[3]) {
+    thead.children[3].textContent = hideZoneCol ? '分區（不適用）' : '分區';
+    thead.children[3].style.color = hideZoneCol ? '#aaa' : '';
+  }
   const rows = filtered.map(m => {
     const last = (m.last_at || '').slice(0, 16);
     const overrideTag = m.has_override ? '<span class="badge b-info" style="font-size:9px;margin-left:4px">override</span>' : '';
@@ -731,6 +749,9 @@ function renderAllMembers() {
     const memberCell = isPerGroup
       ? '<small style="color:#aaa">—</small>'
       : \`<input type="checkbox" data-uid="\${esc(m.user_id)}" class="member-is-member"\${m.is_member ? ' checked' : ''} title="勾選 = 會員，可領補助" style="width:16px;height:16px;cursor:pointer">\`;
+    const zoneCell = hideZoneCol
+      ? '<small style="color:#aaa">— 不分區群組</small>'
+      : \`<select data-uid="\${esc(m.user_id)}" class="member-zone" style="padding:4px 6px;font-size:13px;border:1px solid #ccc6;border-radius:4px;background:transparent;color:inherit">\${zoneOptionsHtml(m.zone_val)}</select>\${m.zone_fallback ? '<small style="color:#aaa;margin-left:4px">' + esc(m.zone_fallback) + '</small>' : ''}\`;
     return \`<tr>
       <td>
         <input type="text" value="\${esc(m.name_val)}" placeholder="\${esc(m.name_ph)}" data-uid="\${esc(m.user_id)}" class="member-real-name" style="width:140px;padding:4px 6px;font-size:13px;border:1px solid #ccc6;border-radius:4px;background:transparent;color:inherit">
@@ -738,10 +759,7 @@ function renderAllMembers() {
       </td>
       <td><small>\${esc(m.line_display)}</small></td>
       <td class="uid">\${esc(m.user_id)}</td>
-      <td>
-        <select data-uid="\${esc(m.user_id)}" class="member-zone" style="padding:4px 6px;font-size:13px;border:1px solid #ccc6;border-radius:4px;background:transparent;color:inherit">\${zoneOptionsHtml(m.zone_val)}</select>
-        \${m.zone_fallback ? '<small style="color:#aaa;margin-left:4px">' + esc(m.zone_fallback) + '</small>' : ''}
-      </td>
+      <td>\${zoneCell}</td>
       <td style="text-align:center">\${memberCell}</td>
       <td><small>\${esc(last)}</small></td>
       <td>\${actionBtn}</td>
