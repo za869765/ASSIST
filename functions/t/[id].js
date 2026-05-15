@@ -1606,7 +1606,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.40</span>
+  <span style="opacity:.6">v1.0.41</span>
 </div>
 
 <div class="admin-row">
@@ -2212,7 +2212,13 @@ async function loadMenu() {
     const hasItems = isMenuMode && (j.items || []).length > 0;
     const recBar = document.querySelector('.recommend-bar');
     const leaveRow = '<div class="cat-row" style="margin-top:8px"><span class="item-chip leave-chip" data-name="__leave__"><b class="item-pick">📝 請假</b></span></div>';
-    if (!hasItems && isDrinkTask()) {
+    const isNoZone = state.task && state.task.show_zones === 0;
+    if (isNoZone) {
+      // v1.0.41 不分區群組：看板不提供下單，請從 LINE 群組打字點餐
+      document.getElementById('menuItems').innerHTML =
+        '<div style="margin:14px 0;padding:14px 18px;background:rgba(120,160,200,.1);border:1px solid rgba(120,160,200,.3);border-radius:8px;font-size:13px;text-align:center;color:var(--text-dim);line-height:1.7">📱 此群組為「不分區」模式<br>請直接在 LINE 群組打字點餐（例：「珍奶 微糖少冰」）</div>';
+      if (recBar) recBar.style.display = 'none';
+    } else if (!hasItems && isDrinkTask()) {
       // 飲料類強制要有菜單，沒上傳就擋住（請假仍可）
       document.getElementById('menuItems').innerHTML =
         '<div style="padding:10px;background:rgba(240,160,88,.08);border:1px dashed rgba(240,160,88,.4);border-radius:6px;color:var(--wine);font-size:13px">' +
