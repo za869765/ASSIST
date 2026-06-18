@@ -2,24 +2,32 @@
 
 export async function findOpenTask(DB, groupId) {
   if (!DB || !groupId) return null;
-  const r = await DB.prepare(
-    `SELECT id, group_id, task_name, mode, started_by, started_at, url_slug,
-            pricing_mode, total_amount, member_subsidy
-       FROM tasks WHERE group_id = ? AND status = 'open'
-       ORDER BY id DESC LIMIT 1`
-  ).bind(groupId).first();
-  return r || null;
+  const base = `id, group_id, task_name, mode, started_by, started_at, url_slug, pricing_mode, total_amount, member_subsidy`;
+  try {
+    return (await DB.prepare(
+      `SELECT ${base}, travel_json FROM tasks WHERE group_id = ? AND status = 'open' ORDER BY id DESC LIMIT 1`
+    ).bind(groupId).first()) || null;
+  } catch {
+    return (await DB.prepare(
+      `SELECT ${base} FROM tasks WHERE group_id = ? AND status = 'open' ORDER BY id DESC LIMIT 1`
+    ).bind(groupId).first()) || null;
+  }
 }
 
 export async function findOpenTasks(DB, groupId) {
   if (!DB || !groupId) return [];
-  const r = await DB.prepare(
-    `SELECT id, group_id, task_name, mode, menu_json, started_by, started_at, url_slug,
-            pricing_mode, total_amount, member_subsidy
-       FROM tasks WHERE group_id = ? AND status = 'open'
-       ORDER BY id DESC`
-  ).bind(groupId).all();
-  return r.results || [];
+  const base = `id, group_id, task_name, mode, menu_json, started_by, started_at, url_slug, pricing_mode, total_amount, member_subsidy`;
+  try {
+    const r = await DB.prepare(
+      `SELECT ${base}, travel_json FROM tasks WHERE group_id = ? AND status = 'open' ORDER BY id DESC`
+    ).bind(groupId).all();
+    return r.results || [];
+  } catch {
+    const r = await DB.prepare(
+      `SELECT ${base} FROM tasks WHERE group_id = ? AND status = 'open' ORDER BY id DESC`
+    ).bind(groupId).all();
+    return r.results || [];
+  }
 }
 
 export function matchTaskByHint(tasks, hint) {

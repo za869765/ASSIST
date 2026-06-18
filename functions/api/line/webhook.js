@@ -809,7 +809,62 @@ async function doCloseTask(env, picked, replyToken) {
   ]);
 }
 
+// v1.0.62 旅遊任務的 LINE 報名：解析 身份 + 房型（不走訂餐流程；只在 pricing_mode='travel' 觸發）
+async function collectTravelEntry(env, task, userId, text, replyToken) {
+  const raw = String(text || '').trim();
+  const reply = (msg) => lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: msg }]);
+
+  if (/(取消報名|不參加|不去了?|退出報名|我不報名?)/.test(raw)) {
+    await env.DB.prepare(`DELETE FROM entries WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
+    await reply('🧳 已取消你的旅遊報名');
+    return;
+  }
+
+  let room = null;
+  if (/(四人房|4人房|四人)/.test(raw)) room = '四人房';
+  else if (/(兩人房|二人房|雙人房|2人房|兩人|雙人)/.test(raw)) room = '兩人房';
+  let role = null;
+  if (/(離退|退休)/.test(raw)) role = '離退會員';
+  else if (/(員眷|眷屬|眷|家屬)/.test(raw)) role = '員眷';
+  else if (/非會員/.test(raw)) role = '非會員';
+  else if (/會員/.test(raw)) role = '會員';
+
+  if (!room && !role) return; // 無旅遊關鍵字 → silent，避免誤抓閒聊
+
+  // 既有 entry（支援兩步驟：先報身份再報房型）
+  let prev = {};
+  try {
+    const exist = await env.DB.prepare(`SELECT data_json FROM entries WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).first();
+    if (exist && exist.data_json) prev = JSON.parse(exist.data_json) || {};
+  } catch { prev = {}; }
+  if (!role && prev['身份']) role = prev['身份'];
+  if (!room && prev['房型']) room = prev['房型'];
+  if (!role) {
+    let isM = 0;
+    try { const m = await env.DB.prepare(`SELECT is_member FROM members WHERE user_id = ?`).bind(userId).first(); isM = (m && m.is_member) ? 1 : 0; } catch {}
+    role = isM ? '會員' : '非會員';
+  }
+
+  let cfg = {};
+  try { cfg = task.travel_json ? JSON.parse(task.travel_json) : {}; } catch { cfg = {}; }
+  const isTwo = cfg.tripType !== 'one';
+
+  const data = { 身份: role };
+  if (isTwo && room) data['房型'] = room;
+  await upsertEntry(env.DB, { taskId: task.id, userId, data, note: null, price: null, rawText: text, additive: false });
+
+  let name = '';
+  try { const m = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first(); name = (m && (m.real_name || m.line_display)) || ''; } catch {}
+  const who = name ? name + '　' : '';
+  if (isTwo && !room) await reply(`🧳 ${who}${role} 已登記，請再回覆房型：兩人房 或 四人房`);
+  else await reply(`🧳 已登記報名：${who}${role}${(isTwo && room) ? '・' + room : ''}`);
+}
+
 async function collectEntry(env, task, userId, text, replyToken, groupId) {
+  // v1.0.62 旅遊任務：走專屬解析（身份+房型），不進訂餐流程
+  if (task && task.pricing_mode === 'travel') {
+    return collectTravelEntry(env, task, userId, text, replyToken);
+  }
   // 先檢查是否在回應「挑候選品項」的編號提示
   await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS pending_menu_pick (task_id INTEGER, user_id TEXT, candidates TEXT, created_at TEXT, PRIMARY KEY(task_id, user_id))`

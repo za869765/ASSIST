@@ -1658,7 +1658,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.62</span>
+  <span style="opacity:.6">v1.0.63</span>
 </div>
 
 <div class="admin-row">
@@ -1751,6 +1751,8 @@ ${closed ? '' : `<div id="travelPanel" class="pricing-panel" style="display:none
   <select id="tvAddRole" style="padding:5px 7px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--text)"><option>會員</option><option>非會員</option><option>員眷</option><option>離退會員</option></select>
   <select id="tvAddRoom" style="padding:5px 7px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--text)"><option>兩人房</option><option>四人房</option></select>
   <button id="tvAddBtn" style="padding:5px 14px;border:1px solid var(--jade);background:var(--jade);color:#fff;border-radius:4px;cursor:pointer;font-weight:600">新增</button>
+  <button id="tvImportBtn" type="button" style="padding:5px 12px;border:1px solid var(--line);background:transparent;color:var(--text);border-radius:4px;cursor:pointer">📋 匯入名單</button>
+  <input type="file" id="tvImportFile" accept=".xlsx,.xls,.csv" style="display:none">
   <span id="tvAddMsg" style="font-size:12px;color:var(--text-muted)"></span>
 </div>`}
 
@@ -2163,7 +2165,7 @@ function renderTravelBoard() {
   var board = document.getElementById('board');
   ['menuModeToggle','menuCard','menuItems'].forEach(function(id){ var el = document.getElementById(id); if (el) el.style.display = 'none'; });
   var cfg = tvCfg();
-  var entries = state.entries || [];
+  var entries = (state.entries || []).filter(function(e) { return e.note !== '請假' && e.note !== '不吃'; });
   var pe = entries.map(function(e) {
     var role = TV_ROLE_MAP[String((e.data && e.data['身份']) || '').trim()] || 'nonmember';
     var room = cfg.tripType === 'two' ? (TV_ROOM_MAP[String((e.data && e.data['房型']) || '').trim()] || 'two') : 'two';
@@ -2666,6 +2668,59 @@ function syncMenuOnlyButtons(isMenu) {
       tvAddBtn.disabled = false;
       await poll();
     } catch (e) { amsg.textContent = '錯誤：' + e.message; tvAddBtn.disabled = false; }
+  });
+
+  // v1.0.63 Excel/CSV 名單匯入（前端 SheetJS 動態載入）
+  function tvLoadSheetJS() {
+    return new Promise(function(resolve, reject) {
+      if (window.XLSX) return resolve();
+      var s = document.createElement('script');
+      s.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+      s.onload = resolve; s.onerror = function(){ reject(new Error('SheetJS 載入失敗（需連網）')); };
+      document.head.appendChild(s);
+    });
+  }
+  function tvNormRole(s) { s = String(s == null ? '' : s).trim(); if (/離退|退休/.test(s)) return '離退會員'; if (/員眷|眷/.test(s)) return '員眷'; if (/非會員/.test(s)) return '非會員'; if (/會員/.test(s)) return '會員'; return ''; }
+  function tvNormRoom(s) { s = String(s == null ? '' : s).trim(); if (/四人|4人/.test(s)) return '四人房'; if (/兩人|二人|雙人|2人/.test(s)) return '兩人房'; return ''; }
+  var tvImportBtn = document.getElementById('tvImportBtn');
+  var tvImportFile = document.getElementById('tvImportFile');
+  if (tvImportBtn) tvImportBtn.addEventListener('click', function(){ tvImportFile.click(); });
+  if (tvImportFile) tvImportFile.addEventListener('change', async function(ev) {
+    var file = ev.target.files[0]; ev.target.value = '';
+    if (!file) return;
+    var amsg = document.getElementById('tvAddMsg');
+    amsg.textContent = '解析中…';
+    try {
+      await tvLoadSheetJS();
+      var wb = /\.csv$/i.test(file.name) ? XLSX.read(await file.text(), {type:'string'}) : XLSX.read(await file.arrayBuffer(), {type:'array'});
+      var grid = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, raw:false, blankrows:false});
+      var hi = -1, cName = -1, cRole = -1, cRoom = -1;
+      for (var i = 0; i < Math.min(grid.length, 8); i++) {
+        var row = (grid[i] || []).map(function(c){ return String(c == null ? '' : c).trim(); });
+        var nIdx = row.findIndex(function(c){ return /姓名|名字/.test(c); });
+        if (nIdx >= 0) { hi = i; cName = nIdx; cRole = row.findIndex(function(c){ return /身份|身分/.test(c); }); cRoom = row.findIndex(function(c){ return /房型|房間|住宿/.test(c); }); break; }
+      }
+      if (hi < 0) { amsg.textContent = '找不到「姓名」欄，請確認檔案'; return; }
+      var isOne = (tvTrip && tvTrip.value === 'one');
+      var ok = 0, fail = 0;
+      for (var j = hi + 1; j < grid.length; j++) {
+        var r2 = grid[j] || [];
+        var name = String(r2[cName] == null ? '' : r2[cName]).trim();
+        if (!name) continue;
+        var role = (cRole >= 0 ? tvNormRole(r2[cRole]) : '') || '會員';
+        var room = (cRoom >= 0 ? tvNormRoom(r2[cRoom]) : '') || '兩人房';
+        try {
+          var rr = await fetch('/api/t/${task.id}/quick-entry', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ zone: '旅遊', noZoneGroup: true, memberName: name, travelRole: role, travelRoom: isOne ? '' : room }),
+          });
+          if (rr.ok) ok++; else fail++;
+        } catch (e2) { fail++; }
+        amsg.textContent = '匯入中… ' + ok + ' 筆';
+      }
+      amsg.textContent = '✓ 匯入 ' + ok + ' 筆' + (fail ? '，失敗 ' + fail : '') + '（身份/房型空白者預設 會員·兩人房，可逐筆改）';
+      await poll();
+    } catch (e) { amsg.textContent = '匯入失敗：' + (e && e.message ? e.message : e); }
   });
 })();
 
