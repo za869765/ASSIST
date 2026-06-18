@@ -1658,7 +1658,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.63</span>
+  <span style="opacity:.6">v1.0.64</span>
 </div>
 
 <div class="admin-row">

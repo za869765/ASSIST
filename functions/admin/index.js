@@ -7,7 +7,7 @@ export async function onRequestGet() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ASSIST 管理後台</title>
-<meta name="version" content="v1.0.63">
+<meta name="version" content="v1.0.64">
 <style>
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -95,7 +95,7 @@ small.note { color: #888; font-size: 11px; }
   <h1>🛠 ASSIST 管理後台
     <button onclick="doLogout()" style="font-size:12px">登出</button>
   </h1>
-  <div class="sub">v1.0.63 · LINE Bot 統一維護</div>
+  <div class="sub">v1.0.64 · LINE Bot 統一維護</div>
 
   <div class="tabs">
     <button class="tab active" data-tab="overview">總覽</button>
@@ -111,6 +111,7 @@ small.note { color: #888; font-size: 11px; }
     <div id="healthBox">載入中…</div>
     <h2>📌 快速連結</h2>
     <ul style="font-size:14px;line-height:2">
+      <li><a class="zone-link" href="/admin/travel">🧳 會員旅遊計算頁</a>（直接建任務開始計算，免走 LINE）</li>
       <li><a class="zone-link" href="/admin/zones">分區設定 / 成員區對照</a>（含姓名編輯、刪除成員）</li>
       <li><a class="zone-link" href="/">首頁狀態</a></li>
     </ul>
@@ -179,7 +180,7 @@ small.note { color: #888; font-size: 11px; }
       <b>D1 binding</b><div>DB → assist_db</div>
       <b>分區設定</b><div><a class="zone-link" href="/admin/zones">/admin/zones</a></div>
       <b>Webhook URL</b><div><code id="webhookUrl">—</code></div>
-      <b>後台版本</b><div>v1.0.63</div>
+      <b>後台版本</b><div>v1.0.64</div>
     </div>
     <h2>💡 LINE 指令備忘</h2>
     <ul style="font-size:13px;line-height:1.8;color:#666">

@@ -18,7 +18,7 @@ export async function onRequestGet({ request, env }) {
   const tasks = await env.DB.prepare(`
     SELECT
       t.id, t.group_id, g.alias AS group_alias,
-      t.task_name, t.status, t.mode, t.url_slug,
+      t.task_name, t.status, t.mode, t.url_slug, t.pricing_mode,
       t.started_at, t.closed_at, t.started_by,
       (SELECT COUNT(*) FROM entries e WHERE e.task_id = t.id) AS entry_count
     FROM tasks t
