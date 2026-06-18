@@ -17,8 +17,12 @@ export async function onRequestPost({ env, params, request }) {
   const zone = String(body.zone || '').trim();
   const isLeave = !!body.leave;
   const item = String(body.item || '').trim();
+  // v1.0.62 旅遊模式：以 身份+房型 取代品項
+  const travelRole = (body.travelRole == null ? '' : String(body.travelRole)).trim() || null;
+  const travelRoom = (body.travelRoom == null ? '' : String(body.travelRoom)).trim() || null;
+  const isTravel = !!travelRole;
   if (!zone) return json({ error: 'zone 不可為空' }, 400);
-  if (!isLeave && !item) return json({ error: 'item 不可為空' }, 400);
+  if (!isLeave && !isTravel && !item) return json({ error: 'item 不可為空' }, 400);
   const note = body.note == null ? null : String(body.note).slice(0, 60);
   const price = body.price == null || body.price === '' ? null : +body.price;
   const sweet = body.sweet == null ? null : String(body.sweet).slice(0, 10);
@@ -69,8 +73,8 @@ export async function onRequestPost({ env, params, request }) {
     } catch {}
   }
 
-  // 菜單模式：item 必須在菜單上（防止前端亂送）；custom=true 允許菜單外；leave 跳過
-  const isCustom = !!body.custom;
+  // 菜單模式：item 必須在菜單上（防止前端亂送）；custom=true 允許菜單外；leave / 旅遊 跳過
+  const isCustom = !!body.custom || isTravel;
   if (!isLeave && task.menu_json && !isCustom) {
     const menu = JSON.parse(task.menu_json);
     const norm = (s) => String(s || '').replace(/\s+/g, '').toLowerCase();
@@ -116,13 +120,20 @@ export async function onRequestPost({ env, params, request }) {
     ).bind(userId, memberLabel, noZoneGroup ? '' : zone).run();
   }
 
-  const data = isLeave ? {} : { 品項: item };
-  if (!isLeave) {
+  const data = isLeave ? {} : (isTravel ? {} : { 品項: item });
+  if (!isLeave && !isTravel) {
     if (sweet) data['甜度'] = sweet;
     if (ice) data['冰塊'] = ice;
   }
-  if (memberName) data['姓名'] = memberName;
-  if (nonMemberName) { data['姓名'] = nonMemberName; data['身份'] = '非會員'; }
+  if (isTravel) {
+    const personName = memberName || nonMemberName || null;
+    if (personName) data['姓名'] = personName;
+    data['身份'] = travelRole;                 // 會員 / 非會員 / 離退會員
+    if (travelRoom) data['房型'] = travelRoom;  // 兩人房 / 四人房（兩日）
+  } else {
+    if (memberName) data['姓名'] = memberName;
+    if (nonMemberName) { data['姓名'] = nonMemberName; data['身份'] = '非會員'; }
+  }
   if (!data['姓名'] && autoName) data['姓名'] = autoName;
 
   const additive = !!body.additive && !isLeave;
@@ -130,7 +141,9 @@ export async function onRequestPost({ env, params, request }) {
   const finalPrice = isLeave ? null : price;
   const rawText = isLeave
     ? `[web] ${zone} ${displayName}${isNon ? '(非會員)' : ''} → 請假${note ? '（' + note + '）' : ''}`
-    : `[web] ${zone} ${displayName}${isNon ? '(非會員)' : ''} → ${item}${sweet ? '/' + sweet : ''}${ice ? '/' + ice : ''}`;
+    : isTravel
+      ? `[web] 旅遊 ${displayName} → ${travelRole}${travelRoom ? '/' + travelRoom : ''}`
+      : `[web] ${zone} ${displayName}${isNon ? '(非會員)' : ''} → ${item}${sweet ? '/' + sweet : ''}${ice ? '/' + ice : ''}`;
   await upsertEntry(env.DB, {
     taskId, userId,
     data,

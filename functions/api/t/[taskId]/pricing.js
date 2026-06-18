@@ -59,6 +59,24 @@ export async function onRequestPost({ params, request, env }) {
       binds.push(n);
     }
   }
+  // v1.0.62 旅遊模式設定（成本表/補助/文康/一日兩日/級距/發票）以 JSON 整包存
+  if (Object.prototype.hasOwnProperty.call(body, 'travel_json')) {
+    const v = body.travel_json;
+    if (v == null || v === '') {
+      updates.push('travel_json = ?');
+      binds.push(null);
+    } else {
+      let str;
+      if (typeof v === 'string') {
+        try { JSON.parse(v); str = v; } catch { return new Response('bad travel_json', { status: 400 }); }
+      } else {
+        try { str = JSON.stringify(v); } catch { return new Response('bad travel_json', { status: 400 }); }
+      }
+      if (str.length > 20000) return new Response('travel_json too large', { status: 400 });
+      updates.push('travel_json = ?');
+      binds.push(str);
+    }
+  }
   if (updates.length === 0) return new Response('nothing to update', { status: 400 });
 
   binds.push(taskId);
@@ -70,10 +88,10 @@ export async function onRequestPost({ params, request, env }) {
     if (!r.meta?.changes) return new Response('task not found', { status: 404 });
     return Response.json({ ok: true });
   } catch (e) {
-    // 移除新欄位相關 update（buy5_get1 / shared_addon），重跑
+    // 移除新欄位相關 update（buy5_get1 / shared_addon / travel_json），重跑
     const safePairs = updates
       .map((u, i) => ({ u, b: binds[i] }))
-      .filter(p => !p.u.startsWith('buy5_get1') && !p.u.startsWith('shared_addon'));
+      .filter(p => !p.u.startsWith('buy5_get1') && !p.u.startsWith('shared_addon') && !p.u.startsWith('travel_json'));
     if (safePairs.length === 0) {
       return Response.json({ ok: false, error: 'migration 未跑', _warn: String(e).slice(0, 200) }, { status: 409 });
     }

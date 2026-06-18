@@ -1777,12 +1777,50 @@ function appendPricingBlocks(rows, entries, opts) {
     pricing_mode: pricingMode,
     total_amount: opts.total_amount,
     member_subsidy: opts.member_subsidy,
+    travel_json: opts.travel_json,
   }, entries);
 
   if (computed.notImplemented) {
     rows.push([]);
     rows.push([`■ ${MODE_LABEL[computed.mode] || computed.mode}`]);
     rows.push([computed.summary?.note || '（結算未實作）']);
+    return;
+  }
+
+  // v1.0.62 旅遊：個人應繳 + 結算總計（收據/發票/稅/總金額/廠商總金額）
+  if (computed.mode === 'travel') {
+    const s = computed.summary;
+    const cfg = computed.travel || {};
+    const ROLE_L = { member: '會員', nonmember: '非會員', retired: '離退會員' };
+    rows.push([]);
+    rows.push([`■ 個人應繳（會員旅遊・${s.trip}${s.tier ? ' ' + s.tier + '人團' : ''}）`]);
+    const head = ['姓名', '分區', '身份'];
+    if (cfg.tripType === 'two') head.push('房型');
+    head.push('應繳');
+    rows.push(head);
+    for (const x of computed.perEntry) {
+      const e = x.entry;
+      const name = e.real_name || e.line_display || (e.user_id || '').slice(0, 6);
+      let data = {};
+      try { data = (e.data && typeof e.data === 'object') ? e.data : JSON.parse(e.data_json || '{}'); } catch { data = {}; }
+      const roleLabel = data['身份'] || ROLE_L[x.identity] || '非會員';
+      const r = [name, e.zone || '', roleLabel];
+      if (cfg.tripType === 'two') r.push(data['房型'] || '');
+      r.push(String(x.due || 0));
+      rows.push(r);
+    }
+    rows.push([]);
+    rows.push(['■ 結算總計']);
+    rows.push(['項目', '金額']);
+    rows.push(['總應繳', String(s.total_payable || 0)]);
+    rows.push(['發票金額（文康）', String(s.invoice_base || 0)]);
+    rows.push(['發票稅 5%', String(s.invoice_tax || 0)]);
+    rows.push(['收據金額', String(s.receipt_amount || 0)]);
+    rows.push(['總金額（收據＋發票）', String(s.grand_total || 0)]);
+    rows.push(['廠商總金額', String(s.vendor_total || 0)]);
+    rows.push(['文康補助總額', String(s.wellness_total || 0)]);
+    rows.push(['聯繫會補助總額', String(s.liaison_total || 0)]);
+    rows.push(['身份人數', `會員 ${s.member_count} / 非會員 ${s.non_member_count} / 離退 ${s.retired_count}`]);
     return;
   }
 

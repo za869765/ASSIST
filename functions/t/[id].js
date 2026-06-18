@@ -8,7 +8,11 @@ export async function onRequestGet({ params, request, env }) {
                 pricing_mode, total_amount, member_subsidy`;
   const COLS_V148 = COLS_BASE + ', buy5_get1';
   const COLS_V150 = COLS_V148 + ', shared_addon';
+  const COLS_V162 = COLS_V150 + ', travel_json';
   async function selectTask(where, bindVal) {
+    try {
+      return await env.DB.prepare(`SELECT ${COLS_V162} FROM tasks WHERE ${where}`).bind(bindVal).first();
+    } catch {}
     try {
       return await env.DB.prepare(`SELECT ${COLS_V150} FROM tasks WHERE ${where}`).bind(bindVal).first();
     } catch {}
@@ -103,6 +107,7 @@ export async function onRequestGet({ params, request, env }) {
       show_zones: showZones,
       buy5_get1: task.buy5_get1 == null ? 0 : (+task.buy5_get1 ? 1 : 0),
       shared_addon: task.shared_addon == null ? 0 : Math.max(0, +task.shared_addon || 0),
+      travel_json: task.travel_json || null,
     },
     zones,
     entries: entries.map(e => ({
@@ -1621,6 +1626,24 @@ h1, .meta, .admin-row, .tabs, .menu-card, #board,
 }
 .pricing-panel button:hover { background: rgba(201,169,97,.10); }
 #pricingMsg { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+
+/* ===== v1.0.62 旅遊模式 ===== */
+#travelPanel .pp-field input, #travelPanel .pp-field select { width: auto; }
+#travelPanel input { width: 90px; }
+.tv-sum { position: relative; z-index: 1; margin: 10px 0; }
+.tv-sum-h { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; font-family: var(--f-zh); }
+.tv-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.tv-card { background: rgba(127,168,140,.10); border: 1px solid rgba(127,168,140,.35); border-radius: 8px; padding: 10px 12px; }
+.tv-card .tv-k { font-size: 12px; color: var(--text-muted); }
+.tv-card .tv-v { font-size: 18px; font-weight: 700; color: var(--text); margin-top: 2px; font-family: var(--f-ui); }
+.tv-card.big { grid-column: span 2; background: linear-gradient(110deg, rgba(201,169,97,.18), rgba(127,168,140,.18)); border-color: rgba(201,169,97,.5); }
+.tv-card.big .tv-v { font-size: 24px; color: var(--gold); }
+.tv-tbl { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; position: relative; z-index: 1; }
+.tv-tbl th, .tv-tbl td { border: 1px solid var(--line); padding: 7px 10px; text-align: center; }
+.tv-tbl th { background: rgba(127,168,140,.12); color: var(--text); font-family: var(--f-zh); }
+.tv-tbl td.tv-due { font-weight: 700; color: var(--gold-dim); }
+.tv-tbl .del-btn { background: transparent; border: 1px solid var(--line); color: #d4543a; border-radius: 4px; cursor: pointer; padding: 1px 7px; }
+@media (max-width: 620px) { .tv-cards { grid-template-columns: repeat(2, 1fr); } .tv-card.big { grid-column: span 2; } }
 </style>
 </head>
 <body>
@@ -1635,7 +1658,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.61</span>
+  <span style="opacity:.6">v1.0.62</span>
 </div>
 
 <div class="admin-row">
@@ -1696,6 +1719,7 @@ ${closed ? '' : `<div id="pricingPanel" class="pricing-panel" style="display:non
     <option value="menu">菜單模式</option>
     <option value="shared">合菜（共享總額）</option>
     <option value="drink">飲料</option>
+    <option value="travel">會員旅遊</option>
   </select>
   <span class="pp-field" id="totalAmountWrap">
     <label for="totalAmountInp">總額</label>
@@ -1708,6 +1732,26 @@ ${closed ? '' : `<div id="pricingPanel" class="pricing-panel" style="display:non
     <button id="subsidyUp" type="button" title="+50">+50</button>
   </span>
   <span id="pricingMsg"></span>
+</div>`}
+${closed ? '' : `<div id="travelPanel" class="pricing-panel" style="display:none">
+  <strong>🧳 旅遊設定</strong>
+  <span class="pp-field"><label for="tvTrip">行程</label>
+    <select id="tvTrip"><option value="two">兩日遊</option><option value="one">一日遊</option></select></span>
+  <span class="pp-field" id="tvTierWrap"><label for="tvTier">級距</label>
+    <select id="tvTier"><option value="30">30 人團</option><option value="25">25 人團</option><option value="20">20 人團</option></select></span>
+  <span class="pp-field" id="tvPriceWrap" style="display:none"><label for="tvPrice">一日報價</label>
+    <input id="tvPrice" type="number" min="0" placeholder="2000"></span>
+  <span class="pp-field"><label for="tvInvoice">發票金額</label>
+    <input id="tvInvoice" type="number" min="0" placeholder="預設=文康"></span>
+  <span id="travelMsg" style="font-size:12px;color:var(--text-muted)"></span>
+</div>
+<div id="travelAdd" style="display:none;margin:8px 0;padding:10px 12px;background:rgba(127,168,140,.10);border:1px solid rgba(127,168,140,.40);border-radius:6px;gap:8px;align-items:center;flex-wrap:wrap">
+  <strong style="color:var(--jade)">＋ 報名</strong>
+  <input id="tvAddName" placeholder="姓名" maxlength="20" style="width:96px;padding:5px 7px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--text)">
+  <select id="tvAddRole" style="padding:5px 7px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--text)"><option>會員</option><option>非會員</option><option>員眷</option><option>離退會員</option></select>
+  <select id="tvAddRoom" style="padding:5px 7px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--text)"><option>兩人房</option><option>四人房</option></select>
+  <button id="tvAddBtn" style="padding:5px 14px;border:1px solid var(--jade);background:var(--jade);color:#fff;border-radius:4px;cursor:pointer;font-weight:600">新增</button>
+  <span id="tvAddMsg" style="font-size:12px;color:var(--text-muted)"></span>
 </div>`}
 
 <div id="board"></div>
@@ -2080,7 +2124,92 @@ function entryBodyHtml(e) {
   return esc(txt);
 }
 
+// ===== v1.0.62 旅遊模式（client 端結算，與 _pricing.js 同算法）=====
+var TV_ROLE_MAP = {'會員':'member','非會員':'nonmember','員眷':'nonmember','眷屬':'nonmember','員工眷屬':'nonmember','離退會員':'retired','離退':'retired','退休':'retired'};
+var TV_ROOM_MAP = {'兩人房':'two','四人房':'four','2人房':'two','4人房':'four','雙人房':'two'};
+var TV_ROLE_LABEL = {member:'會員', nonmember:'非會員', retired:'離退會員'};
+var TV_DEFAULTS = {twoCost:{30:{two:4970,four:4370},25:{two:5454,four:4854},20:{two:5470,four:4870}},oneDayPrice:2000,subTwo:{member:{liaison:1200,wellness:1000},nonmember:{liaison:0,wellness:0},retired:{liaison:600,wellness:0}},oneDay:{memberWellness:1000,retiredLiaison:300}};
+function tvCfg() {
+  var c = {};
+  try { c = state.task && state.task.travel_json ? JSON.parse(state.task.travel_json) : {}; } catch (e) { c = {}; }
+  return {
+    tripType: c.tripType === 'one' ? 'one' : 'two',
+    tier: [30,25,20].indexOf(+c.tier) >= 0 ? +c.tier : 30,
+    twoCost: c.twoCost || TV_DEFAULTS.twoCost,
+    oneDayPrice: c.oneDayPrice == null ? TV_DEFAULTS.oneDayPrice : Math.max(0, +c.oneDayPrice || 0),
+    subTwo: c.subTwo || TV_DEFAULTS.subTwo,
+    oneDay: c.oneDay || TV_DEFAULTS.oneDay,
+    invoiceBase: (c.invoiceBase == null || c.invoiceBase === '') ? null : Math.max(0, +c.invoiceBase || 0),
+    invoiceRate: c.invoiceRate == null ? 0.05 : +c.invoiceRate
+  };
+}
+function tvCostOf(cfg, room) { return cfg.tripType === 'two' ? ((cfg.twoCost[cfg.tier] || {})[room] || 0) : cfg.oneDayPrice; }
+function tvPersonOf(cfg, role, room) {
+  var cost = tvCostOf(cfg, room);
+  if (cfg.tripType === 'two') {
+    var s = (cfg.subTwo || {})[role] || {liaison:0,wellness:0};
+    var li = Math.max(0, +s.liaison || 0), we = Math.max(0, +s.wellness || 0);
+    var due = Math.max(0, cost - li);
+    return {cost:cost, liaison:li, wellness:we, due:due, self:due - we};
+  }
+  var o = cfg.oneDay || {};
+  if (role === 'member') { var w = Math.min(cost, Math.max(0, +(o.memberWellness != null ? o.memberWellness : 1000))); return {cost:cost, liaison:cost - w, wellness:w, due:w, self:0}; }
+  if (role === 'retired') { var li2 = Math.max(0, +(o.retiredLiaison != null ? o.retiredLiaison : 300)); var due2 = Math.max(0, cost - li2); return {cost:cost, liaison:li2, wellness:0, due:due2, self:due2}; }
+  return {cost:cost, liaison:0, wellness:0, due:cost, self:cost};
+}
+function tvMoney(n) { return 'NT$' + Math.round(n).toLocaleString('en-US'); }
+function tvCard(k, v, cls) { return '<div class="tv-card ' + cls + '"><div class="tv-k">' + k + '</div><div class="tv-v">' + v + '</div></div>'; }
+function renderTravelBoard() {
+  var board = document.getElementById('board');
+  ['menuModeToggle','menuCard','menuItems'].forEach(function(id){ var el = document.getElementById(id); if (el) el.style.display = 'none'; });
+  var cfg = tvCfg();
+  var entries = state.entries || [];
+  var pe = entries.map(function(e) {
+    var role = TV_ROLE_MAP[String((e.data && e.data['身份']) || '').trim()] || 'nonmember';
+    var room = cfg.tripType === 'two' ? (TV_ROOM_MAP[String((e.data && e.data['房型']) || '').trim()] || 'two') : 'two';
+    var c = tvPersonOf(cfg, role, room);
+    return {e:e, role:role, room:room, due:c.due, wellness:c.wellness, liaison:c.liaison, cost:c.cost};
+  });
+  var sum = function(f) { return pe.reduce(function(s,x){return s+f(x);}, 0); };
+  var cnt = function(r) { return pe.filter(function(x){return x.role===r;}).length; };
+  var totalDue = sum(function(x){return x.due;});
+  var wellnessTotal = sum(function(x){return x.wellness;});
+  var totalCost = sum(function(x){return x.cost;});
+  var invBase = cfg.invoiceBase == null ? wellnessTotal : cfg.invoiceBase;
+  var invTax = Math.round(invBase * (cfg.invoiceRate || 0.05));
+  var receipt = (totalDue - invBase) + invTax;
+  var grand = receipt + invBase;
+  var vendor = totalCost + invTax;
+  var tripLabel = cfg.tripType === 'two' ? ('兩日遊 · ' + cfg.tier + ' 人團') : '一日遊';
+  var h = '<div class="tv-sum"><div class="tv-sum-h">' + tripLabel + '　|　會員 ' + cnt('member') + ' · 非會員 ' + cnt('nonmember') + ' · 離退 ' + cnt('retired') + '（共 ' + pe.length + ' 人）</div><div class="tv-cards">';
+  h += tvCard('總金額（收據+發票）', tvMoney(grand), 'big');
+  h += tvCard('收據金額', tvMoney(receipt), '');
+  h += tvCard('發票金額', tvMoney(invBase), '');
+  h += tvCard('發票稅 5%', tvMoney(invTax), '');
+  h += tvCard('文康補助總額', tvMoney(wellnessTotal), '');
+  h += tvCard('聯繫會補助總額', tvMoney(sum(function(x){return x.liaison;})), '');
+  h += tvCard('廠商總金額', tvMoney(vendor), '');
+  h += tvCard('總應繳', tvMoney(totalDue), '');
+  h += '</div></div>';
+  if (!pe.length) {
+    h += '<div style="text-align:center;color:#999;padding:24px">尚無報名' + (IS_ADMIN ? '，請用上方「＋ 報名」新增' : '') + '</div>';
+  } else {
+    h += '<table class="tv-tbl"><thead><tr><th>#</th><th>姓名</th><th>身份</th>' + (cfg.tripType === 'two' ? '<th>房型</th>' : '') + '<th>應繳</th>' + (IS_ADMIN ? '<th></th>' : '') + '</tr></thead><tbody>';
+    pe.forEach(function(x, i) {
+      var roleLabel = (x.e.data && x.e.data['身份']) || TV_ROLE_LABEL[x.role] || '非會員';
+      var roomLabel = (x.e.data && x.e.data['房型']) || '';
+      var isWeb = String(x.e.user_id || '').indexOf('web:') === 0;
+      h += '<tr><td>' + (i+1) + '</td><td>' + esc(x.e.name) + '</td><td>' + esc(roleLabel) + '</td>' + (cfg.tripType === 'two' ? '<td>' + esc(roomLabel) + '</td>' : '') + '<td class="tv-due">' + tvMoney(x.due) + '</td>' + (IS_ADMIN ? '<td><button class="del-btn" data-uid="' + esc(x.e.user_id) + '" data-real="' + (isWeb ? '0' : '1') + '" title="刪除">×</button></td>' : '') + '</tr>';
+    });
+    h += '</tbody></table>';
+  }
+  board.innerHTML = h;
+  var sl = document.getElementById('statLine');
+  if (sl) sl.textContent = '共 ' + pe.length + ' 人 · 總金額 ' + tvMoney(grand);
+}
+
 function render() {
+  if (state.task && state.task.pricing_mode === 'travel') { renderTravelBoard(); return; }
   const { zones, entries } = state;
   const board = document.getElementById('board');
   const isSharedMode = state.task && state.task.pricing_mode === 'shared';
@@ -2397,6 +2526,16 @@ function syncMenuOnlyButtons(isMenu) {
   const subsidyWrap = document.getElementById('subsidyWrap');
   const msg = document.getElementById('pricingMsg');
 
+  // v1.0.62 旅遊面板元素
+  const tvPanel = document.getElementById('travelPanel');
+  const tvAdd = document.getElementById('travelAdd');
+  const tvTrip = document.getElementById('tvTrip');
+  const tvTier = document.getElementById('tvTier');
+  const tvTierWrap = document.getElementById('tvTierWrap');
+  const tvPrice = document.getElementById('tvPrice');
+  const tvPriceWrap = document.getElementById('tvPriceWrap');
+  const tvInvoice = document.getElementById('tvInvoice');
+
   const t = state.task || {};
   sel.value = t.pricing_mode || 'free_bento';
   totalInp.value = (t.total_amount == null) ? '' : String(t.total_amount);
@@ -2406,8 +2545,29 @@ function syncMenuOnlyButtons(isMenu) {
   const isNoZoneGroup = !!(t.show_zones === 0);
   if (isNoZoneGroup && subsidyWrap) subsidyWrap.style.display = 'none';
 
+  function readTv() { try { return state.task && state.task.travel_json ? JSON.parse(state.task.travel_json) : {}; } catch (e) { return {}; } }
+  function tvFill() {
+    const c = readTv();
+    if (tvTrip) tvTrip.value = c.tripType === 'one' ? 'one' : 'two';
+    if (tvTier) tvTier.value = String([30,25,20].indexOf(+c.tier) >= 0 ? +c.tier : 30);
+    if (tvPrice) tvPrice.value = c.oneDayPrice == null ? '' : c.oneDayPrice;
+    if (tvInvoice) tvInvoice.value = (c.invoiceBase == null || c.invoiceBase === '') ? '' : c.invoiceBase;
+    const isOne = tvTrip && tvTrip.value === 'one';
+    if (tvPriceWrap) tvPriceWrap.style.display = isOne ? '' : 'none';
+    if (tvTierWrap) tvTierWrap.style.display = isOne ? 'none' : '';
+  }
+
   function syncTotalVisible() {
+    const isTravel = sel.value === 'travel';
     totalWrap.style.display = (sel.value === 'shared' || sel.value === 'menu') ? '' : 'none';
+    if (subsidyWrap && !isNoZoneGroup) subsidyWrap.style.display = isTravel ? 'none' : '';
+    if (tvPanel) tvPanel.style.display = isTravel ? 'flex' : 'none';
+    if (tvAdd) tvAdd.style.display = isTravel ? 'flex' : 'none';
+    const mt = document.getElementById('menuModeToggle');
+    const mi = document.getElementById('menuItems');
+    if (mt) mt.style.display = isTravel ? 'none' : '';
+    if (mi) mi.style.display = isTravel ? 'none' : '';
+    if (isTravel) tvFill();
   }
   syncTotalVisible();
 
@@ -2466,6 +2626,46 @@ function syncMenuOnlyButtons(isMenu) {
     subInp.value = String(next);
     const ok = await patch({ member_subsidy: next });
     if (ok && state.task) state.task.member_subsidy = next;
+  });
+
+  // v1.0.62 旅遊參數儲存 + 報名
+  async function tvSave() {
+    const c = readTv();
+    c.tripType = (tvTrip && tvTrip.value === 'one') ? 'one' : 'two';
+    c.tier = (tvTier && +tvTier.value) || 30;
+    c.oneDayPrice = (tvPrice && tvPrice.value !== '') ? Math.max(0, +tvPrice.value || 0) : 2000;
+    c.invoiceBase = (tvInvoice && tvInvoice.value !== '') ? Math.max(0, +tvInvoice.value || 0) : null;
+    const js = JSON.stringify(c);
+    const ok = await patch({ travel_json: js });
+    if (ok && state.task) state.task.travel_json = js;
+    tvFill();
+    if (state.task && state.task.pricing_mode === 'travel') render();
+  }
+  if (tvTrip) tvTrip.addEventListener('change', tvSave);
+  if (tvTier) tvTier.addEventListener('change', tvSave);
+  if (tvPrice) tvPrice.addEventListener('blur', tvSave);
+  if (tvInvoice) tvInvoice.addEventListener('blur', tvSave);
+  const tvAddBtn = document.getElementById('tvAddBtn');
+  if (tvAddBtn) tvAddBtn.addEventListener('click', async () => {
+    const nameEl = document.getElementById('tvAddName');
+    const name = (nameEl.value || '').trim();
+    const amsg = document.getElementById('tvAddMsg');
+    if (!name) { amsg.textContent = '請填姓名'; return; }
+    const role = document.getElementById('tvAddRole').value;
+    const room = document.getElementById('tvAddRoom').value;
+    const isOne = (tvTrip && tvTrip.value === 'one');
+    tvAddBtn.disabled = true;
+    try {
+      const r = await fetch('/api/t/${task.id}/quick-entry', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ zone: '旅遊', noZoneGroup: true, memberName: name, travelRole: role, travelRoom: isOne ? '' : room }),
+      });
+      const j = await r.json();
+      if (!r.ok) { amsg.textContent = '失敗：' + (j.error || r.status); tvAddBtn.disabled = false; return; }
+      nameEl.value = ''; amsg.textContent = '✓ 已新增 ' + name;
+      tvAddBtn.disabled = false;
+      await poll();
+    } catch (e) { amsg.textContent = '錯誤：' + e.message; tvAddBtn.disabled = false; }
   });
 })();
 

@@ -23,6 +23,66 @@ const BASE_DEDUCTION = 100;
 const DEFAULT_SUBSIDY = 400;
 const ALLOWED_MODES = ['free_bento', 'menu', 'shared', 'drink', 'travel'];
 
+// ── 旅遊模式（v1.0.62）：移植 travel_calc 金流 ──
+//   應繳 = 行程成本(收據金額，不加稅) − 聯繫會補助；實際自付 = 應繳 − 文康補助
+//   金額 = 收據金額 + 加權發票金額；發票金額(預設 文康人數×1000，可改) ×1.05 = 加權發票
+const TRAVEL_DEFAULTS = {
+  twoCost: { 30:{two:4970,four:4370}, 25:{two:5454,four:4854}, 20:{two:5470,four:4870} },
+  oneDayPrice: 2000,
+  subTwo: { member:{liaison:1200,wellness:1000}, nonmember:{liaison:0,wellness:0}, retired:{liaison:600,wellness:0} },
+  // 一日專屬規則（與兩日不同）：會員自付一律 0（只付文康、文康以外由聯繫會補）；離退固定聯繫會補助；非會員全額
+  oneDay: { memberWellness: 1000, retiredLiaison: 300 },
+};
+export const TRAVEL_ROLE_OF = { '會員':'member', '非會員':'nonmember', '員眷':'nonmember', '眷屬':'nonmember', '員工眷屬':'nonmember', '離退會員':'retired', '離退':'retired', '退休':'retired' };
+export const TRAVEL_ROOM_OF = { '兩人房':'two', '四人房':'four', '2人房':'two', '4人房':'four', '雙人房':'two' };
+export const TRAVEL_ROLE_LABEL = { member:'會員', nonmember:'非會員', retired:'離退會員' };
+export const TRAVEL_ROOM_LABEL = { two:'兩人房', four:'四人房' };
+
+export function travelConfig(task) {
+  let c = {};
+  try { c = task?.travel_json ? JSON.parse(task.travel_json) : {}; } catch { c = {}; }
+  return {
+    tripType: c.tripType === 'one' ? 'one' : 'two',
+    tier: [30,25,20].includes(+c.tier) ? +c.tier : 30,
+    twoCost: c.twoCost || TRAVEL_DEFAULTS.twoCost,
+    oneDayPrice: c.oneDayPrice == null ? TRAVEL_DEFAULTS.oneDayPrice : Math.max(0, +c.oneDayPrice || 0),
+    subTwo: c.subTwo || TRAVEL_DEFAULTS.subTwo,
+    oneDay: c.oneDay || TRAVEL_DEFAULTS.oneDay,
+    // 發票金額(未稅)：null = 預設用文康總額；看板可覆寫。invoiceRate 預設 5%
+    invoiceBase: (c.invoiceBase == null || c.invoiceBase === '') ? null : Math.max(0, +c.invoiceBase || 0),
+    invoiceRate: c.invoiceRate == null ? 0.05 : Math.max(0, +c.invoiceRate || 0),
+  };
+}
+function travelCost(cfg, room) {
+  // 收據金額 = 報價/成本原值（不加稅；發票稅另計於加權發票）
+  return cfg.tripType === 'two' ? ((cfg.twoCost[cfg.tier] || {})[room] || 0) : cfg.oneDayPrice;
+}
+export function travelPerPerson(cfg, role, room) {
+  const cost = travelCost(cfg, room);
+  if (cfg.tripType === 'two') {
+    const sub = (cfg.subTwo || {})[role] || { liaison:0, wellness:0 };
+    const liaison = Math.max(0, +sub.liaison || 0);
+    const wellness = Math.max(0, +sub.wellness || 0);
+    const due = Math.max(0, cost - liaison);
+    return { cost, liaison, wellness, due, self_pay: due - wellness };
+  }
+  // 一日（結構與兩日不同）
+  const o = cfg.oneDay || {};
+  if (role === 'member') {
+    // 會員只付文康，文康以外由聯繫會補 → 自付一律 0
+    const wellness = Math.min(cost, Math.max(0, +(o.memberWellness ?? 1000)));
+    return { cost, liaison: cost - wellness, wellness, due: wellness, self_pay: 0 };
+  }
+  if (role === 'retired') {
+    // 離退：固定聯繫會補助，其餘自付
+    const liaison = Math.max(0, +(o.retiredLiaison ?? 300));
+    const due = Math.max(0, cost - liaison);
+    return { cost, liaison, wellness: 0, due, self_pay: due };
+  }
+  // 非會員：全額
+  return { cost, liaison: 0, wellness: 0, due: cost, self_pay: cost };
+}
+
 export function computePricing(task, entries) {
   const mode = ALLOWED_MODES.includes(task?.pricing_mode) ? task.pricing_mode : 'free_bento';
   const subsidy = task?.member_subsidy == null ? DEFAULT_SUBSIDY : Math.max(0, +task.member_subsidy || 0);
@@ -40,11 +100,45 @@ export function computePricing(task, entries) {
   const valid = list.filter(e => !isLeave(e));
 
   if (mode === 'travel') {
+    const cfg = travelConfig(task);
+    const perEntry = valid.map((e) => {
+      const data = parseData(e);
+      const role = TRAVEL_ROLE_OF[String(data['身份'] || '').trim()] || (isMember(e) ? 'member' : 'nonmember');
+      const room = cfg.tripType === 'two' ? (TRAVEL_ROOM_OF[String(data['房型'] || '').trim()] || 'two') : 'two';
+      const c = travelPerPerson(cfg, role, room);
+      return {
+        entry: e, identity: role, room,
+        cost: c.cost, liaison: c.liaison, wellness: c.wellness, due: c.due, self_pay: c.self_pay,
+      };
+    });
+    const sum = (f) => perEntry.reduce((s, x) => s + f(x), 0);
+    const cnt = (r) => perEntry.filter((x) => x.identity === r).length;
+    const totalDue = sum((x) => x.due);
+    const wellnessTotal = sum((x) => x.wellness);          // 文康總額 = 文康人數 × 1000
+    const totalCost = sum((x) => x.cost);                  // 報價總額
+    const invoiceBase = cfg.invoiceBase == null ? wellnessTotal : cfg.invoiceBase;  // 發票金額（不加權、固定）
+    const invoiceTax = Math.round(invoiceBase * (cfg.invoiceRate ?? 0.05));         // 發票稅 5%（計入收據/總額，發票金額不變）
+    const receiptAmount = (totalDue - invoiceBase) + invoiceTax;                    // 收據金額 = (總應繳 − 發票金額) + 稅
     return {
-      mode,
-      notImplemented: true,
-      perEntry: [],
-      summary: { note: '會員旅遊模式（v1.0.38 預留，結算未實作）' },
+      mode, perEntry, travel: cfg,
+      summary: {
+        trip: cfg.tripType === 'two' ? '兩日遊' : '一日遊',
+        tier: cfg.tripType === 'two' ? cfg.tier : null,
+        member_count: cnt('member'),
+        non_member_count: cnt('nonmember'),
+        retired_count: cnt('retired'),
+        total_cost: totalCost,
+        liaison_total: sum((x) => x.liaison),
+        wellness_total: wellnessTotal,
+        self_pay_total: sum((x) => x.self_pay),
+        total_payable: totalDue,
+        subsidy_total: sum((x) => x.liaison),
+        invoice_base: invoiceBase,             // 發票金額（= 文康，預設可改；不加權、固定）
+        invoice_tax: invoiceTax,               // 發票稅（5%，計入收據與總額）
+        receipt_amount: receiptAmount,         // 收據金額（= 總應繳 − 發票金額 + 稅）
+        grand_total: receiptAmount + invoiceBase,   // 總金額 = 收據金額 + 發票金額
+        vendor_total: totalCost + invoiceTax,       // 廠商總金額 = 報價總額 + 發票稅
+      },
     };
   }
 
@@ -202,10 +296,12 @@ export const MODE_LABEL = {
   menu: '菜單',
   shared: '合菜',
   drink: '飲料',
-  travel: '會員旅遊（未實作）',
+  travel: '會員旅遊',
 };
 
 export const IDENTITY_LABEL = {
   member: '會員',
   non_member: '非會員',
+  nonmember: '非會員',
+  retired: '離退會員',
 };

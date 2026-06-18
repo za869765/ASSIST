@@ -10,12 +10,18 @@ export async function buildExportResponse(env, taskId, customFilename) {
   let task;
   try {
     task = await env.DB.prepare(
-      `SELECT id, task_name, mode, group_id, pricing_mode, total_amount, member_subsidy, buy5_get1, shared_addon FROM tasks WHERE id = ?`
+      `SELECT id, task_name, mode, group_id, pricing_mode, total_amount, member_subsidy, buy5_get1, shared_addon, travel_json FROM tasks WHERE id = ?`
     ).bind(taskId).first();
   } catch {
-    task = await env.DB.prepare(
-      `SELECT id, task_name, mode, group_id, pricing_mode, total_amount, member_subsidy FROM tasks WHERE id = ?`
-    ).bind(taskId).first();
+    try {
+      task = await env.DB.prepare(
+        `SELECT id, task_name, mode, group_id, pricing_mode, total_amount, member_subsidy, buy5_get1, shared_addon FROM tasks WHERE id = ?`
+      ).bind(taskId).first();
+    } catch {
+      task = await env.DB.prepare(
+        `SELECT id, task_name, mode, group_id, pricing_mode, total_amount, member_subsidy FROM tasks WHERE id = ?`
+      ).bind(taskId).first();
+    }
   }
   if (!task) return new Response('not found', { status: 404 });
   const entries = await listEntries(env.DB, taskId);
@@ -50,6 +56,7 @@ export async function buildExportResponse(env, taskId, customFilename) {
     pricing_mode: task.pricing_mode,
     total_amount: task.total_amount,
     member_subsidy: task.member_subsidy,
+    travel_json: task.travel_json,
     showZones,
     buy5_get1: task.buy5_get1 ? 1 : 0,
     shared_addon: task.shared_addon == null ? 0 : Math.max(0, +task.shared_addon || 0),
