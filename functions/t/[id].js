@@ -1660,7 +1660,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.66</span>
+  <span style="opacity:.6">v1.0.67</span>
 </div>
 
 <div class="admin-row">
@@ -2132,7 +2132,7 @@ function entryBodyHtml(e) {
 var TV_ROLE_MAP = {'會員':'member','非會員':'nonmember','員眷':'nonmember','眷屬':'nonmember','員工眷屬':'nonmember','離退會員':'retired','離退':'retired','退休':'retired'};
 var TV_ROOM_MAP = {'兩人房':'two','四人房':'four','2人房':'two','4人房':'four','雙人房':'two'};
 var TV_ROLE_LABEL = {member:'會員', nonmember:'非會員', retired:'離退會員'};
-var TV_DEFAULTS = {twoCost:{30:{two:4970,four:4370},25:{two:5454,four:4854},20:{two:5470,four:4870}},oneDayPrice:2000,subTwo:{member:{liaison:1200,wellness:1000},nonmember:{liaison:0,wellness:0},retired:{liaison:600,wellness:0}},oneDay:{memberWellness:1000,retiredLiaison:300}};
+var TV_DEFAULTS = {twoCost:{30:{two:4970,four:4370},25:{two:5454,four:4854},20:{two:5470,four:4870}},oneDayPrice:2000,subTwo:{member:{liaison:1200,wellness:1000},nonmember:{liaison:0,wellness:0},retired:{liaison:300,wellness:0}},oneDay:{memberWellness:1000,retiredLiaison:300}};
 function tvCfg() {
   var c = {};
   try { c = state.task && state.task.travel_json ? JSON.parse(state.task.travel_json) : {}; } catch (e) { c = {}; }
@@ -2161,9 +2161,9 @@ function tvPersonOf(cfg, role, room) {
     else if (role === 'retired') { li = Math.max(0, +(o.retiredLiaison != null ? o.retiredLiaison : 300)); we = 0; due = Math.max(0, cost - li); }
     else { li = 0; we = 0; due = cost; }
   }
-  // 自付額一律百元為單位：不足無條件捨去，零頭由聯繫會補助
+  // 自付額一律百元為單位：不足無條件捨去，零頭由聯繫會吸收（獨立計，不混入補助基數）
   var floored = Math.floor(due / 100) * 100;
-  var roundSub = due - floored; li += roundSub; due = floored;
+  var roundSub = due - floored; due = floored;
   return {cost:cost, liaison:li, wellness:we, due:due, self:Math.max(0, due - we), round_sub:roundSub};
 }
 function tvMoney(n) { return 'NT$' + Math.round(n).toLocaleString('en-US'); }
@@ -2197,6 +2197,7 @@ function renderTravelBoard() {
   h += tvCard('發票稅 5%', tvMoney(invTax), '');
   h += tvCard('文康補助總額', tvMoney(wellnessTotal), '');
   h += tvCard('聯繫會補助總額', tvMoney(sum(function(x){return x.liaison;})), '');
+  h += tvCard('百元捨去（會補）', tvMoney(sum(function(x){return x.round_sub;})), '');
   h += tvCard('廠商總金額', tvMoney(vendor), '');
   h += tvCard('總應繳', tvMoney(totalDue), '');
   h += '</div></div>';
@@ -2213,7 +2214,7 @@ function renderTravelBoard() {
     });
     h += '</tbody></table>';
     var rsTotal = sum(function(x){return x.round_sub;});
-    h += '<div class="tv-note">※ 應繳一律以百元為單位、不足無條件捨去，零頭由聯繫會補助' + (rsTotal > 0 ? '（本場共捨 ' + tvMoney(rsTotal) + '，已計入聯繫會補助總額）' : '') + '</div>';
+    h += '<div class="tv-note">※「聯繫會補助總額」為政策基數（會員1200／非0／離退300）。應繳一律以百元為單位、不足無條件捨去，零頭另列「百元捨去（會補）」、同樣由聯繫會吸收' + (rsTotal > 0 ? '（本場共捨 ' + tvMoney(rsTotal) + '）' : '') + '</div>';
   }
   board.innerHTML = h;
   var sl = document.getElementById('statLine');

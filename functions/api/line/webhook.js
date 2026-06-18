@@ -1874,10 +1874,10 @@ function appendPricingBlocks(rows, entries, opts) {
     rows.push(['總金額（收據＋發票）', String(s.grand_total || 0)]);
     rows.push(['廠商總金額', String(s.vendor_total || 0)]);
     rows.push(['文康補助總額', String(s.wellness_total || 0)]);
-    rows.push(['聯繫會補助總額', String(s.liaison_total || 0)]);
-    rows.push(['　其中百元捨去零頭', String(s.round_sub_total || 0)]);
+    rows.push(['聯繫會補助總額（政策基數）', String(s.liaison_total || 0)]);
+    rows.push(['百元捨去（會補）', String(s.round_sub_total || 0)]);
     rows.push(['身份人數', `會員 ${s.member_count} / 非會員 ${s.non_member_count} / 離退 ${s.retired_count}`]);
-    rows.push(['※ 應繳一律以百元為單位、不足無條件捨去，零頭由聯繫會補助']);
+    rows.push(['※「聯繫會補助總額」為政策基數（會員1200／非0／離退300）；應繳一律百元無條件捨去，零頭列「百元捨去」、同樣由聯繫會吸收']);
     return;
   }
 

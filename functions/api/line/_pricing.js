@@ -72,10 +72,9 @@ export function travelPerPerson(cfg, role, room) {
     else if (role === 'retired') { liaison = Math.max(0, +(o.retiredLiaison ?? 300)); wellness = 0; due = Math.max(0, cost - liaison); }
     else { liaison = 0; wellness = 0; due = cost; }
   }
-  // 自付額一律以百元為單位：不足無條件捨去，零頭由聯繫會補助
+  // 自付額一律以百元為單位：不足無條件捨去，零頭由聯繫會吸收（獨立計，不混入補助基數）
   const floored = Math.floor(due / 100) * 100;
   const round_sub = due - floored;
-  liaison += round_sub;
   due = floored;
   return { cost, liaison, wellness, due, self_pay: Math.max(0, due - wellness), round_sub };
 }
@@ -105,7 +104,7 @@ export function computePricing(task, entries) {
       const c = travelPerPerson(cfg, role, room);
       return {
         entry: e, identity: role, room,
-        cost: c.cost, liaison: c.liaison, wellness: c.wellness, due: c.due, self_pay: c.self_pay,
+        cost: c.cost, liaison: c.liaison, wellness: c.wellness, due: c.due, self_pay: c.self_pay, round_sub: c.round_sub,
       };
     });
     const sum = (f) => perEntry.reduce((s, x) => s + f(x), 0);
@@ -129,8 +128,8 @@ export function computePricing(task, entries) {
         wellness_total: wellnessTotal,
         self_pay_total: sum((x) => x.self_pay),
         total_payable: totalDue,
-        subsidy_total: sum((x) => x.liaison),
-        round_sub_total: sum((x) => x.round_sub),  // 百元捨去的零頭總額（含在聯繫會補助內）
+        subsidy_total: sum((x) => x.liaison),       // 聯繫會補助：政策基數（不含捨去零頭）
+        round_sub_total: sum((x) => x.round_sub),   // 百元捨去的零頭總額（另由聯繫會吸收，與基數分開）
         invoice_base: invoiceBase,             // 發票金額（= 文康，預設可改；不加權、固定）
         invoice_tax: invoiceTax,               // 發票稅（5%，計入收據與總額）
         receipt_amount: receiptAmount,         // 收據金額（= 總應繳 − 發票金額 + 稅）
