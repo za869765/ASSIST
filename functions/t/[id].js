@@ -1660,7 +1660,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.67</span>
+  <span style="opacity:.6">v1.0.68</span>
 </div>
 
 <div class="admin-row">
@@ -2150,20 +2150,22 @@ function tvCfg() {
 function tvCostOf(cfg, room) { return cfg.tripType === 'two' ? ((cfg.twoCost[cfg.tier] || {})[room] || 0) : cfg.oneDayPrice; }
 function tvPersonOf(cfg, role, room) {
   var cost = tvCostOf(cfg, room);
-  var li, we, due;
+  var li, we;
   if (cfg.tripType === 'two') {
     var s = (cfg.subTwo || {})[role] || {liaison:0,wellness:0};
     li = Math.max(0, +s.liaison || 0); we = Math.max(0, +s.wellness || 0);
-    due = Math.max(0, cost - li);
   } else {
     var o = cfg.oneDay || {};
-    if (role === 'member') { we = Math.min(cost, Math.max(0, +(o.memberWellness != null ? o.memberWellness : 1000))); li = cost - we; due = we; }
-    else if (role === 'retired') { li = Math.max(0, +(o.retiredLiaison != null ? o.retiredLiaison : 300)); we = 0; due = Math.max(0, cost - li); }
-    else { li = 0; we = 0; due = cost; }
+    if (role === 'member') { we = Math.min(cost, Math.max(0, +(o.memberWellness != null ? o.memberWellness : 1000))); li = Math.max(0, cost - we); }
+    else if (role === 'retired') { li = Math.max(0, +(o.retiredLiaison != null ? o.retiredLiaison : 300)); we = 0; }
+    else { li = 0; we = 0; }
   }
+  li = Math.min(li, cost);                        // 聯繫會補助不超過成本（成本低於補助時不溢補）
+  var due = Math.max(0, cost - li);
   // 自付額一律百元為單位：不足無條件捨去，零頭由聯繫會吸收（獨立計，不混入補助基數）
   var floored = Math.floor(due / 100) * 100;
   var roundSub = due - floored; due = floored;
+  we = Math.min(we, due);                         // 文康補助不超過該人應繳（不溢算）
   return {cost:cost, liaison:li, wellness:we, due:due, self:Math.max(0, due - we), round_sub:roundSub};
 }
 function tvMoney(n) { return 'NT$' + Math.round(n).toLocaleString('en-US'); }
@@ -2184,7 +2186,8 @@ function renderTravelBoard() {
   var totalDue = sum(function(x){return x.due;});
   var wellnessTotal = sum(function(x){return x.wellness;});
   var totalCost = sum(function(x){return x.cost;});
-  var invBase = cfg.invoiceBase == null ? wellnessTotal : cfg.invoiceBase;
+  var invBase = cfg.invoiceBase == null ? wellnessTotal : Math.max(wellnessTotal, +cfg.invoiceBase || 0);
+  invBase = Math.max(0, Math.min(invBase, totalDue));   // 發票不超過總應繳（確保收據≥0、總金額為最大）
   var invTax = Math.round(invBase * (cfg.invoiceRate || 0.05));
   var receipt = (totalDue - invBase) + invTax;
   var grand = receipt + invBase;

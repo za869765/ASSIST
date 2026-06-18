@@ -59,23 +59,25 @@ function travelCost(cfg, room) {
 }
 export function travelPerPerson(cfg, role, room) {
   const cost = travelCost(cfg, room);
-  let liaison, wellness, due;
+  let liaison, wellness;
   if (cfg.tripType === 'two') {
     const sub = (cfg.subTwo || {})[role] || { liaison:0, wellness:0 };
     liaison = Math.max(0, +sub.liaison || 0);
     wellness = Math.max(0, +sub.wellness || 0);
-    due = Math.max(0, cost - liaison);
   } else {
     // 一日（結構與兩日不同）
     const o = cfg.oneDay || {};
-    if (role === 'member') { wellness = Math.min(cost, Math.max(0, +(o.memberWellness ?? 1000))); liaison = cost - wellness; due = wellness; }
-    else if (role === 'retired') { liaison = Math.max(0, +(o.retiredLiaison ?? 300)); wellness = 0; due = Math.max(0, cost - liaison); }
-    else { liaison = 0; wellness = 0; due = cost; }
+    if (role === 'member') { wellness = Math.min(cost, Math.max(0, +(o.memberWellness ?? 1000))); liaison = Math.max(0, cost - wellness); }
+    else if (role === 'retired') { liaison = Math.max(0, +(o.retiredLiaison ?? 300)); wellness = 0; }
+    else { liaison = 0; wellness = 0; }
   }
+  liaison = Math.min(liaison, cost);            // 聯繫會補助不超過成本（成本低於補助時不溢補）
+  let due = Math.max(0, cost - liaison);
   // 自付額一律以百元為單位：不足無條件捨去，零頭由聯繫會吸收（獨立計，不混入補助基數）
   const floored = Math.floor(due / 100) * 100;
   const round_sub = due - floored;
   due = floored;
+  wellness = Math.min(wellness, due);           // 文康補助不超過該人應繳（不溢算）
   return { cost, liaison, wellness, due, self_pay: Math.max(0, due - wellness), round_sub };
 }
 
@@ -112,7 +114,8 @@ export function computePricing(task, entries) {
     const totalDue = sum((x) => x.due);
     const wellnessTotal = sum((x) => x.wellness);          // 文康總額 = 文康人數 × 1000
     const totalCost = sum((x) => x.cost);                  // 報價總額
-    const invoiceBase = cfg.invoiceBase == null ? wellnessTotal : cfg.invoiceBase;  // 發票金額（不加權、固定）
+    let invoiceBase = cfg.invoiceBase == null ? wellnessTotal : Math.max(wellnessTotal, +cfg.invoiceBase || 0);  // 發票金額（不加權、固定）
+    invoiceBase = Math.max(0, Math.min(invoiceBase, totalDue));                     // 發票不超過總應繳（確保收據≥0、總金額為最大）
     const invoiceTax = Math.round(invoiceBase * (cfg.invoiceRate ?? 0.05));         // 發票稅 5%（計入收據/總額，發票金額不變）
     const receiptAmount = (totalDue - invoiceBase) + invoiceTax;                    // 收據金額 = (總應繳 − 發票金額) + 稅
     return {

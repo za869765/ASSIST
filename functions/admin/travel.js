@@ -45,7 +45,7 @@ export async function onRequestGet() {
 '    <div class="tlist" id="tlist"><div class="meta">載入中…</div></div>\n' +
 '  </div>\n' +
 '</div>\n' +
-'<div class="foot">ASSIST · 會員旅遊計算頁 v1.0.67</div>\n' +
+'<div class="foot">ASSIST · 會員旅遊計算頁 v1.0.68</div>\n' +
 '<script>\n' +
 'var PASS = localStorage.getItem("assist_admin_pass") || "";\n' +
 'function show(el,on){document.getElementById(el).style.display = on ? "" : "none";}\n' +
