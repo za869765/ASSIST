@@ -1642,6 +1642,8 @@ h1, .meta, .admin-row, .tabs, .menu-card, #board,
 .tv-tbl th, .tv-tbl td { border: 1px solid var(--line); padding: 7px 10px; text-align: center; }
 .tv-tbl th { background: rgba(127,168,140,.12); color: var(--text); font-family: var(--f-zh); }
 .tv-tbl td.tv-due { font-weight: 700; color: var(--gold-dim); }
+.tv-rs { font-weight: 400; font-size: 11px; color: var(--text-muted); margin-left: 2px; }
+.tv-note { font-size: 12px; color: var(--text-muted); margin-top: 8px; position: relative; z-index: 1; }
 .tv-tbl .del-btn { background: transparent; border: 1px solid var(--line); color: #d4543a; border-radius: 4px; cursor: pointer; padding: 1px 7px; }
 @media (max-width: 620px) { .tv-cards { grid-template-columns: repeat(2, 1fr); } .tv-card.big { grid-column: span 2; } }
 </style>
@@ -1658,7 +1660,7 @@ ${tabs}
   <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.64</span>
+  <span style="opacity:.6">v1.0.65</span>
 </div>
 
 <div class="admin-row">
@@ -2148,16 +2150,21 @@ function tvCfg() {
 function tvCostOf(cfg, room) { return cfg.tripType === 'two' ? ((cfg.twoCost[cfg.tier] || {})[room] || 0) : cfg.oneDayPrice; }
 function tvPersonOf(cfg, role, room) {
   var cost = tvCostOf(cfg, room);
+  var li, we, due;
   if (cfg.tripType === 'two') {
     var s = (cfg.subTwo || {})[role] || {liaison:0,wellness:0};
-    var li = Math.max(0, +s.liaison || 0), we = Math.max(0, +s.wellness || 0);
-    var due = Math.max(0, cost - li);
-    return {cost:cost, liaison:li, wellness:we, due:due, self:due - we};
+    li = Math.max(0, +s.liaison || 0); we = Math.max(0, +s.wellness || 0);
+    due = Math.max(0, cost - li);
+  } else {
+    var o = cfg.oneDay || {};
+    if (role === 'member') { we = Math.min(cost, Math.max(0, +(o.memberWellness != null ? o.memberWellness : 1000))); li = cost - we; due = we; }
+    else if (role === 'retired') { li = Math.max(0, +(o.retiredLiaison != null ? o.retiredLiaison : 300)); we = 0; due = Math.max(0, cost - li); }
+    else { li = 0; we = 0; due = cost; }
   }
-  var o = cfg.oneDay || {};
-  if (role === 'member') { var w = Math.min(cost, Math.max(0, +(o.memberWellness != null ? o.memberWellness : 1000))); return {cost:cost, liaison:cost - w, wellness:w, due:w, self:0}; }
-  if (role === 'retired') { var li2 = Math.max(0, +(o.retiredLiaison != null ? o.retiredLiaison : 300)); var due2 = Math.max(0, cost - li2); return {cost:cost, liaison:li2, wellness:0, due:due2, self:due2}; }
-  return {cost:cost, liaison:0, wellness:0, due:cost, self:cost};
+  // 自付額一律百元為單位：不足無條件捨去，零頭由聯繫會補助
+  var floored = Math.floor(due / 100) * 100;
+  var roundSub = due - floored; li += roundSub; due = floored;
+  return {cost:cost, liaison:li, wellness:we, due:due, self:Math.max(0, due - we), round_sub:roundSub};
 }
 function tvMoney(n) { return 'NT$' + Math.round(n).toLocaleString('en-US'); }
 function tvCard(k, v, cls) { return '<div class="tv-card ' + cls + '"><div class="tv-k">' + k + '</div><div class="tv-v">' + v + '</div></div>'; }
@@ -2170,7 +2177,7 @@ function renderTravelBoard() {
     var role = TV_ROLE_MAP[String((e.data && e.data['身份']) || '').trim()] || 'nonmember';
     var room = cfg.tripType === 'two' ? (TV_ROOM_MAP[String((e.data && e.data['房型']) || '').trim()] || 'two') : 'two';
     var c = tvPersonOf(cfg, role, room);
-    return {e:e, role:role, room:room, due:c.due, wellness:c.wellness, liaison:c.liaison, cost:c.cost};
+    return {e:e, role:role, room:room, due:c.due, wellness:c.wellness, liaison:c.liaison, cost:c.cost, round_sub:c.round_sub};
   });
   var sum = function(f) { return pe.reduce(function(s,x){return s+f(x);}, 0); };
   var cnt = function(r) { return pe.filter(function(x){return x.role===r;}).length; };
@@ -2201,9 +2208,12 @@ function renderTravelBoard() {
       var roleLabel = (x.e.data && x.e.data['身份']) || TV_ROLE_LABEL[x.role] || '非會員';
       var roomLabel = (x.e.data && x.e.data['房型']) || '';
       var isWeb = String(x.e.user_id || '').indexOf('web:') === 0;
-      h += '<tr><td>' + (i+1) + '</td><td>' + esc(x.e.name) + '</td><td>' + esc(roleLabel) + '</td>' + (cfg.tripType === 'two' ? '<td>' + esc(roomLabel) + '</td>' : '') + '<td class="tv-due">' + tvMoney(x.due) + '</td>' + (IS_ADMIN ? '<td><button class="del-btn" data-uid="' + esc(x.e.user_id) + '" data-real="' + (isWeb ? '0' : '1') + '" title="刪除">×</button></td>' : '') + '</tr>';
+      var rsNote = x.round_sub > 0 ? '<span class="tv-rs">（捨' + x.round_sub + '·會補）</span>' : '';
+      h += '<tr><td>' + (i+1) + '</td><td>' + esc(x.e.name) + '</td><td>' + esc(roleLabel) + '</td>' + (cfg.tripType === 'two' ? '<td>' + esc(roomLabel) + '</td>' : '') + '<td class="tv-due">' + tvMoney(x.due) + rsNote + '</td>' + (IS_ADMIN ? '<td><button class="del-btn" data-uid="' + esc(x.e.user_id) + '" data-real="' + (isWeb ? '0' : '1') + '" title="刪除">×</button></td>' : '') + '</tr>';
     });
     h += '</tbody></table>';
+    var rsTotal = sum(function(x){return x.round_sub;});
+    h += '<div class="tv-note">※ 應繳一律以百元為單位、不足無條件捨去，零頭由聯繫會補助' + (rsTotal > 0 ? '（本場共捨 ' + tvMoney(rsTotal) + '，已計入聯繫會補助總額）' : '') + '</div>';
   }
   board.innerHTML = h;
   var sl = document.getElementById('statLine');
