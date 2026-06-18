@@ -29,7 +29,7 @@ const ALLOWED_MODES = ['free_bento', 'menu', 'shared', 'drink', 'travel'];
 const TRAVEL_DEFAULTS = {
   twoCost: { 30:{two:4970,four:4370}, 25:{two:5454,four:4854}, 20:{two:5470,four:4870} },
   oneDayPrice: 2000,
-  subTwo: { member:{liaison:1200,wellness:1000}, nonmember:{liaison:0,wellness:0}, retired:{liaison:600,wellness:0} },
+  subTwo: { member:{liaison:1200,wellness:1000}, nonmember:{liaison:0,wellness:0}, retired:{liaison:300,wellness:0} },
   // 一日專屬規則（與兩日不同）：會員自付一律 0（只付文康、文康以外由聯繫會補）；離退固定聯繫會補助；非會員全額
   oneDay: { memberWellness: 1000, retiredLiaison: 300 },
 };
