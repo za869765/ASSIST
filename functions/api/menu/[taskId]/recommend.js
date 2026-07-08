@@ -120,7 +120,7 @@ export async function onRequestGet({ env, params, request }) {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: { responseMimeType: 'application/json', temperature: 0.3 },
   };
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${env.GEMINI_API_KEY}`;
+  const endpoint = `https://gemini-relay.za869765.workers.dev/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${env.GEMINI_API_KEY}`;
   try {
     const r = await fetch(endpoint, {
       method: 'POST',
