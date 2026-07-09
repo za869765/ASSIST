@@ -1670,7 +1670,7 @@ ${tabs}
   <span>開始於 ${esc(twTime(task.started_at))}${closed ? `・結單於 ${esc(twTime(task.closed_at))}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.72</span>
+  <span style="opacity:.6">v1.0.73</span>
 </div>
 
 <div class="admin-row">
@@ -1678,6 +1678,7 @@ ${tabs}
   ${closed ? '' : `
   <a id="adminDelToggle" class="admin-toggle menu-only" href="?admin=1">🗑 刪除模式</a>
   <a id="adminEditToggle" class="admin-toggle menu-only" href="?edit=1">📝 編輯模式</a>
+  <a id="proxyOrderBtn" class="admin-toggle" style="display:none;cursor:pointer">🙋 代點</a>
   <a class="admin-toggle" href="/api/t/${task.id}/export">📊 匯出 XLSX</a>
   `}
 </div>
@@ -1887,6 +1888,9 @@ const IS_ADMIN = new URLSearchParams(location.search).get('admin') === '1';
 const IS_EDIT_PRICE = new URLSearchParams(location.search).get('edit') === '1';
 if (IS_ADMIN) {
   document.body.classList.add('is-admin');
+  // 目前在刪除模式 → 讓「刪除模式」按鈕變成「離開」（避免找不到退出）
+  const dtog = document.getElementById('adminDelToggle');
+  if (dtog) { dtog.href = '?'; dtog.textContent = '✅ 離開刪除模式'; dtog.style.background = 'rgba(45,184,122,.15)'; dtog.style.borderColor = '#2db87a'; dtog.style.color = '#2db87a'; }
   const banner = document.getElementById('adminBanner');
   if (banner) banner.style.display = '';
   // v1.0.47: 菜單模式才顯示重算按鈕
@@ -2049,6 +2053,14 @@ if (IS_EDIT_PRICE) {
   document.body.classList.add('is-edit-price');
   const eb = document.getElementById('editPriceBanner');
   if (eb) eb.style.display = '';
+  // 目前在編輯模式 → 讓「編輯模式」按鈕變成「離開」（避免找不到退出）
+  const etog = document.getElementById('adminEditToggle');
+  if (etog) { etog.href = '?'; etog.textContent = '✅ 離開編輯模式'; etog.style.background = 'rgba(45,184,122,.15)'; etog.style.borderColor = '#2db87a'; etog.style.color = '#2db87a'; }
+}
+// 代點按鈕：admin / 編輯模式顯示，點了先選飲料再選是誰（免退出編輯模式）
+if (IS_ADMIN || IS_EDIT_PRICE) {
+  const pb = document.getElementById('proxyOrderBtn');
+  if (pb) { pb.style.display = ''; pb.addEventListener('click', openProxyPicker); }
 }
 
 // 記住目前 AI 推薦命中，loadMenu 重新渲染後還原
@@ -3128,6 +3140,32 @@ function openCustomModal() {
     if (price != null && (isNaN(price) || price < 0)) { alert('價格不合法'); return; }
     close();
     openOrderModal(name, price, true);
+  });
+}
+
+// 代點：先選飲料（下拉），再交給 openOrderModal 選「是誰」＋甜度冰塊。免退出編輯模式。
+async function openProxyPicker() {
+  let items = [];
+  try { const r = await fetch('/api/menu/' + TASK_ID); const j = await r.json(); items = (j.items || []).filter(it => it && it.name); } catch {}
+  if (!items.length) { alert('目前沒有菜單品項可代點，請先上傳菜單'); return; }
+  const opts = items.map((it, i) => '<option value="' + i + '">' + esc(it.name) + (it.price != null ? '（$' + it.price + '）' : '') + '</option>').join('');
+  const d = document.createElement('div');
+  d.className = 'order-modal';
+  d.innerHTML = '<div class="box">' +
+    '<h3>🙋 代點 · 幫人補點</h3>' +
+    '<label>選飲料</label><select id="ppSelect">' + opts + '</select>' +
+    '<div style="font-size:12px;color:var(--text-muted);margin:8px 0">選好按「下一步」，再選「是誰」＋甜度冰塊</div>' +
+    '<div class="row-btns"><button id="ppCancel">取消</button><button class="primary" id="ppNext">下一步 →</button></div>' +
+    '</div>';
+  document.body.appendChild(d);
+  const close = () => { d.classList.add('closing'); setTimeout(() => d.remove(), 200); };
+  d.addEventListener('click', (e) => { if (e.target === d) close(); });
+  d.querySelector('#ppCancel').addEventListener('click', close);
+  d.querySelector('#ppNext').addEventListener('click', () => {
+    const it = items[+d.querySelector('#ppSelect').value];
+    if (!it) return;
+    close();
+    openOrderModal(it.name, it.price != null ? it.price : null);
   });
 }
 
