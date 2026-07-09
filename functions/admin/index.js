@@ -7,7 +7,7 @@ export async function onRequestGet() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ASSIST 管理後台</title>
-<meta name="version" content="v1.0.69">
+<meta name="version" content="v1.0.70">
 <style>
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -95,7 +95,7 @@ small.note { color: #888; font-size: 11px; }
   <h1>🛠 ASSIST 管理後台
     <button onclick="doLogout()" style="font-size:12px">登出</button>
   </h1>
-  <div class="sub">v1.0.69 · LINE Bot 統一維護</div>
+  <div class="sub">v1.0.70 · LINE Bot 統一維護</div>
 
   <div class="tabs">
     <button class="tab active" data-tab="overview">總覽</button>
@@ -180,7 +180,7 @@ small.note { color: #888; font-size: 11px; }
       <b>D1 binding</b><div>DB → assist_db</div>
       <b>分區設定</b><div><a class="zone-link" href="/admin/zones">/admin/zones</a></div>
       <b>Webhook URL</b><div><code id="webhookUrl">—</code></div>
-      <b>後台版本</b><div>v1.0.69</div>
+      <b>後台版本</b><div>v1.0.70</div>
     </div>
     <h2>💡 LINE 指令備忘</h2>
     <ul style="font-size:13px;line-height:1.8;color:#666">
@@ -206,6 +206,14 @@ let PASS = localStorage.getItem(LS_KEY) || '';
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+// D1 存的是 UTC；台灣固定 UTC+8 → 顯示時 +8 轉台灣時間（到分鐘）
+function tw16(s) {
+  if (!s) return '';
+  const d = new Date(String(s).replace(' ', 'T') + 'Z');
+  if (isNaN(d)) return String(s).slice(0, 16);
+  d.setUTCHours(d.getUTCHours() + 8);
+  return d.toISOString().slice(0, 16).replace('T', ' ');
 }
 function api(path, opts = {}) {
   opts.headers = { ...(opts.headers || {}), 'X-Admin-Pass': PASS };
@@ -528,8 +536,8 @@ async function loadTasks(status) {
       <td>\${groupLabel}</td>
       <td>\${stBadge} \${t.mode === 'menu' ? '<span class="badge b-info" style="font-size:10px">菜單</span>' : ''}</td>
       <td>\${t.entry_count || 0}</td>
-      <td><small>\${esc((t.started_at || '').slice(0, 16))}</small></td>
-      <td><small>\${esc((t.closed_at || '').slice(0, 16))}</small></td>
+      <td><small>\${esc(tw16(t.started_at))}</small></td>
+      <td><small>\${esc(tw16(t.closed_at))}</small></td>
       <td><button class="detail-btn" onclick="openTaskDetail(\${t.id})">📋 查看</button> \${boardLink}</td>
       <td>\${exps}</td>
     </tr>\`;
@@ -572,7 +580,7 @@ async function openTaskDetail(id) {
 
   let html = '';
   html += \`<h3 class="modal-title">\${esc(t.task_name)} <small style="color:#999;font-weight:400">#\${t.id}</small></h3>\`;
-  html += \`<div class="modal-meta">\${stBadge} \${modeBadge} · 群組：\${esc(groupLabel)}<br>建立：\${esc((t.started_at || '').slice(0, 16))}\${t.closed_at ? ' · 結單：' + esc(t.closed_at.slice(0, 16)) : ''}</div>\`;
+  html += \`<div class="modal-meta">\${stBadge} \${modeBadge} · 群組：\${esc(groupLabel)}<br>建立：\${esc(tw16(t.started_at))}\${t.closed_at ? ' · 結單：' + esc(tw16(t.closed_at)) : ''}</div>\`;
   // v1.0.61: 進行中 + 菜單模式 → 顯示「按菜單重算」按鈕，依 menu_json 重設所有 entries.price
   if (t.status === 'open' && t.mode === 'menu') {
     html += \`<div style="margin:8px 0 12px"><button onclick="reprice(\${t.id})" class="detail-btn" style="background:#2db87a;color:#fff;border:none">💰 按菜單重算金額</button> <small style="color:#888">依菜單 L 價回填每筆 entry 的 price（不處理加料）</small></div>\`;

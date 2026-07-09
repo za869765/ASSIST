@@ -1165,6 +1165,14 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
       }
     }
   }
+  // 確定性補抓甜度/冰塊：辨識模型偶爾把「甘蔗青茶 微糖微冰」只抽到品項，這裡把同句裡的
+  // 甜度/冰塊補回 data（只在飲料任務、且該欄位還沒抽到時），避免明明講了卻又被追問一次
+  if (parsed?.data && isDrinkTask) {
+    const mods = parseDrinkModifiers(text);
+    for (const k of ['甜度', '冰塊']) {
+      if (mods[k] && !parsed.data[k]) parsed.data[k] = mods[k];
+    }
+  }
   // 便當類 + 只給葷/素 → 自動補全品項（比照 +1 行為）— 僅無菜單模式
   if (parsed?.data && !(Array.isArray(menuItems) && menuItems.length)) {
     const taskIsBento = /便當|飯|自助餐|餐盒|盒餐|簡餐|套餐|早午餐|午餐|晚餐|午晚餐|主食|主餐|正餐|團膳|商業午餐|輕食|熱食|麵食|麵線|拉麵|烏龍麵|粥品|火鍋|鍋物|韓式|日式|西式|排餐|漢堡|義大利麵|壽司|三明治|咖哩|燴飯|炒飯|滷味|鹽酥/.test(task.task_name || '');
@@ -1372,6 +1380,15 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
           console.log('[off-topic silent on menu miss]', text);
           return;
         }
+        // 完全沒有點餐訊號（沒對到菜單任何字、也沒有飲料/餐點關鍵字）→ 當閒聊靜默，
+        // 不要硬回「請到看板點選」打擾群組聊天（例：「拍謝 我處理就好XD」）
+        const ordNorm = String(text || '').replace(/\s+/g, '');
+        const hasOrderSignal = /[吃喝要點加改換訂來杯糖冰奶茶飲珍波椰檸柚瓜梅桃芒葡萄咖啡拿鐵美式可可布丁豆蔗蜜綠紅烏龍鮮蓋霜]/.test(ordNorm)
+          || menuItems.some(it => { const n = String(it.name || '').replace(/\s+/g, ''); return n.length >= 2 && (ordNorm.includes(n) || ordNorm.includes(n.slice(0, 2))); });
+        if (!hasOrderSignal) {
+          console.log('[off-topic silent: no order signal]', text);
+          return;
+        }
         // 配對不到 / 多候選 → 一律請使用者自己上看板點
         const base = env.PUBLIC_BASE_URL || env.PUBLIC_HOST || 'https://assist-gcl.pages.dev';
         const boardUrl = `${base}/t/${task.url_slug || task.id}`;
@@ -1391,6 +1408,38 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
   let oldItemForReport = '';
   if (existing) {
     const oldData = JSON.parse(existing.data_json || '{}');
+    // 只補修飾詞（本次沒品項、或品項與原本相同，只是補甜度/冰塊/加料等）→ 直接補進原本那筆，
+    // 不再反問「更改還是加點」：沒有品項的一句話，邏輯上不可能是「加點一杯新的」
+    const thisItem = parsed.data ? (parsed.data['品項'] || '') : '';
+    const sameOrNoItem = !thisItem || (oldData['品項'] && thisItem === oldData['品項']);
+    const OPT_FIELDS = ['甜度', '冰塊', '加料', '大小', '份量', '辣度', '飯量'];
+    const onlyOptions = sameOrNoItem && parsed.data
+      && Object.keys(parsed.data).some(k => OPT_FIELDS.includes(k))
+      && !/(改|換|更改|加|再加|再來|多加|多點|還要|追加|外加|併|合併)/.test(text);
+    if (onlyOptions && oldData['品項']) {
+      const merged = { ...oldData, ...parsed.data };
+      await env.DB.prepare(
+        `UPDATE entries SET data_json = ?, updated_at = datetime('now') WHERE task_id = ? AND user_id = ?`
+      ).bind(JSON.stringify(merged), task.id, userId).run();
+      await env.DB.prepare(`DELETE FROM pending_dups WHERE task_id = ? AND user_id = ?`).bind(task.id, userId).run();
+      await learnNoFields(env.DB, parsed.data);
+      const mm = await env.DB.prepare(`SELECT real_name, line_display FROM members WHERE user_id = ?`).bind(userId).first();
+      const who = mm?.real_name || mm?.line_display || userId.slice(0, 6);
+      const still = [];
+      if (isDrinkTask) {
+        const itemStr = String(merged['品項'] || '');
+        const isHot = /熱/.test(itemStr);
+        const isDong = /冬瓜|冬青|冬檸|冬鮮/.test(itemStr);
+        const noF = (itemNoFields && itemNoFields[itemStr]) || [];
+        if (!isHot && !merged['冰塊'] && !noF.includes('冰塊')) still.push('冰塊');
+        if (!isDong && !merged['甜度'] && !noF.includes('甜度')) still.push('甜度');
+      }
+      const mparts = Object.values(merged).filter(Boolean).join('/');
+      let rp = `✅ 已幫 ${who} 補上 ${mparts}`;
+      if (still.length) rp += `\n@${who} ${still.join('、')}要什麼？`;
+      await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: rp }]);
+      return;
+    }
     const sameData = JSON.stringify(oldData) === JSON.stringify(parsed.data || {})
       && (existing.note || null) === (parsed.note || null)
       && (existing.price || null) === (parsed.price ?? null);
@@ -2476,6 +2525,17 @@ async function processProxyOrder(env, task, zoneName, orderText) {
 // 硬規則污穢字偵測：體液/排泄物/性器官/中文粗話等
 const PROFANITY_RE = /(尿液|尿尿|屎|大便|糞|屁股|精液|嘔吐|鼻屎|痰|月經|經血|陰道|陰莖|雞雞|屌|幹你|幹他|操你|肏|去死|靠北|靠腰|幹話|白癡|智障|低能|f[u\*]ck|shit|bitch|dick|pussy|asshole)/i;
 // 明顯非任務相關的閒聊／語助詞／吐槽 → 直接忽略（不進入 profanity 計數、不呼叫 Gemini）
+// 確定性抽甜度/冰塊（辨識模型偶爾漏抽同句多欄位時的兜底；只認台灣手搖常見值）
+function parseDrinkModifiers(text) {
+  const t = String(text || '');
+  const out = {};
+  const sweet = t.match(/(無糖|去糖|微微糖|微糖|半糖|少糖|多糖|正常糖|標準糖|全糖|[一二三四五六七八九1-9]\s*分\s*糖|[一二三四五六七八九1-9]\s*分\s*甜)/);
+  if (sweet) out['甜度'] = sweet[1].replace(/\s+/g, '');
+  const ice = t.match(/(完全去冰|去冰|微微冰|微冰|少冰|正常冰|標準冰|多冰|全冰|常溫|溫熱|溫|熱)/);
+  if (ice) out['冰塊'] = ice[1];
+  return out;
+}
+
 function isChitchat(text) {
   const s = String(text || '').trim();
   if (!s) return false;
@@ -2491,6 +2551,8 @@ function isChitchat(text) {
     /^(笨\s*AI|笨機器人|笨小秘|笨蛋\s*AI|爛\s*AI|智障\s*AI|AI\s*很笨|小秘好笨)[\s。.!！?？~～]*$/i,
     /^(不要再問了?|別再問了?|不要吵了?|別吵了?|聽無|聽不懂|不會|不知道啦|隨便啦|都可以|隨便)[\s。.!！?？~～]*$/,
     /^(好[的啦喔呀]?|OK|ok|Ok|收到|嗯+|喔+|哦+|是[喔啊]?|對[啊阿呀]?)[\s。.!！?？~～]*$/,
+    // 「我自己處理就好」這類表明不用 bot 幫忙的閒聊，直接靜默
+    /(我來處理|我處理就好|我自己來|我自己處理|自己處理就好|我來就好|我用就好|我來弄|我搞定|我自己用|我處理就可以|我這邊處理|自己處理就可以)/,
   ];
   return patterns.some(re => re.test(s));
 }

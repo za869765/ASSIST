@@ -1,4 +1,14 @@
 // 即時點單看板（按區分組顯示；管理員可拉選人工分區）
+
+// D1 的 datetime('now') 存的是 UTC；台灣固定 UTC+8（無日光節約）→ 顯示時 +8 轉台灣時間
+function twTime(s) {
+  if (!s) return s;
+  const d = new Date(String(s).replace(' ', 'T') + 'Z');
+  if (isNaN(d)) return s;
+  d.setUTCHours(d.getUTCHours() + 8);
+  return d.toISOString().slice(0, 19).replace('T', ' ');
+}
+
 export async function onRequestGet({ params, request, env }) {
   const key = String(params.id || '');
   if (!key) return new Response('Bad id', { status: 400 });
@@ -1657,10 +1667,10 @@ ${tabs}
 </h1>
 
 <div class="meta">
-  <span>開始於 ${esc(task.started_at)}${closed ? `・結單於 ${esc(task.closed_at)}` : ''}</span>
+  <span>開始於 ${esc(twTime(task.started_at))}${closed ? `・結單於 ${esc(twTime(task.closed_at))}` : ''}</span>
   <span id="statLine">—</span>
   ${closed ? '' : '<span>自動更新 · 5s</span>'}
-  <span style="opacity:.6">v1.0.69</span>
+  <span style="opacity:.6">v1.0.70</span>
 </div>
 
 <div class="admin-row">
@@ -1713,7 +1723,7 @@ ${closed ? '' : `<label class="menu-mode-toggle" id="menuModeToggle" style="disp
 <div class="items-list" id="menuItems" style="margin:10px 0"></div>`}
 
 ${closed ? '' : `<div id="adminBanner" class="admin-banner" style="display:none">🔧 管理員模式：點 ✏️ 編輯、× 刪除、💰 按菜單重算（菜單模式）。<a href="?">離開</a> <button id="repriceBtn" style="margin-left:8px;padding:3px 10px;background:#2db87a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;display:none">💰 按菜單重算金額</button> <label style="margin-left:10px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="buy5Get1Chk" style="cursor:pointer">🎁 買五送一</label> <label style="margin-left:10px;font-size:12px;display:inline-flex;align-items:center;gap:4px">🛍 共同袋子 <input type="number" id="sharedAddonInput" min="0" max="100" step="1" style="width:50px;padding:2px 4px;border:1px solid #ccc;border-radius:3px;font-size:12px" placeholder="0"> 元</label></div>`}
-${closed ? '' : `<div id="editPriceBanner" class="admin-banner" style="display:none">📝 編輯模式：點「品項名稱」或「價格」可以改（OCR 亂碼可在這裡修正）。<a href="?">離開</a></div>`}
+${closed ? '' : `<div id="editPriceBanner" class="admin-banner" style="display:none">📝 編輯模式：點「品項名稱」或「價格」改菜單（OCR 亂碼可在這裡修正）；每筆訂單右側 ✏️ 可改品項／甜度／冰塊。<a href="?">離開</a></div>`}
 ${closed ? '' : `<div id="pricingPanel" class="pricing-panel" style="display:none">
   <strong>💰 計價</strong>
   <select id="pricingModeSel" aria-label="計價模式">
@@ -2249,7 +2259,7 @@ function render() {
         : '';
       const noteShown = e.note && entryBody(e) !== '(未辨識)' ? \`（\${esc(e.note)}）\` : '';
       const isWeb = String(e.user_id || '').startsWith('web:');
-      const editBtn = IS_ADMIN ? \`<button class="edit-btn" data-uid="\${esc(e.user_id)}" title="編輯此筆">✏️</button>\` : '';
+      const editBtn = (IS_ADMIN || IS_EDIT_PRICE) ? \`<button class="edit-btn" data-uid="\${esc(e.user_id)}" title="編輯此筆">✏️</button>\` : '';
       const delBtn = IS_ADMIN ? \`<button class="del-btn" data-uid="\${esc(e.user_id)}" data-real="\${isWeb ? '0' : '1'}" title="刪除此筆">×</button>\` : '';
       const guestRow = guestFlagsHtml(e, isSharedMode);
       return \`<li><span class="who">\${esc(e.name)}</span><span class="body">\${entryBodyHtml(e)}\${noteShown}</span><span class="price">\${price}\${editBtn}\${delBtn}</span>\${guestRow}</li>\`;
@@ -2327,7 +2337,7 @@ function render() {
       const noteShown = e.note && entryBody(e) !== '(未辨識)' ? \`（\${esc(e.note)}）\` : '';
       const idLine = isUnassigned ? \`<div class="uid-row">\${esc(e.user_id)}</div>\` : '';
       const isWeb = String(e.user_id || '').startsWith('web:');
-      const editBtn = IS_ADMIN ? \`<button class="edit-btn" data-uid="\${esc(e.user_id)}" title="編輯此筆">✏️</button>\` : '';
+      const editBtn = (IS_ADMIN || IS_EDIT_PRICE) ? \`<button class="edit-btn" data-uid="\${esc(e.user_id)}" title="編輯此筆">✏️</button>\` : '';
       const delBtn = IS_ADMIN ? \`<button class="del-btn" data-uid="\${esc(e.user_id)}" data-real="\${isWeb ? '0' : '1'}" title="刪除此筆">×</button>\` : '';
       const guestRow = guestFlagsHtml(e, isSharedMode);
       return \`<li><span class="who">\${esc(e.name)}\${idLine}</span><span class="body">\${entryBodyHtml(e)}\${noteShown}</span><span class="price">\${price}\${editBtn}\${delBtn}</span>\${guestRow}</li>\`;
