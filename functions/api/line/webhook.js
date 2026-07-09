@@ -1167,7 +1167,7 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
   }
   // 確定性補抓甜度/冰塊：辨識模型偶爾把「甘蔗青茶 微糖微冰」只抽到品項，這裡把同句裡的
   // 甜度/冰塊補回 data（只在飲料任務、且該欄位還沒抽到時），避免明明講了卻又被追問一次
-  if (parsed?.data && isDrinkTask) {
+  if (parsed?.data?.['品項'] && isDrinkTask) {
     const mods = parseDrinkModifiers(text);
     for (const k of ['甜度', '冰塊']) {
       if (mods[k] && !parsed.data[k]) parsed.data[k] = mods[k];
@@ -1258,6 +1258,17 @@ async function collectEntry(env, task, userId, text, replyToken, groupId) {
     const oldItem = Object.values(existingData).filter(Boolean).join('/') || '(未辨識)';
     await lineReply(env.LINE_CHANNEL_ACCESS_TOKEN, replyToken, [{ type: 'text', text: `✅ 已幫 ${who} 取消「${oldItem}」` }]);
     return;
+  }
+  // 菜單救援：辨識模型沒抽到品項，但整句話寬鬆對得到「唯一」菜單品項 → 直接當該品項
+  // （例：「四季春雙Q果 無糖微冰」→ 菜單「四季春Q果(波霸+椰果)」；避免落到靜默或「無法對到菜單」）
+  if ((!parsed || !parsed.data || !parsed.data['品項']) && Array.isArray(menuItems) && menuItems.length) {
+    const salvage = matchMenuCandidates(menuItems, String(text || ''));
+    if (salvage.length === 1) {
+      const mods = isDrinkTask ? parseDrinkModifiers(text) : {};
+      parsed = parsed || {};
+      parsed.data = { ...(parsed.data || {}), 品項: salvage[0].name, ...mods };
+      if (salvage[0].price != null && parsed.price == null) parsed.price = salvage[0].price;
+    }
   }
   if (!parsed || !parsed.data || Object.keys(parsed.data).length === 0) {
     // AI 抽不到但文字看起來像飲料/便當短名詞 → 直接當品項寫入（避免冷僻名稱被拒）
@@ -2779,16 +2790,29 @@ async function maybeMenuMessages(env, task) {
 // 回傳：{ matched: [candidates...] }；長度 0=無匹配，1=唯一對應，2+=需讓使用者選
 function matchMenuCandidates(menuItems, itemName) {
   const norm = (s) => String(s || '').replace(/\s+/g, '').toLowerCase();
+  // 寬鬆正規化：去掉括號內容（常是加料說明）＋常見連接/修飾字元，讓
+  // 「四季春雙Q果」對得到菜單「四季春Q果(波霸+椰果)」
+  const loose = (s) => norm(s)
+    .replace(/[（(][^）)]*[）)]/g, '')     // 去 (…) / （…） 內容
+    .replace(/[雙＋+、,，\/·・]/g, '');      // 去「雙」及常見連接符
   const target = norm(itemName);
   if (!target || !Array.isArray(menuItems)) return [];
   // 1) 完全相同
   const exact = menuItems.filter(it => norm(it.name) === target);
-  if (exact.length === 1) return exact;
-  if (exact.length > 1) return exact;
-  // 2) 包含關係
-  const partial = menuItems.filter(it => {
+  if (exact.length) return exact;
+  // 2) 包含關係（原字串）
+  let partial = menuItems.filter(it => {
     const n = norm(it.name);
     return n && (n.includes(target) || target.includes(n));
   });
+  if (partial.length) return partial;
+  // 3) 寬鬆比對（去括號/修飾字元後再比）
+  const lt = loose(itemName);
+  if (lt) {
+    partial = menuItems.filter(it => {
+      const ln = loose(it.name);
+      return ln && (ln === lt || ln.includes(lt) || lt.includes(ln));
+    });
+  }
   return partial;
 }
