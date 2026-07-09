@@ -73,13 +73,30 @@ export async function onRequestPost({ env, params, request }) {
     } catch {}
   }
 
-  // 菜單模式：item 必須在菜單上（防止前端亂送）；custom=true 允許菜單外；leave / 旅遊 跳過
+  // 菜單模式：item 必須是「看板實際顯示」的品項；custom=true 允許菜單外；leave / 旅遊 跳過
+  // 看板 chips 來自 /api/menu（menu_photos 原始 OCR 聚合），但驗證原本只比 tasks.menu_json
+  // （AI organize 整理版），organize 改名/改格式後兩邊對不上 → 點得到卻送不出。
+  // 修法：兩個來源都收，並用模糊比對容忍括號/全半形/「雙」等差異。
   const isCustom = !!body.custom || isTravel;
-  if (!isLeave && task.menu_json && !isCustom) {
-    const menu = JSON.parse(task.menu_json);
+  if (!isLeave && !isCustom && task.menu_json) {
     const norm = (s) => String(s || '').replace(/\s+/g, '').toLowerCase();
-    const hit = menu.find(it => norm(it.name) === norm(item));
-    if (!hit) return json({ error: '品項不在菜單上' }, 400);
+    const loose = (s) => norm(s).replace(/[（(][^）)]*[）)]/g, '').replace(/[雙＋+、,，\/·・]/g, '');
+    const ni = norm(item), li = loose(item);
+    const names = [];
+    // 看板顯示來源：menu_photos 原始 OCR 聚合（與 loadMenu 同源）
+    try {
+      const rows = await env.DB.prepare(`SELECT items_json FROM menu_photos WHERE task_id = ?`).bind(taskId).all();
+      for (const r of (rows.results || [])) {
+        try { for (const it of JSON.parse(r.items_json || '[]')) if (it?.name) names.push(String(it.name)); } catch {}
+      }
+    } catch {}
+    // 加上 organized menu_json（雙保險）
+    try { for (const it of JSON.parse(task.menu_json)) if (it?.name) names.push(String(it.name)); } catch {}
+    const ok = names.some(nm => {
+      const n = norm(nm), l = loose(nm);
+      return n === ni || (l && li && (l === li || n.includes(ni) || ni.includes(n) || l.includes(li) || li.includes(l)));
+    });
+    if (!ok) return json({ error: '品項不在菜單上' }, 400);
   }
 
   // 身份辨識 + 顯示名
